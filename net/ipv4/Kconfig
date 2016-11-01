@@ -486,6 +486,12 @@ config TCP_CONG_CUBIC
 	among other techniques.
 	See http://www.csc.ncsu.edu/faculty/rhee/export/bitcp/cubic-paper.pdf
 
+config TCP_MF
+	tristate "MF TCP"
+	default y
+	---help---
+	This is version 2.0 of MF-TCP which is a media-friendly TCP
+
 config TCP_CONG_WESTWOOD
 	tristate "TCP Westwood+"
 	default m
