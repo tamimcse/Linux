@@ -416,6 +416,7 @@ static inline bool tcp_urg_mode(const struct tcp_sock *tp)
 #define OPTION_TS		(1 << 1)
 #define OPTION_MD5		(1 << 2)
 #define OPTION_WSCALE		(1 << 3)
+#define OPTION_MF		(1 << 4)
 #define OPTION_FAST_OPEN_COOKIE	(1 << 8)
 
 struct tcp_out_options {
@@ -426,6 +427,7 @@ struct tcp_out_options {
 	u8 hash_size;		/* bytes in hash_location */
 	__u8 *hash_location;	/* temporary pointer, overloaded */
 	__u32 tsval, tsecr;	/* need to include OPTION_TS */
+        struct tcp_mf_cookie *mf_cookie;	        /* TCP MF cookie */
 	struct tcp_fastopen_cookie *fastopen_cookie;	/* Fast open cookie */
 };
 
@@ -535,6 +537,17 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		}
 		ptr += (len + 3) >> 2;
 	}
+        
+	if (likely(OPTION_MF & options)) {
+                struct tcp_mf_cookie *mfc = opts->mf_cookie;
+	        *ptr++ = htonl((TCPOPT_NOP << 24) |
+                                (TCPOPT_NOP << 16) |
+			        (TCPOPT_MF << 8) |
+			        TCPOLEN_MF);
+                *ptr++ = htonl((mfc->req_thput << 16) |
+                               (mfc->cur_thput << 8)  |
+                                mfc->feedback_thput);
+	}        
 }
 
 /* Compute TCP options for SYN packets. This is not the final
@@ -547,6 +560,8 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int remaining = MAX_TCP_OPTION_SPACE;
 	struct tcp_fastopen_request *fastopen = tp->fastopen_req;
+        // TODO: populate tp->mf_cookie_req by Netlink socket
+        struct tcp_mf_cookie *tcp_mf_cookie = tp->mf_cookie_req;
 
 #ifdef CONFIG_TCP_MD5SIG
 	*md5 = tp->af_specific->md5_lookup(sk, sk);
@@ -575,7 +590,13 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		opts->tsval = tcp_skb_timestamp(skb) + tp->tsoffset;
 		opts->tsecr = tp->rx_opt.ts_recent;
 		remaining -= TCPOLEN_TSTAMP_ALIGNED;
-	}
+	}        
+	if (likely(tcp_mf_cookie)) {
+                pr_err("In TCP MF. Value : %d ", tcp_mf_cookie);
+		opts->options |= OPTION_MF;
+                opts->mf_cookie = tcp_mf_cookie;
+		remaining -= TCPOLEN_MF_ALIGNED;
+	}        
 	if (likely(sysctl_tcp_window_scaling)) {
 		opts->ws = tp->rx_opt.rcv_wscale;
 		opts->options |= OPTION_WSCALE;

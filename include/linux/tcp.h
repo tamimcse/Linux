@@ -67,6 +67,16 @@ struct tcp_fastopen_cookie {
 	bool	exp;	/* In RFC6994 experimental option format */
 };
 
+/* TCP MF Cookie as stored in memory */
+struct tcp_mf_cookie {
+        s8	len;
+        u8 req_thput,           /* Required throughput in MF */ 
+           cur_thput,           /* Current throughput in MF */
+           feedback_thput;      /* Feedback throughput in MF */
+};
+
+
+
 /* This defines a selective acknowledgement block. */
 struct tcp_sack_block_wire {
 	__be32	start_seq;
@@ -90,7 +100,9 @@ struct tcp_options_received {
 	u32	rcv_tsval;	/* Time stamp value             	*/
 	u32	rcv_tsecr;	/* Time stamp echo reply        	*/
 	u16 	saw_tstamp : 1,	/* Saw TIMESTAMP on last packet		*/
+                saw_mf : 1,	/* Saw TIMESTAMP on last packet		*/
 		tstamp_ok : 1,	/* TIMESTAMP seen on SYN packet		*/
+                mf_ok : 1,	/* MF option seen on SYN packet		*/
 		dsack : 1,	/* D-SACK is scheduled			*/
 		wscale_ok : 1,	/* Wscale seen on SYN packet		*/
 		sack_ok : 4,	/* SACK seen on SYN packet		*/
@@ -99,6 +111,9 @@ struct tcp_options_received {
 	u8	num_sacks;	/* Number of SACK blocks		*/
 	u16	user_mss;	/* mss requested by user in ioctl	*/
 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
+        u8      feedback_thput, /* Feedback throughput from network in option MF */
+                req_thput,      /* Required throughput from network in option MF */
+                cur_thput;      /* Current throughput from network in option MF */
 };
 
 static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
@@ -355,6 +370,11 @@ struct tcp_sock {
 
 /* TCP fastopen related information */
 	struct tcp_fastopen_request *fastopen_req;
+        
+/* TCP fastopen related information */
+	struct tcp_mf_cookie *mf_cookie_req;
+        
+        
 	/* fastopen_rsk points to request_sock that resulted in this big
 	 * socket. Used to retransmit SYNACKs etc.
 	 */

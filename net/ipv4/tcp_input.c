@@ -3761,7 +3761,9 @@ void tcp_parse_options(const struct sk_buff *skb,
 
 	ptr = (const unsigned char *)(th + 1);
 	opt_rx->saw_tstamp = 0;
-
+        opt_rx->saw_mf = 0;
+        opt_rx->feedback_thput = 0;        
+        
 	while (length > 0) {
 		int opcode = *ptr++;
 		int opsize;
@@ -3853,6 +3855,16 @@ void tcp_parse_options(const struct sk_buff *skb,
 						TCPOLEN_EXP_FASTOPEN_BASE,
 						ptr + 2, th->syn, foc, true);
 				break;
+
+			case TCPOPT_MF:
+				if ((opsize == TCPOLEN_MF) &&
+				    ((estab && opt_rx->mf_ok))) {
+					opt_rx->saw_mf = 1;
+					opt_rx->cur_thput = *ptr;
+                                        opt_rx->req_thput = *(ptr + 1);
+                                        opt_rx->feedback_thput = *(ptr + 2);
+				}
+				break;                                
 
 			}
 			ptr += opsize-2;
