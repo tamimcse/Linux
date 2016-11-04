@@ -328,7 +328,7 @@ CONFIG_ATH9K_HTC=m
 CONFIG_ATH9K_HTC_DEBUGFS=y
 
 
-CONFIG_TCP_MF=y
+CONFIG_TCP_MF=m
 
 #Veth and Network namespace setup setup (Needed for Mininet)
 CONFIG_VETH=y

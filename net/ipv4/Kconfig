@@ -488,7 +488,7 @@ config TCP_CONG_CUBIC
 
 config TCP_MF
 	tristate "MF TCP"
-	default y
+	default m
 	---help---
 	This is version 2.0 of MF-TCP which is a media-friendly TCP
 
