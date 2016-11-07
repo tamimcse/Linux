@@ -539,7 +539,12 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
         
 	if (likely(OPTION_MF & options)) {
+            pr_debug("Writting MF TCP option in tcp_output.c:tcp_options_write");
                 struct tcp_mf_cookie *mfc = opts->mf_cookie;
+                mfc->cur_thput = 5;
+                mfc->feedback_thput = 0;
+                mfc->req_thput = 10;
+                mfc->len = TCPOLEN_MF;
 	        *ptr++ = htonl((TCPOPT_NOP << 24) |
                                 (TCPOPT_NOP << 16) |
 			        (TCPOPT_MF << 8) |
@@ -560,9 +565,8 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int remaining = MAX_TCP_OPTION_SPACE;
 	struct tcp_fastopen_request *fastopen = tp->fastopen_req;
-        // TODO: populate tp->mf_cookie_req by Netlink socket
-        struct tcp_mf_cookie *tcp_mf_cookie = tp->mf_cookie_req;
-
+        struct tcp_mf_cookie *tcp_mf_cookie = tp->mf_cookie_req;        
+        
 #ifdef CONFIG_TCP_MD5SIG
 	*md5 = tp->af_specific->md5_lookup(sk, sk);
 	if (*md5) {
@@ -591,8 +595,8 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		opts->tsecr = tp->rx_opt.ts_recent;
 		remaining -= TCPOLEN_TSTAMP_ALIGNED;
 	}        
-	if (likely(tcp_mf_cookie)) {
-                pr_err("In TCP MF. Value : %d ", tcp_mf_cookie);
+	if (likely(sysctl_tcp_mf)) {
+                pr_debug("Setting MF TCP for SYN packet in tcp_out.c:tcp_syn_options()");
 		opts->options |= OPTION_MF;
                 opts->mf_cookie = tcp_mf_cookie;
 		remaining -= TCPOLEN_MF_ALIGNED;
@@ -693,6 +697,7 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 					struct tcp_out_options *opts,
 					struct tcp_md5sig_key **md5)
 {
+    pr_err("In TCP established options");
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int size = 0;
 	unsigned int eff_sacks;
@@ -715,6 +720,13 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 		opts->tsecr = tp->rx_opt.ts_recent;
 		size += TCPOLEN_TSTAMP_ALIGNED;
 	}
+        
+	if (likely(tp->rx_opt.mf_ok)) {
+            pr_debug("Setting MF TCP for SYN packet in tcp_out.c:tcp_established_options()");
+		opts->options |= OPTION_MF;
+		opts->mf_cookie = tp->mf_cookie_req; 
+		size += TCPOLEN_MF_ALIGNED;
+	}        
 
 	eff_sacks = tp->rx_opt.num_sacks + tp->rx_opt.dsack;
 	if (unlikely(eff_sacks)) {
@@ -959,7 +971,16 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	inet = inet_sk(sk);
 	tcb = TCP_SKB_CB(skb);
 	memset(&opts, 0, sizeof(opts));
-
+        printk(KERN_INFO "Hello world !!!!! 1");
+        // TODO: populate tp->mf_cookie_req by Netlink socket
+        pr_err("Setting option for MF TCP in tcp_output.c:tcp_transmit_skb()");
+        tp->mf_cookie_req = kzalloc(sizeof(struct tcp_mf_cookie),
+				   sk->sk_allocation);
+        tp->mf_cookie_req->cur_thput = 4;
+        tp->mf_cookie_req->feedback_thput = 0;
+        tp->mf_cookie_req->req_thput = 10;
+        tp->mf_cookie_req->len = TCPOLEN_MF;
+        
 	if (unlikely(tcb->tcp_flags & TCPHDR_SYN))
 		tcp_options_size = tcp_syn_options(sk, skb, &opts, &md5);
 	else
