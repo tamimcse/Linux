@@ -68,4 +68,8 @@ static void __exit hello_exit(void)
 module_init(hello_init); 
 module_exit(hello_exit);
 
+
+MODULE_AUTHOR("MD Iftakharul Islam");
 MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("MF TCP");
+MODULE_VERSION("0.1");

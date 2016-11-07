@@ -77,6 +77,7 @@
 #include <linux/errqueue.h>
 
 int sysctl_tcp_timestamps __read_mostly = 1;
+int sysctl_tcp_mf __read_mostly = 0;
 int sysctl_tcp_window_scaling __read_mostly = 1;
 int sysctl_tcp_sack __read_mostly = 1;
 int sysctl_tcp_fack __read_mostly = 1;
@@ -3857,9 +3858,10 @@ void tcp_parse_options(const struct sk_buff *skb,
 				break;
 
 			case TCPOPT_MF:
-				if ((opsize == TCPOLEN_MF) &&
-				    ((estab && opt_rx->mf_ok))) {
+                                pr_debug("MF TCP option received in tcp_input.c");
+				if (opsize == TCPOLEN_MF) {
 					opt_rx->saw_mf = 1;
+                                        opt_rx->mf_ok = 1;
 					opt_rx->cur_thput = *ptr;
                                         opt_rx->req_thput = *(ptr + 1);
                                         opt_rx->feedback_thput = *(ptr + 2);

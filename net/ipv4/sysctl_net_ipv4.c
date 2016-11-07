@@ -262,6 +262,13 @@ static struct ctl_table ipv4_table[] = {
 		.proc_handler	= proc_dointvec
 	},
 	{
+		.procname	= "tcp_mf",
+		.data		= &sysctl_tcp_mf,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec
+	},        
+	{
 		.procname	= "tcp_window_scaling",
 		.data		= &sysctl_tcp_window_scaling,
 		.maxlen		= sizeof(int),

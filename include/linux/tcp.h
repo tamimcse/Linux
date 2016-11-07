@@ -100,7 +100,7 @@ struct tcp_options_received {
 	u32	rcv_tsval;	/* Time stamp value             	*/
 	u32	rcv_tsecr;	/* Time stamp echo reply        	*/
 	u16 	saw_tstamp : 1,	/* Saw TIMESTAMP on last packet		*/
-                saw_mf : 1,	/* Saw TIMESTAMP on last packet		*/
+                saw_mf : 1,	/* Saw MF on last packet		*/
 		tstamp_ok : 1,	/* TIMESTAMP seen on SYN packet		*/
                 mf_ok : 1,	/* MF option seen on SYN packet		*/
 		dsack : 1,	/* D-SACK is scheduled			*/
@@ -120,6 +120,7 @@ static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 {
 	rx_opt->tstamp_ok = rx_opt->sack_ok = 0;
 	rx_opt->wscale_ok = rx_opt->snd_wscale = 0;
+        rx_opt->mf_ok = 0;
 }
 
 /* This is the max number of SACKS that we'll generate and process. It's safe
