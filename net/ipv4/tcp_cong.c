@@ -404,7 +404,7 @@ u32 tcp_slow_start(struct tcp_sock *tp, u32 acked)
 	acked -= cwnd - tp->snd_cwnd;
 	tp->snd_cwnd = min(cwnd, tp->snd_cwnd_clamp);
         if(subcriber)
-            subcriber->update_rate(100);
+            subcriber->update_rate(tp->snd_cwnd);
 
 	return acked;
 }
@@ -430,7 +430,7 @@ void tcp_cong_avoid_ai(struct tcp_sock *tp, u32 w, u32 acked)
 	}
 	tp->snd_cwnd = min(tp->snd_cwnd, tp->snd_cwnd_clamp);
         if(subcriber)
-            subcriber->update_rate(100);
+            subcriber->update_rate(tp->snd_cwnd);
 }
 EXPORT_SYMBOL_GPL(tcp_cong_avoid_ai);
 
@@ -457,7 +457,7 @@ void tcp_reno_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	/* In dangerous area, increase slowly. */
 	tcp_cong_avoid_ai(tp, tp->snd_cwnd, acked);
         if(subcriber)
-            subcriber->update_rate(100);
+            subcriber->update_rate(tp->snd_cwnd);
 }
 EXPORT_SYMBOL_GPL(tcp_reno_cong_avoid);
 
@@ -466,7 +466,7 @@ u32 tcp_reno_ssthresh(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
         if(subcriber)
-            subcriber->update_rate(100);
+            subcriber->update_rate(tp->snd_cwnd);
 	return max(tp->snd_cwnd >> 1U, 2U);
 }
 EXPORT_SYMBOL_GPL(tcp_reno_ssthresh);
