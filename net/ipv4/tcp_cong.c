@@ -18,6 +18,7 @@
 
 static DEFINE_SPINLOCK(tcp_cong_list_lock);
 static LIST_HEAD(tcp_cong_list);
+struct tcp_rate_subcriber *subcriber;
 
 /* Simple linear search, don't expect many entries! */
 static struct tcp_congestion_ops *tcp_ca_find(const char *name)
@@ -113,6 +114,28 @@ void tcp_unregister_congestion_control(struct tcp_congestion_ops *ca)
 	synchronize_rcu();
 }
 EXPORT_SYMBOL_GPL(tcp_unregister_congestion_control);
+
+
+/*
+ * Attach a new rate subscriber
+ */
+int tcp_register_rate_subscriber(struct tcp_rate_subcriber *s)
+{
+    subcriber = s;
+    return 0;
+}
+EXPORT_SYMBOL_GPL(tcp_register_rate_subscriber);
+
+
+/*
+ * Detach a new rate subscriber
+ */
+int tcp_unregister_rate_subscriber(void)
+{
+    subcriber = 0;
+    return 0;
+}
+EXPORT_SYMBOL_GPL(tcp_unregister_rate_subscriber);
 
 u32 tcp_ca_get_key_by_name(const char *name, bool *ecn_ca)
 {
@@ -380,6 +403,8 @@ u32 tcp_slow_start(struct tcp_sock *tp, u32 acked)
 
 	acked -= cwnd - tp->snd_cwnd;
 	tp->snd_cwnd = min(cwnd, tp->snd_cwnd_clamp);
+        if(subcriber)
+            subcriber->update_rate(100);
 
 	return acked;
 }
@@ -404,6 +429,8 @@ void tcp_cong_avoid_ai(struct tcp_sock *tp, u32 w, u32 acked)
 		tp->snd_cwnd += delta;
 	}
 	tp->snd_cwnd = min(tp->snd_cwnd, tp->snd_cwnd_clamp);
+        if(subcriber)
+            subcriber->update_rate(100);
 }
 EXPORT_SYMBOL_GPL(tcp_cong_avoid_ai);
 
@@ -429,6 +456,8 @@ void tcp_reno_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	}
 	/* In dangerous area, increase slowly. */
 	tcp_cong_avoid_ai(tp, tp->snd_cwnd, acked);
+        if(subcriber)
+            subcriber->update_rate(100);
 }
 EXPORT_SYMBOL_GPL(tcp_reno_cong_avoid);
 
@@ -436,7 +465,8 @@ EXPORT_SYMBOL_GPL(tcp_reno_cong_avoid);
 u32 tcp_reno_ssthresh(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
-
+        if(subcriber)
+            subcriber->update_rate(100);
 	return max(tp->snd_cwnd >> 1U, 2U);
 }
 EXPORT_SYMBOL_GPL(tcp_reno_ssthresh);

@@ -1,4 +1,5 @@
 #include <linux/module.h>
+#include "net/tcp.h"
 #include <net/sock.h> 
 #include <linux/netlink.h>
 #include <linux/skbuff.h> 
@@ -16,21 +17,28 @@ void update_rate(u8 rate)
     struct sk_buff *skb_out;
     int msg_size;
     int res;
+    char msg[80];
+    
+    printk(KERN_INFO "Entering: %s\n", __FUNCTION__);
     
     //update current rate
     current_rate = rate;
     
-    //send the rate to the userspace
-    msg_size = sizeof(current_rate);
+//    send the rate to the userspace
+    sprintf(msg, "%d",(int)current_rate);
+    msg_size = strlen(msg);
+    printk(KERN_ERR "!!!!!!!!!!!! AAAAAAAAAAA Entering: %s\n", msg);
     skb_out = nlmsg_new(msg_size, 0);
     if (!skb_out) {
         printk(KERN_ERR "Failed to allocate new skb\n");
         return;
     }
+    
+    printk(KERN_INFO "Converted the current_rate to string\n");
 
     nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, msg_size, 0);
     NETLINK_CB(skb_out).dst_group = 0; /* not in mcast group */
-    memcpy(nlmsg_data(nlh), &current_rate, msg_size);
+    memcpy(nlmsg_data(nlh), msg, msg_size);
     printk(KERN_INFO "Updating current_rate\n");
 
     res = nlmsg_unicast(nl_sk, skb_out, pid);
@@ -80,9 +88,15 @@ static void recv_msg(struct sk_buff *skb)
         printk(KERN_INFO "Error while sending bak to user\n");
 }
 
+static struct tcp_rate_subcriber subscriber __read_mostly = {
+	.update_rate = update_rate,
+	.owner		= THIS_MODULE,
+	.name		= "TCP CWND",
+};
+
 static int __init tcp_nl_init(void)
 {
-
+    tcp_register_rate_subscriber(&subscriber);
     printk("Entering: %s\n", __FUNCTION__);
     //nl_sk = netlink_kernel_create(&init_net, NETLINK_USER, 0, hello_nl_recv_msg, NULL, THIS_MODULE);
     struct netlink_kernel_cfg cfg = {
@@ -101,7 +115,7 @@ static int __init tcp_nl_init(void)
 
 static void __exit tcp_nl_exit(void)
 {
-
+    tcp_unregister_rate_subscriber();
     printk(KERN_INFO "exiting hello module\n");
     netlink_kernel_release(nl_sk);
 }
