@@ -539,12 +539,8 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
         
 	if (likely(OPTION_MF & options)) {
-            pr_debug("Writting MF TCP option in tcp_output.c:tcp_options_write");
+            pr_debug("Writting MF TCP option in bytes!!\n");
                 struct tcp_mf_cookie *mfc = opts->mf_cookie;
-                mfc->cur_thput = 5;
-                mfc->feedback_thput = 0;
-                mfc->req_thput = 10;
-                mfc->len = TCPOLEN_MF;
 	        *ptr++ = htonl((TCPOPT_NOP << 24) |
                                 (TCPOPT_NOP << 16) |
 			        (TCPOPT_MF << 8) |
@@ -721,11 +717,11 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 		size += TCPOLEN_TSTAMP_ALIGNED;
 	}
         
-	if (likely(tp->rx_opt.mf_ok)) {
+	if (likely(tp->rx_opt.mf_ok) && sysctl_tcp_mf) {
             pr_debug("Setting MF TCP for SYN packet in tcp_out.c:tcp_established_options()");
 		opts->options |= OPTION_MF;
 		opts->mf_cookie = tp->mf_cookie_req; 
-		size += TCPOLEN_MF_ALIGNED;
+		size += TCPOLEN_MF;
 	}        
 
 	eff_sacks = tp->rx_opt.num_sacks + tp->rx_opt.dsack;
@@ -971,7 +967,6 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	inet = inet_sk(sk);
 	tcb = TCP_SKB_CB(skb);
 	memset(&opts, 0, sizeof(opts));
-        printk(KERN_INFO "Hello world !!!!! 1");
         // TODO: populate tp->mf_cookie_req by Netlink socket
         pr_err("Setting option for MF TCP in tcp_output.c:tcp_transmit_skb()");
         tp->mf_cookie_req = kzalloc(sizeof(struct tcp_mf_cookie),
@@ -979,7 +974,7 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
         tp->mf_cookie_req->cur_thput = 4;
         tp->mf_cookie_req->feedback_thput = 0;
         tp->mf_cookie_req->req_thput = 10;
-        tp->mf_cookie_req->len = TCPOLEN_MF;
+        tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;
         
 	if (unlikely(tcb->tcp_flags & TCPHDR_SYN))
 		tcp_options_size = tcp_syn_options(sk, skb, &opts, &md5);

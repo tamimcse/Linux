@@ -195,13 +195,13 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_WINDOW         3
 #define TCPOLEN_SACK_PERM      2
 #define TCPOLEN_TIMESTAMP      10
-#define TCPOLEN_MF             3
+#define TCPOLEN_MF             5
 #define TCPOLEN_MD5SIG         18
 #define TCPOLEN_FASTOPEN_BASE  2
 #define TCPOLEN_EXP_FASTOPEN_BASE  4
 
 /* But this is what stacks really send out. */
-#define TCPOLEN_MF_ALIGNED              5
+#define TCPOLEN_MF_ALIGNED              8
 #define TCPOLEN_TSTAMP_ALIGNED		12
 #define TCPOLEN_WSCALE_ALIGNED		4
 #define TCPOLEN_SACKPERM_ALIGNED	4

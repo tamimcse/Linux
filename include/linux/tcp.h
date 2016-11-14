@@ -69,7 +69,7 @@ struct tcp_fastopen_cookie {
 
 /* TCP MF Cookie as stored in memory */
 struct tcp_mf_cookie {
-        s8	len;
+        u8	len;
         u8 req_thput,           /* Required throughput in MF */ 
            cur_thput,           /* Current throughput in MF */
            feedback_thput;      /* Feedback throughput in MF */
