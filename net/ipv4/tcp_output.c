@@ -693,7 +693,7 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 					struct tcp_out_options *opts,
 					struct tcp_md5sig_key **md5)
 {
-    pr_err("In TCP established options");
+//    pr_err("In TCP established options");
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int size = 0;
 	unsigned int eff_sacks;
@@ -968,14 +968,23 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	tcb = TCP_SKB_CB(skb);
 	memset(&opts, 0, sizeof(opts));
         // TODO: populate tp->mf_cookie_req by Netlink socket
-        pr_err("Setting option for MF TCP in tcp_output.c:tcp_transmit_skb()");
-        tp->mf_cookie_req = kzalloc(sizeof(struct tcp_mf_cookie),
-				   sk->sk_allocation);
-        tp->mf_cookie_req->cur_thput = 4;
-        tp->mf_cookie_req->feedback_thput = 0;
-        tp->mf_cookie_req->req_thput = 10;
-        tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;
-        
+//        pr_err("Setting option for MF TCP in tcp_output.c:tcp_transmit_skb()");
+        if(tp->rx_opt.saw_mf)
+        {
+            tp->mf_cookie_req = kzalloc(sizeof(struct tcp_mf_cookie),
+                                       sk->sk_allocation);
+            tp->mf_cookie_req->cur_thput = tp->rx_opt.feedback_thput;
+        }
+        else
+        { //First time
+            tp->mf_cookie_req = kzalloc(sizeof(struct tcp_mf_cookie),
+                                       sk->sk_allocation);
+            tp->mf_cookie_req->cur_thput = 4;
+            tp->mf_cookie_req->feedback_thput = 0;
+            tp->mf_cookie_req->req_thput = 10;
+            tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;                    
+        }
+
 	if (unlikely(tcb->tcp_flags & TCPHDR_SYN))
 		tcp_options_size = tcp_syn_options(sk, skb, &opts, &md5);
 	else
