@@ -373,7 +373,7 @@ struct tcp_sock {
 	struct tcp_fastopen_request *fastopen_req;
         
 /* TCP fastopen related information */
-	struct tcp_mf_cookie *mf_cookie_req;
+	struct tcp_mf_cookie mf_cookie_req;
         
         
 	/* fastopen_rsk points to request_sock that resulted in this big
