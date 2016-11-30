@@ -81,6 +81,7 @@ int ip_forward(struct sk_buff *skb)
 	struct rtable *rt;	/* Route we use */
 	struct ip_options *opt	= &(IPCB(skb)->opt);
 	struct net *net;
+        struct tcp_mf_cookie mfc;
 
 	/* that should never happen */
 	if (skb->pkt_type != PACKET_HOST)
@@ -100,6 +101,16 @@ int ip_forward(struct sk_buff *skb)
 
 	skb_forward_csum(skb);
 	net = dev_net(skb->dev);
+        
+        struct tcphdr *tcph = tcp_hdr(skb);
+        if(tcph)
+        {
+            memset(&mfc, 0, sizeof(struct tcp_mf_cookie));
+            parse_opt_mf(skb, &mfc);
+            pr_err("IN IP FORWARD: req_thput:%d feedback_thput:%d", 
+                (int)mfc.req_thput, (int)mfc.feedback_thput);                        
+        }
+        
 
 	/*
 	 *	According to the RFC, we must first decrease the TTL field. If
@@ -162,4 +173,44 @@ too_many_hops:
 drop:
 	kfree_skb(skb);
 	return NET_RX_DROP;
+}
+
+static void parse_opt_mf(const struct sk_buff *skb,
+		       struct tcp_mf_cookie *mfc)
+{
+	const unsigned char *ptr;
+	const struct tcphdr *th = tcp_hdr(skb);
+	int length = (th->doff * 4) - sizeof(struct tcphdr);
+
+	ptr = (const unsigned char *)(th + 1);
+        
+	while (length > 0) {
+		int opcode = *ptr++;
+		int opsize;
+
+		switch (opcode) {
+		case TCPOPT_EOL:
+			return;
+		case TCPOPT_NOP:	/* Ref: RFC 793 section 3.1 */
+			length--;
+			continue;
+		default:
+			opsize = *ptr++;
+			if (opsize < 2) /* "silly options" */
+				return;
+			if (opsize > length)
+				return;	/* don't parse partial options */
+			switch (opcode) {
+			case TCPOPT_MF:
+				if (opsize == TCPOLEN_MF) {         
+					mfc->cur_thput = *ptr;
+                                        mfc->req_thput = *(ptr + 1);
+                                        mfc->feedback_thput = *(ptr + 2);
+				}
+				break;                                        
+			}
+			ptr += opsize-2;
+			length -= opsize;
+		}
+	}
 }

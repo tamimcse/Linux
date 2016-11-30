@@ -547,6 +547,12 @@ int ip_frag_mem(struct net *net);
  */
  
 int ip_forward(struct sk_buff *skb);
+
+/**
+ *Parse the MF option in the IP layer 
+ */
+static void parse_opt_mf(const struct sk_buff *skb,
+		       struct tcp_mf_cookie *mfc);
  
 /*
  *	Functions provided by ip_options.c
