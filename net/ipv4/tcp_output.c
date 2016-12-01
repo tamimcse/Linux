@@ -717,8 +717,8 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 		size += TCPOLEN_TSTAMP_ALIGNED;
 	}
         
-	if (sysctl_tcp_mf) {
-            pr_err("Setting MF TCP for SYN packet in tcp_out.c:tcp_established_options()");
+	if (likely(tp->rx_opt.saw_mf & sysctl_tcp_mf)) {
+            pr_err("Setting MF TCP tcp_out.c:tcp_established_options()");
 		opts->options |= OPTION_MF;
 		opts->mf_cookie = tp->mf_cookie_req; 
 		size += TCPOLEN_MF;
@@ -976,10 +976,9 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
             if(tp->rx_opt.saw_mf)
             {
                 tp->mf_cookie_req->cur_thput = tp->rx_opt.feedback_thput;
-                tp->mf_cookie_req->req_thput = 10;
             }
             else
-            { //First time
+            { //First time. Orginally should be populated by application layer
                 tp->mf_cookie_req->cur_thput = 4;
                 tp->mf_cookie_req->feedback_thput = 0;
                 tp->mf_cookie_req->req_thput = 10;
