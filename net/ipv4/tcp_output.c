@@ -971,8 +971,8 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 //        pr_err("Setting option for MF TCP in tcp_output.c:tcp_transmit_skb()");
         if (likely(sysctl_tcp_mf))
         {
-            //TODO: memory leak
-            tp->mf_cookie_req = kzalloc(sizeof(struct tcp_mf_cookie), sk->sk_allocation);
+            if(!tp->mf_cookie_req)
+                tp->mf_cookie_req = kzalloc(sizeof(struct tcp_mf_cookie), sk->sk_allocation);
             if(tp->rx_opt.saw_mf)
             {
                 tp->mf_cookie_req->cur_thput = tp->rx_opt.feedback_thput;
