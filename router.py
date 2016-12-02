@@ -28,6 +28,7 @@ already built into Linux.
 from mininet.topo import Topo
 from mininet.net import Mininet
 from mininet.node import Node
+from mininet.link import TCLink
 from mininet.log import setLogLevel, info
 from mininet.cli import CLI
 
@@ -49,6 +50,9 @@ class NetworkTopo( Topo ):
     "A LinuxRouter connecting three IP subnets"
 
     def build( self, **_opts ):
+	access_link = dict(bw=10, delay='5ms', loss=10)
+	bottleneck_link = dict(bw=20, delay='50ms', loss=10)
+
         h1 = self.addHost( 'h1', ip='172.16.101.1/24', defaultRoute='via 172.16.101.2' )
         h2 = self.addHost( 'h2', ip='172.16.102.1/24', defaultRoute='via 172.16.102.2' )
 
@@ -61,20 +65,20 @@ class NetworkTopo( Topo ):
         r1 = self.addNode( 'r1', cls=LinuxRouter, ip='172.16.101.2/24' )
         r2 = self.addNode( 'r2', cls=LinuxRouter, ip='172.16.102.2/24' )
 
-        self.addLink( h1, r1, intfName2='r1-eth2', params2={ 'ip' : '172.16.101.2/24' } )
-        self.addLink( h2, r2, intfName2='r2-eth2', params2={ 'ip' : '172.16.102.2/24' } )
+        self.addLink( h1, r1, intfName2='r1-eth2', params2={ 'ip' : '172.16.101.2/24' },  **access_link)
+        self.addLink( h2, r2, intfName2='r2-eth2', params2={ 'ip' : '172.16.102.2/24' },  **access_link)
 #       Don't move the line. It doesn't work for some reason
-        self.addLink( r1, r2, intfName1='r1-eth1', params1={ 'ip' : '172.16.10.2/24' }, intfName2='r2-eth1', params2={ 'ip' : '172.16.10.3/24' } )
-        self.addLink( h3, r1, intfName2='r1-eth3', params2={ 'ip' : '172.16.103.2/24' } )
-        self.addLink( h4, r2, intfName2='r2-eth3', params2={ 'ip' : '172.16.104.2/24' } )
+        self.addLink( r1, r2, intfName1='r1-eth1', params1={ 'ip' : '172.16.10.2/24' }, intfName2='r2-eth1', params2={ 'ip' : '172.16.10.3/24' }, **bottleneck_link )
+        self.addLink( h3, r1, intfName2='r1-eth3', params2={ 'ip' : '172.16.103.2/24' },  **access_link )
+        self.addLink( h4, r2, intfName2='r2-eth3', params2={ 'ip' : '172.16.104.2/24' },  **access_link )
 
-        self.addLink( h5, r1, intfName2='r1-eth4', params2={ 'ip' : '172.16.105.2/24' } )
-        self.addLink( h6, r2, intfName2='r2-eth4', params2={ 'ip' : '172.16.106.2/24' } )
+        self.addLink( h5, r1, intfName2='r1-eth4', params2={ 'ip' : '172.16.105.2/24' },  **access_link )
+        self.addLink( h6, r2, intfName2='r2-eth4', params2={ 'ip' : '172.16.106.2/24' },  **access_link )
 
 def run():
     "Test linux router"
     topo = NetworkTopo()
-    net = Mininet( topo=topo, controller = None )
+    net = Mininet( topo=topo, link=TCLink, controller = None )
     net.start()
     info( '*** Configuring routers:\n' )
 #    net[ 'r1' ].cmd( 'ip neigh add 172.16.10.3 lladdr 2e:a9:cf:14:b4:6a dev r1-eth1' )
