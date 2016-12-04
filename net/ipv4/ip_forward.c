@@ -122,7 +122,8 @@ int ip_forward(struct sk_buff *skb)
 	struct ip_options *opt	= &(IPCB(skb)->opt);
 	struct net *net;
         struct tcp_mf_cookie mfc;
-
+        struct tcphdr *tcph;
+        
 	/* that should never happen */
 	if (skb->pkt_type != PACKET_HOST)
 		goto drop;
@@ -142,13 +143,14 @@ int ip_forward(struct sk_buff *skb)
 	skb_forward_csum(skb);
 	net = dev_net(skb->dev);
         
-        struct tcphdr *tcph = tcp_hdr(skb);
+        tcph = tcp_hdr(skb);
         if(tcph)
         {
             memset(&mfc, 0, sizeof(struct tcp_mf_cookie));
             parse_opt_mf(skb, &mfc);
-            pr_err("IN IP FORWARD: req_thput:%d feedback_thput:%d", 
-                (int)mfc.req_thput, (int)mfc.feedback_thput);                        
+            if(mfc.feedback_thput > 0 || mfc.req_thput > 0 )
+                pr_err("IN IP FORWARD: req_thput:%d feedback_thput:%d", 
+                    (int)mfc.req_thput, (int)mfc.feedback_thput);                        
         }
         
 
