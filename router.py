@@ -50,9 +50,7 @@ class LinuxRouter( Node ):
 class NetworkTopo( Topo ):
     "A LinuxRouter connecting three IP subnets"
 
-    def build( self, **_opts ):
-	cpuHost = .5/6
-
+    def build( self, **_opts ):	
         h1 = self.addHost( 'h1', ip='172.16.101.1/24', defaultRoute='via 172.16.101.2' )
         h2 = self.addHost( 'h2', ip='172.16.102.1/24', defaultRoute='via 172.16.102.2' )
 
@@ -75,7 +73,6 @@ class NetworkTopo( Topo ):
 
         self.addLink( h5, r1, intfName2='r1-eth4', params2={ 'ip' : '172.16.105.2/24' })
         self.addLink( h6, r2, intfName2='r2-eth4', params2={ 'ip' : '172.16.106.2/24' })
-
 
 def run():
     "Test linux router"
@@ -125,7 +122,7 @@ def run():
 	net[router].cmd( 'tc qdisc add dev {0}-eth1 root handle 1:0 netem delay {1} {2}'.format(router, bottleneck_delay, bottleneck_delay_var))
 	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 1:1 handle 10: tbf rate {1} buffer 1600 limit 3000'.format(router, bottleneck_rate))		      
 
-    net.pingAll()
+    #net.pingAll()
 
     net[ 'h1' ].cmd( 'sh streamer.sh 172.16.101.1' )
     net[ 'h2' ].cmd( 'sh streaming.sh 172.16.101.1' )
