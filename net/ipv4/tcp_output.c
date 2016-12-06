@@ -540,14 +540,13 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
         
 	if (likely(OPTION_MF & options)) {
             pr_debug("Writting MF TCP option in bytes!!\n");
-                struct tcp_mf_cookie *mfc = opts->mf_cookie;
 	        *ptr++ = htonl((TCPOPT_NOP << 24) |
                                 (TCPOPT_NOP << 16) |
 			        (TCPOPT_MF << 8) |
 			        TCPOLEN_MF);
-                *ptr++ = htonl((mfc->req_thput << 16) |
-                               (mfc->cur_thput << 8)  |
-                                mfc->feedback_thput);
+                *ptr++ = htonl((opts->mf_cookie->req_thput << 16) |
+                               (opts->mf_cookie->cur_thput << 8)  |
+                                opts->mf_cookie->feedback_thput);
 	}        
 }
 
@@ -560,8 +559,7 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int remaining = MAX_TCP_OPTION_SPACE;
-	struct tcp_fastopen_request *fastopen = tp->fastopen_req;
-        struct tcp_mf_cookie *tcp_mf_cookie = tp->mf_cookie_req;        
+	struct tcp_fastopen_request *fastopen = tp->fastopen_req; 
         
 #ifdef CONFIG_TCP_MD5SIG
 	*md5 = tp->af_specific->md5_lookup(sk, sk);
@@ -592,9 +590,9 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		remaining -= TCPOLEN_TSTAMP_ALIGNED;
 	}        
 	if (likely(sysctl_tcp_mf)) {
-                pr_err("Setting MF TCP for SYN packet in tcp_out.c:tcp_syn_options()");
+                pr_err("Setting MF TCP for SYN packet");
 		opts->options |= OPTION_MF;
-                opts->mf_cookie = tcp_mf_cookie;
+                opts->mf_cookie = tp->mf_cookie_req;
 		remaining -= TCPOLEN_MF_ALIGNED;
 	}        
 	if (likely(sysctl_tcp_window_scaling)) {
@@ -631,7 +629,8 @@ static unsigned int tcp_synack_options(struct request_sock *req,
 				       unsigned int mss, struct sk_buff *skb,
 				       struct tcp_out_options *opts,
 				       const struct tcp_md5sig_key *md5,
-				       struct tcp_fastopen_cookie *foc)
+				       struct tcp_fastopen_cookie *foc,
+				       struct tcp_mf_cookie *mfc)
 {
 	struct inet_request_sock *ireq = inet_rsk(req);
 	unsigned int remaining = MAX_TCP_OPTION_SPACE;
@@ -665,6 +664,12 @@ static unsigned int tcp_synack_options(struct request_sock *req,
 		opts->tsecr = req->ts_recent;
 		remaining -= TCPOLEN_TSTAMP_ALIGNED;
 	}
+	if (likely(sysctl_tcp_mf)) {
+		opts->options |= OPTION_MF;
+                opts->mf_cookie = mfc;
+		remaining -= TCPOLEN_MF_ALIGNED;     
+                pr_err("Setting MF TCP for SYN-ACK packet. Feedback: %d", opts->mf_cookie->feedback_thput);
+	}            
 	if (likely(ireq->sack_ok)) {
 		opts->options |= OPTION_SACK_ADVERTISE;
 		if (unlikely(!ireq->tstamp_ok))
@@ -717,11 +722,11 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 		size += TCPOLEN_TSTAMP_ALIGNED;
 	}
         
-	if (likely(tp->rx_opt.saw_mf & sysctl_tcp_mf)) {
-            pr_err("Setting MF TCP tcp_out.c:tcp_established_options()");
+	if (likely(tp->rx_opt.mf_ok) && sysctl_tcp_mf) {
+            pr_err("Setting MF TCP in Data Packet");
 		opts->options |= OPTION_MF;
 		opts->mf_cookie = tp->mf_cookie_req; 
-		size += TCPOLEN_MF;
+		size += TCPOLEN_MF_ALIGNED;
 	}        
 
 	eff_sacks = tp->rx_opt.num_sacks + tp->rx_opt.dsack;
@@ -968,24 +973,27 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	tcb = TCP_SKB_CB(skb);
 	memset(&opts, 0, sizeof(opts));
         // TODO: populate tp->mf_cookie_req by Netlink socket
-//        pr_err("Setting option for MF TCP in tcp_output.c:tcp_transmit_skb()");
         if (likely(sysctl_tcp_mf))
-        {
+        {            
             if(!tp->mf_cookie_req)
                 tp->mf_cookie_req = kzalloc(sizeof(struct tcp_mf_cookie), sk->sk_allocation);
-            if(tp->rx_opt.saw_mf)
-            {
-                tp->mf_cookie_req->cur_thput = tp->rx_opt.feedback_thput;
+            //First time populate the MF Cookie. Orginally should be 
+            //populated by application layer            
+            if(!tp->rx_opt.mf_ok)
+            {                
+                tp->mf_cookie_req->cur_thput = 2;
+                tp->mf_cookie_req->feedback_thput = 4;
+                tp->mf_cookie_req->req_thput = 10;
+                tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;                     
             }
             else
-            { //First time. Orginally should be populated by application layer
-                tp->mf_cookie_req->cur_thput = 4;
-                tp->mf_cookie_req->feedback_thput = 0;
-                tp->mf_cookie_req->req_thput = 10;
-                tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;                    
+            {
+                tp->mf_cookie_req->cur_thput = tp->rx_opt.cur_thput;
+                tp->mf_cookie_req->feedback_thput = tp->rx_opt.feedback_thput;
+                tp->mf_cookie_req->req_thput = tp->rx_opt.req_thput;
+                tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;                                    
             }
         }
-
 
 	if (unlikely(tcb->tcp_flags & TCPHDR_SYN))
 		tcp_options_size = tcp_syn_options(sk, skb, &opts, &md5);
@@ -3079,7 +3087,7 @@ struct sk_buff *tcp_make_synack(const struct sock *sk, struct dst_entry *dst,
 				enum tcp_synack_type synack_type)
 {
 	struct inet_request_sock *ireq = inet_rsk(req);
-	const struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_md5sig_key *md5 = NULL;
 	struct tcp_out_options opts;
 	struct sk_buff *skb;
@@ -3133,7 +3141,7 @@ struct sk_buff *tcp_make_synack(const struct sock *sk, struct dst_entry *dst,
 	md5 = tcp_rsk(req)->af_specific->req_md5_lookup(sk, req_to_sk(req));
 #endif
 	skb_set_hash(skb, tcp_rsk(req)->txhash, PKT_HASH_TYPE_L4);
-	tcp_header_size = tcp_synack_options(req, mss, skb, &opts, md5, foc) +
+	tcp_header_size = tcp_synack_options(req, mss, skb, &opts, md5, foc, tp->mf_cookie_req) +
 			  sizeof(*th);
 
 	skb_push(skb, tcp_header_size);

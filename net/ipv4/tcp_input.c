@@ -3762,8 +3762,6 @@ void tcp_parse_options(const struct sk_buff *skb,
 
 	ptr = (const unsigned char *)(th + 1);
 	opt_rx->saw_tstamp = 0;
-        opt_rx->saw_mf = 0;
-        opt_rx->feedback_thput = 0;        
         
 	while (length > 0) {
 		int opcode = *ptr++;
@@ -3858,14 +3856,15 @@ void tcp_parse_options(const struct sk_buff *skb,
 				break;     
 			case TCPOPT_MF:
 				if (opsize == TCPOLEN_MF) {
-					opt_rx->saw_mf = 1;
-                                        opt_rx->mf_ok = 1;
-					opt_rx->cur_thput = *ptr;
-                                        opt_rx->req_thput = *(ptr + 1);
+                                        //We wrote 3 bytes in Option Write
+                                        ptr++;
+                                        opt_rx->mf_ok = 1;     
+					opt_rx->req_thput = *ptr;
+                                        opt_rx->cur_thput = *(ptr + 1);
                                         opt_rx->feedback_thput = *(ptr + 2);
+                                pr_err("MF TCP option received: req_thput:%d curr: %d feedback_thput:%d", 
+                                        (int)opt_rx->req_thput, (int)opt_rx->cur_thput, (int)opt_rx->feedback_thput);                                
 				}
-                                pr_err("MF TCP option received: req_thput:%d feedback_thput:%d", 
-                                        (int)opt_rx->req_thput, (int)opt_rx->feedback_thput);
 				break;                                        
 			}
 			ptr += opsize-2;
@@ -5668,6 +5667,18 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 	tcp_parse_options(skb, &tp->rx_opt, 0, &foc);
 	if (tp->rx_opt.saw_tstamp && tp->rx_opt.rcv_tsecr)
 		tp->rx_opt.rcv_tsecr -= tp->tsoffset;
+        
+        if(likely(sysctl_tcp_mf))
+        {
+            //Copy the received option to TCP MF cookie        
+            if(!tp->mf_cookie_req)
+                tp->mf_cookie_req = (struct tcp_mf_cookie *) kzalloc(sizeof(struct tcp_mf_cookie), 
+                                            sk->sk_allocation);
+            tp->mf_cookie_req->cur_thput = tp->rx_opt.cur_thput;
+            tp->mf_cookie_req->feedback_thput = tp->rx_opt.feedback_thput;
+            tp->mf_cookie_req->req_thput = tp->rx_opt.req_thput;
+            tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;     
+        }        
 
 	if (th->ack) {
 		/* rfc793:
@@ -6326,7 +6337,20 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 	tmp_opt.mss_clamp = af_ops->mss_clamp;
 	tmp_opt.user_mss  = tp->rx_opt.user_mss;
 	tcp_parse_options(skb, &tmp_opt, 0, want_cookie ? NULL : &foc);
-
+        
+        if(likely(sysctl_tcp_mf))
+        {
+            //Copy the received option to TCP MF cookie        
+            tp->rx_opt.mf_ok = tmp_opt.mf_ok;
+            if(!tp->mf_cookie_req)
+                tp->mf_cookie_req = (struct tcp_mf_cookie *) kzalloc(sizeof(struct tcp_mf_cookie), 
+                                            sk->sk_allocation);
+            tp->mf_cookie_req->cur_thput = tmp_opt.cur_thput;
+            tp->mf_cookie_req->feedback_thput = tmp_opt.feedback_thput;
+            tp->mf_cookie_req->req_thput = tmp_opt.req_thput;
+            tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;     
+        }
+        
 	if (want_cookie && !tmp_opt.saw_tstamp)
 		tcp_clear_options(&tmp_opt);
 

@@ -101,9 +101,11 @@ static void parse_opt_mf(const struct sk_buff *skb,
 				return;	/* don't parse partial options */
 			switch (opcode) {
 			case TCPOPT_MF:
-				if (opsize == TCPOLEN_MF) {         
-					mfc->cur_thput = *ptr;
-                                        mfc->req_thput = *(ptr + 1);
+				if (opsize == TCPOLEN_MF) {    
+                                        //We wrote 3 bytes in Option Write
+                                        ptr++;                           
+					mfc->req_thput = *ptr;
+                                        mfc->cur_thput = *(ptr + 1);
                                         mfc->feedback_thput = *(ptr + 2);
 				}
 				break;                                        
