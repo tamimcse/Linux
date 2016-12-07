@@ -74,12 +74,15 @@ static int ip_forward_finish(struct net *net, struct sock *sk, struct sk_buff *s
 	return dst_output(net, sk, skb);
 }
 
-static void parse_opt_mf(const struct sk_buff *skb,
+static void calc_opt_mf(struct sk_buff *skb,
 		       struct tcp_mf_cookie *mfc)
 {
-	const unsigned char *ptr;
+	unsigned char *ptr;
 	const struct tcphdr *th = tcp_hdr(skb);
 	int length = (th->doff * 4) - sizeof(struct tcphdr);
+        u8 capacity;
+        u8 perFlow;
+        char *feedback;
 
 	ptr = (const unsigned char *)(th + 1);
         
@@ -103,12 +106,17 @@ static void parse_opt_mf(const struct sk_buff *skb,
 			case TCPOPT_MF:
 				if (opsize == TCPOLEN_MF) {    
                                         //We wrote 3 bytes in Option Write
-                                        ptr++;                           
+                                        ptr++;     
+                                        capacity = 20;
+                                        perFlow = capacity/3;
+                                        feedback = ptr + 2;
+                                        if(*feedback > perFlow)
+                                            *feedback = perFlow;
 					mfc->req_thput = *ptr;
                                         mfc->cur_thput = *(ptr + 1);
-                                        mfc->feedback_thput = *(ptr + 2);
+                                        mfc->feedback_thput = *(ptr + 2);                                        
 				}
-				break;                                        
+				return;                                        
 			}
 			ptr += opsize-2;
 			length -= opsize;
@@ -149,7 +157,7 @@ int ip_forward(struct sk_buff *skb)
         if(tcph)
         {
             memset(&mfc, 0, sizeof(struct tcp_mf_cookie));
-            parse_opt_mf(skb, &mfc);
+            calc_opt_mf(skb, &mfc);
             if(mfc.feedback_thput > 0 || mfc.req_thput > 0 )
                 pr_err("IN IP FORWARD: req_thput:%d feedback_thput:%d", 
                     (int)mfc.req_thput, (int)mfc.feedback_thput);                        

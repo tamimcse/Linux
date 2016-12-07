@@ -977,13 +977,13 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
         {            
             if(!tp->mf_cookie_req)
                 tp->mf_cookie_req = kzalloc(sizeof(struct tcp_mf_cookie), sk->sk_allocation);
-            //First time populate the MF Cookie. Orginally should be 
-            //populated by application layer            
+            //Initially current thput = feedback throughput = required throughput        
             if(!tp->rx_opt.mf_ok)
             {                
-                tp->mf_cookie_req->cur_thput = 2;
-                tp->mf_cookie_req->feedback_thput = 4;
-                tp->mf_cookie_req->req_thput = 10;
+                tp->mf_cookie_req->cur_thput
+                        = tp->mf_cookie_req->feedback_thput
+                        = tp->mf_cookie_req->req_thput
+                        = 10;
                 tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;                     
             }
         }
