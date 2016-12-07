@@ -124,7 +124,7 @@ def run():
 
     #net.pingAll()
 
-    net[ 'h1' ].cmd( 'sh streamer.sh 172.16.101.1' )
+    net[ 'h1' ].cmd( 'sudo sh cam_streamer.sh 172.16.101.1' )
     net[ 'h2' ].cmd( 'sh streaming.sh 172.16.101.1' )
     net[ 'h3' ].cmd( 'sh streamer.sh 172.16.103.1' )
     net[ 'h4' ].cmd( 'sh streaming.sh 172.16.103.1' )
