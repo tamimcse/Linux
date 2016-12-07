@@ -986,13 +986,6 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
                 tp->mf_cookie_req->req_thput = 10;
                 tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;                     
             }
-            else
-            {
-                tp->mf_cookie_req->cur_thput = tp->rx_opt.cur_thput;
-                tp->mf_cookie_req->feedback_thput = tp->rx_opt.feedback_thput;
-                tp->mf_cookie_req->req_thput = tp->rx_opt.req_thput;
-                tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;                                    
-            }
         }
 
 	if (unlikely(tcb->tcp_flags & TCPHDR_SYN))
