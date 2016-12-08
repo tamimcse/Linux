@@ -1,0 +1,28 @@
+#!/bin/sh
+
+set print "-"
+set terminal png
+set autoscale x
+set autoscale y
+#Set legend
+set key inside right top
+set datafile missing "-nan"
+
+logfile = ARG1
+outPre = ARG2
+
+#Plot Cwnd && SSTH
+set output 'cwnd.png'
+set title "Congestion Window vs. Time"
+set xlabel "Time (Seconds)"
+set ylabel "Congestion window"
+plot logfile using 1:9 with linespoints title 'tcp cwnd', logfile using 1:10 with linespoints title 'tcp ssth'
+
+#Plot RTT
+set output "rtt.png"
+set title "RTT vs. Time"
+set xlabel "Time (Seconds)"
+set ylabel "RTT"
+plot logfile using 1:11 with linespoints title 'tcp rtt'
+
+

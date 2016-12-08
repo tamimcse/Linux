@@ -116,4 +116,5 @@ all.config
 # Kdevelop4
 *.kdev4
 /mf_tcp/dist/
-*.log
+logs
+*.png
