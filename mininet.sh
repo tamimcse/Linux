@@ -7,4 +7,4 @@ TCPCAP=$! &&
 echo $TCPCAP &&
 sudo dmesg -c &&
 sudo python router.py &&
-kill $TCPCAP
+sudo kill $TCPCAP
