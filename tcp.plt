@@ -12,14 +12,14 @@ logfile = ARG1
 outPre = ARG2
 
 #Plot Cwnd && SSTH
-set output 'cwnd.png'
+set output sprintf("%s-cwnd.png",outPre)
 set title "Congestion Window vs. Time"
 set xlabel "Time (Seconds)"
 set ylabel "Congestion window"
 plot logfile using 1:9 with linespoints title 'tcp cwnd', logfile using 1:10 with linespoints title 'tcp ssth'
 
 #Plot RTT
-set output "rtt.png"
+set output sprintf("%s-rtt.png",outPre)
 set title "RTT vs. Time"
 set xlabel "Time (Seconds)"
 set ylabel "RTT"
