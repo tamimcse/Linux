@@ -16,5 +16,6 @@ sudo gnuplot -c tcp.plt ./logs/h1.log h1 &&
 sudo gnuplot -c tcp.plt ./logs/h3.log h3 &&
 sudo gnuplot -c tcp.plt ./logs/h5.log h5 &&
 sudo kill $TCPCAP &&
-sudo lsof | grep tcpprobe &&
+#sudo lsof | grep tcpprobe &&
+for pid in $(lsof | grep tcpprobe | awk '{print $2}') ; do kill $pid ; done &&
 sudo modprobe -r tcp_probe
