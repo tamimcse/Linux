@@ -32,7 +32,7 @@ from mininet.link import TCLink
 from mininet.node import CPULimitedHost
 from mininet.log import setLogLevel, info
 from mininet.cli import CLI
-
+import sys
 
 class LinuxRouter( Node ):
     "A Node with IP forwarding enabled."
@@ -74,7 +74,7 @@ class NetworkTopo( Topo ):
         self.addLink( h5, r1, intfName2='r1-eth4', params2={ 'ip' : '172.16.105.2/24' })
         self.addLink( h6, r2, intfName2='r2-eth4', params2={ 'ip' : '172.16.106.2/24' })
 
-def run():
+def main(cli=0):
     "Test linux router"
     topo = NetworkTopo()
     net = Mininet( topo=topo, controller = None )
@@ -124,16 +124,22 @@ def run():
 
     #net.pingAll()
 
-    net[ 'h1' ].cmd( 'sudo sh cam_streamer.sh 172.16.101.1' )
-    net[ 'h2' ].cmd( 'sh streaming.sh 172.16.101.1' )
-    net[ 'h3' ].cmd( 'sh streamer.sh 172.16.103.1' )
-    net[ 'h4' ].cmd( 'sh streaming.sh 172.16.103.1' )
-    net[ 'h5' ].cmd( 'sh streamer.sh 172.16.105.1' )
-    net[ 'h6' ].cmd( 'sh streaming.sh 172.16.105.1' )
-   
-    CLI( net )
+    if cli:
+        CLI( net )
+    else:
+	net[ 'h1' ].cmd( 'sudo sh cam_streamer.sh 172.16.101.1' )
+	net[ 'h2' ].cmd( 'sh streaming.sh 172.16.101.1' )
+	net[ 'h3' ].cmd( 'sh streamer.sh 172.16.103.1' )
+	net[ 'h4' ].cmd( 'sh streaming.sh 172.16.103.1' )
+	net[ 'h5' ].cmd( 'sh streamer.sh 172.16.105.1' )
+	net[ 'h6' ].cmd( 'sh streaming.sh 172.16.105.1' )
+        CLI( net )
     net.stop()
 
 if __name__ == '__main__':
+    args = sys.argv
     setLogLevel( 'info' )
-    run()
+    cli = 0
+    if "--cli" in args:
+        cli = 1
+    main(cli)
