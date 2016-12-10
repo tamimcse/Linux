@@ -23,6 +23,6 @@ set output sprintf("%s-rtt.png",outPre)
 set title "RTT vs. Time"
 set xlabel "Time (Seconds)"
 set ylabel "RTT"
-plot logfile using 1:11 with linespoints title 'tcp rtt'
+plot logfile using 1:($11*8/1000) with linespoints title 'tcp rtt'
 
 
