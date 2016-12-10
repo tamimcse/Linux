@@ -1,21 +1,18 @@
-sudo dmesg -c > logs/old.log &&
+for pid in $(sudo lsof | grep tcpprobe | awk '{print $2}') ; do sudo kill $pid ; done &&
+sudo modprobe -r tcp_probe
+sudo dmesg -c > old.log &&
 #trace all ports. write log whenever receive an acknowledgement
-sudo modprobe tcp_probe port=0 full=0 bufsize=128 &&
+sudo modprobe tcp_probe port=0 full=1 bufsize=128 &&
 #Single & because it's a background task
 sudo chmod a+rwx /proc/net/tcpprobe &&
-sudo cat /proc/net/tcpprobe > ./logs/trace.log &
+sudo cat /proc/net/tcpprobe > trace.data &
 TCPCAP=$! &&
 echo $TCPCAP &&
 sudo python router.py &&
-cd logs &&
-sudo cat trace.log | grep  '172.16.101.1:8554 172.16' > h1.log &&
-sudo cat trace.log | grep  '172.16.103.1:8554 172.16' > h3.log &&
-sudo cat trace.log | grep  '172.16.105.1:8554 172.16' > h5.log &&
-cd .. &&
-sudo gnuplot -c tcp.plt ./logs/h1.log h1 &&
-sudo gnuplot -c tcp.plt ./logs/h3.log h3 &&
-sudo gnuplot -c tcp.plt ./logs/h5.log h5 &&
-sudo kill $TCPCAP &&
+sudo cat trace.data | grep -a  '172.16.101.1:8554 172.16' > h1.data &&
+sudo cat trace.data | grep -a '172.16.103.1:8554 172.16' > h3.data &&
+sudo cat trace.data | grep -a '172.16.105.1:8554 172.16' > h5.data
+#sudo kill $TCPCAP &&
 #sudo lsof | grep tcpprobe &&
-for pid in $(lsof | grep tcpprobe | awk '{print $2}') ; do kill $pid ; done &&
-sudo modprobe -r tcp_probe
+#for pid in $(sudo lsof | grep tcpprobe | awk '{print $2}') ; do sudo kill $pid ; done &&
+#sudo modprobe -r tcp_probe
