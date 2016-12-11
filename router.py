@@ -124,7 +124,10 @@ def main(cli=0):
 
     #net.pingAll()
 
+    hosts = [net['h1'], net['h2']]
+        
     if cli:
+        net.iperf(hosts)
         CLI( net )
     else:
 	net[ 'h1' ].cmd( 'sudo sh cam_streamer.sh 172.16.101.1' )
