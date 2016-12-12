@@ -86,13 +86,13 @@ def main(cli=0):
     access_delay_var = '2ms'
     access_loss = '0.1%'
     #mbps = Mega Bytes per sec
-    access_rate = '10mbps'
+    access_rate = '256kbps'
 
     bottleneck_delay = '50ms'
     bottleneck_delay_var = '3ms'
     bottleneck_loss = '0.1%'
     #mbps = Mega Bytes per sec
-    bottleneck_rate = '20mbps'
+    bottleneck_rate = '512kbps'
 
     info( '*** Configuring routers:\n' )
 #    net[ 'r1' ].cmd( 'ip neigh add 172.16.10.3 lladdr 2e:a9:cf:14:b4:6a dev r1-eth1' )
