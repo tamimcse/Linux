@@ -80,14 +80,16 @@ def main(cli=0):
     net = Mininet( topo=topo, controller = None )
     net.start()
 
+    queuing_del = '100ms'
+
     access_delay = '10ms'
-    access_delay_var = '5ms'
+    access_delay_var = '2ms'
     access_loss = '0.1%'
     #mbps = Mega Bytes per sec
     access_rate = '10mbps'
 
     bottleneck_delay = '50ms'
-    bottleneck_delay_var = '5ms'
+    bottleneck_delay_var = '2ms'
     bottleneck_loss = '0.1%'
     #mbps = Mega Bytes per sec
     bottleneck_rate = '20mbps'
@@ -106,8 +108,8 @@ def main(cli=0):
 
     hosts = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']
     for host in hosts:
-	net[host].cmd( 'tc qdisc add dev {0}-eth0 root handle 1:0 netem delay {1} {2}'.format(host, access_delay, access_delay_var))
-	net[host].cmd( 'tc qdisc add dev {0}-eth0 parent 1:1 handle 10: tbf rate {1} buffer 1600 limit 3000'.format(host, access_rate))
+	net[host].cmd( 'tc qdisc add dev {0}-eth0 root handle 1:1 tbf rate {1} latency {2} burst 1540'.format(host, access_rate, queuing_del))
+	net[host].cmd( 'tc qdisc add dev {0}-eth0 parent 1:1 handle 10: netem delay {1}'.format(host, access_delay))
 #	net[host].cmd( 'tc qdisc change dev {0}-eth0 root netem loss {1}'.format(host, access_loss))
 #	net[host].cmd( 'tc -s qdisc show dev {0}-eth0'.format(host))
 
@@ -115,19 +117,20 @@ def main(cli=0):
     ifs = ['eth2 ', 'eth3 ', 'eth4']
     for router in routers:
     	for inf in ifs:
-		net[router].cmd( 'tc qdisc add dev {0}-{1} root handle 1:0 netem delay {2} {3}'.format(router, inf, access_delay, access_delay_var))
-		net[router].cmd( 'tc qdisc add dev {0}-{1} parent 1:1 handle 10: tbf rate {2} buffer 1600 limit 3000'.format(router, inf, access_rate))	
+		net[router].cmd( 'tc qdisc add dev {0}-{1} root handle 1:2 tbf rate {2} latency {3} burst 1540'.format(router, inf, bottleneck_rate, queuing_del))
+		net[router].cmd( 'tc qdisc add dev {0}-{1} parent 1:2 handle 20: netem delay {2}'.format(router, inf, bottleneck_delay))
 
     for router in routers:    	
-	net[router].cmd( 'tc qdisc add dev {0}-eth1 root handle 1:0 netem delay {1} {2}'.format(router, bottleneck_delay, bottleneck_delay_var))
-	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 1:1 handle 10: tbf rate {1} buffer 1600 limit 3000'.format(router, bottleneck_rate))		      
+	net[router].cmd( 'tc qdisc add dev {0}-eth1 root handle 1:3 tbf rate {1} latency {2} burst 1540'.format(router, access_rate, queuing_del))
+	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 1:3 handle 30: netem delay {1}'.format(router, access_delay))
+#	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 1:1 handle 10: tbf rate {1} buffer 1600 limit 3000'.format(router, bottleneck_rate))		      
 
     #net.pingAll()
 
     hosts = [net['h1'], net['h2']]
         
     if cli:
-        net.iperf(hosts)
+        net.iperf(hosts, seconds=30, l4Type='UDP', udpBw='160M')
         CLI( net )
     else:
 	net[ 'h1' ].cmd( 'sudo sh cam_streamer.sh 172.16.101.1' )
