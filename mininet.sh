@@ -1,5 +1,5 @@
 for pid in $(sudo lsof | grep tcpprobe | awk '{print $2}') ; do sudo kill $pid ; done &&
-sudo modprobe -r tcp_probe
+sudo modprobe -r tcp_probe &&
 sudo dmesg -c > old.log &&
 #trace all ports. write log whenever receive an acknowledgement
 sudo modprobe tcp_probe port=0 full=1 bufsize=128 &&
