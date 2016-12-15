@@ -1,8 +1,10 @@
 for pid in $(sudo lsof | grep tcpprobe | awk '{print $2}') ; do sudo kill $pid ; done &&
 sudo modprobe -r tcp_probe &&
 sudo dmesg -c > old.log &&
-#trace all ports. write log whenever receive an acknowledgement
-sudo modprobe tcp_probe port=0 full=1 bufsize=128 &&
+#port=0 means trace all ports. 
+#full=1 => write log whenever receive an acknowledgement
+#full=0 => write log only when Cwnd changes
+sudo modprobe tcp_probe port=0 full=0 bufsize=128 &&
 #Single & because it's a background task
 sudo chmod a+rwx /proc/net/tcpprobe &&
 sudo cat /proc/net/tcpprobe > trace.data &

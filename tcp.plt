@@ -16,7 +16,8 @@ set output sprintf("%s-cwnd.png",outPre)
 set title "Congestion Window vs. Time"
 set xlabel "Time (Seconds)"
 set ylabel "Congestion window"
-plot logfile using 1:7 with linespoints title 'tcp cwnd', logfile using 1:8 with linespoints title 'tcp ssth'
+plot logfile using 1:7 with linespoints title 'tcp cwnd'
+#, logfile using 1:8 with linespoints title 'tcp ssth'
 
 #Plot RTT
 set output sprintf("%s-rtt.png",outPre)
