@@ -86,13 +86,13 @@ def main(cli=0):
     access_delay_var = '2ms'
     access_loss = '0.1%'
     #mbps = Mega Bytes per sec
-    access_rate = '256kbps'
+    access_rate = '1536kbit' 
 
     bottleneck_delay = '50ms'
     bottleneck_delay_var = '3ms'
     bottleneck_loss = '0.1%'
     #mbps = Mega Bytes per sec
-    bottleneck_rate = '512kbps'
+    bottleneck_rate = '2048kbit'
 
     info( '*** Configuring routers:\n' )
 #    net[ 'r1' ].cmd( 'ip neigh add 172.16.10.3 lladdr 2e:a9:cf:14:b4:6a dev r1-eth1' )
@@ -117,12 +117,12 @@ def main(cli=0):
     ifs = ['eth2 ', 'eth3 ', 'eth4']
     for router in routers:
     	for inf in ifs:
-		net[router].cmd( 'tc qdisc add dev {0}-{1} root handle 1: tbf rate {2} latency {3} burst 1540'.format(router, inf, bottleneck_rate, queuing_del))
-		net[router].cmd( 'tc qdisc add dev {0}-{1} parent 1:1 handle 10: netem delay {2} {3}'.format(router, inf, bottleneck_delay, bottleneck_delay_var))
+		net[router].cmd( 'tc qdisc add dev {0}-{1} root handle 1: tbf rate {2} latency {3} burst 1540'.format(router, inf, access_rate, queuing_del))
+		net[router].cmd( 'tc qdisc add dev {0}-{1} parent 1:1 handle 10: netem delay {2} {3}'.format(router, inf, access_delay, access_delay_var))
 
     for router in routers:    	
-	net[router].cmd( 'tc qdisc add dev {0}-eth1 root handle 1: tbf rate {1} latency {2} burst 1540'.format(router, access_rate, queuing_del))
-	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 1:1 handle 10: netem delay {1} {2}'.format(router, access_delay, access_delay_var))
+	net[router].cmd( 'tc qdisc add dev {0}-eth1 root handle 1: tbf rate {1} latency {2} burst 1540'.format(router, bottleneck_rate, queuing_del))
+	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 1:1 handle 10: netem delay {1} {2}'.format(router, bottleneck_delay, bottleneck_delay_var))
 #	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 1:1 handle 10: tbf rate {1} buffer 1600 limit 3000'.format(router, bottleneck_rate))		      
 
     #net.pingAll()
