@@ -92,7 +92,7 @@ def main(cli=0):
     bottleneck_delay_var = '3ms'
     bottleneck_loss = '0.1%'
     #mbps = Mega Bytes per sec
-    bottleneck_rate = '2048kbit'
+    bottleneck_rate = '1024kbit'#'2048' for avoiding congestion
 
     info( '*** Configuring routers:\n' )
 #    net[ 'r1' ].cmd( 'ip neigh add 172.16.10.3 lladdr 2e:a9:cf:14:b4:6a dev r1-eth1' )
