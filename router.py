@@ -86,7 +86,7 @@ def main(cli=0):
     access_delay_var = '2ms'
     access_loss = '0.1%'
     #mbps = Mega Bytes per sec
-    access_rate = '1536kbit' 
+    access_rate = '1024kbit' 
 
     bottleneck_delay = '50ms'
     bottleneck_delay_var = '3ms'
