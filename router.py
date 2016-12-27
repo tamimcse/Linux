@@ -140,6 +140,7 @@ def main(cli=0):
 	net[ 'h4' ].cmd( 'sh streaming.sh 172.16.103.1' )
 	net[ 'h5' ].cmd( 'sh streamer.sh 172.16.105.1' )
 	net[ 'h6' ].cmd( 'sh streaming.sh 172.16.105.1' )
+#	net[ 'r1' ].cmd( 'watch  -dc  tc -s qdisc show dev r1-eth1' )
         CLI( net )
     net.stop()
 
