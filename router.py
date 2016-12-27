@@ -121,9 +121,10 @@ def main(cli=0):
 		net[router].cmd( 'tc qdisc add dev {0}-{1} parent 1:1 handle 10: netem delay {2} {3}'.format(router, inf, access_delay, access_delay_var))
 
     for router in routers:    	
-	net[router].cmd( 'tc qdisc add dev {0}-eth1 root handle 1: tbf rate {1} latency {2} burst 1540'.format(router, bottleneck_rate, queuing_del))
-	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 1:1 handle 10: netem delay {1} {2}'.format(router, bottleneck_delay, bottleneck_delay_var))
-#	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 1:1 handle 10: tbf rate {1} buffer 1600 limit 3000'.format(router, bottleneck_rate))		      
+	net[router].cmd( 'tc qdisc add dev {0}-eth1 root handle 1: htb default 10'.format(router))
+	net[router].cmd( 'tc class add dev {0}-eth1 parent 1:0 classid 1:1 htb rate {1}'.format(router, bottleneck_rate))
+	net[router].cmd( 'tc class add dev {0}-eth1 parent 1:1 classid 1:10 htb rate {1}'.format(router, bottleneck_rate))
+	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 1:10 handle 101: netem delay {1} {2}'.format(router, bottleneck_delay, bottleneck_delay_var))	      
 
     #net.pingAll()
 
