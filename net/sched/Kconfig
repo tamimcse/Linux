@@ -352,6 +352,24 @@ config NET_SCH_PLUG
 	  To compile this code as a module, choose M here: the
 	  module will be called sch_plug.
 
+config NET_SCH_MF
+	tristate "MF Scheduler"
+	depends on NET_CLS_ACT
+	select NET_INGRESS
+	select NET_EGRESS
+	---help---
+	  Say Y here if you want to use classifiers for incoming and/or outgoing
+	  packets. This qdisc doesn't do anything else besides running classifiers,
+	  which can also have actions attached to them. In case of outgoing packets,
+	  classifiers that this qdisc holds are executed in the transmit path
+	  before real enqueuing to an egress qdisc happens.
+
+	  If unsure, say Y.
+
+	  To compile this code as a module, choose M here: the module will be
+	  called sch_ingress with alias of sch_clsact.
+
+
 comment "Classification"
 
 config NET_CLS
