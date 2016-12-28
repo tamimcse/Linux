@@ -74,55 +74,6 @@ static int ip_forward_finish(struct net *net, struct sock *sk, struct sk_buff *s
 	return dst_output(net, sk, skb);
 }
 
-static void calc_opt_mf(struct sk_buff *skb,
-		       struct tcp_mf_cookie *mfc)
-{
-	unsigned char *ptr;
-	const struct tcphdr *th = tcp_hdr(skb);
-	int length = (th->doff * 4) - sizeof(struct tcphdr);
-        u8 capacity;
-        u8 perFlow;
-        char *feedback;
-
-	ptr = (const unsigned char *)(th + 1);
-        
-	while (length > 0) {
-		int opcode = *ptr++;
-		int opsize;
-
-		switch (opcode) {
-		case TCPOPT_EOL:
-			return;
-		case TCPOPT_NOP:	/* Ref: RFC 793 section 3.1 */
-			length--;
-			continue;
-		default:
-			opsize = *ptr++;
-			if (opsize < 2) /* "silly options" */
-				return;
-			if (opsize > length)
-				return;	/* don't parse partial options */
-			switch (opcode) {
-			case TCPOPT_MF:
-				if (opsize == TCPOLEN_MF) {    
-                                        //We wrote 3 bytes in Option Write
-                                        ptr++;     
-                                        capacity = 20;
-                                        perFlow = capacity/3;
-                                        feedback = ptr + 2;
-                                        if(*feedback > perFlow)
-                                            *feedback = perFlow;
-					mfc->req_thput = *ptr;
-                                        mfc->cur_thput = *(ptr + 1);
-                                        mfc->feedback_thput = *(ptr + 2);                                        
-				}
-				return;                                        
-			}
-			ptr += opsize-2;
-			length -= opsize;
-		}
-	}
-}
 
 int ip_forward(struct sk_buff *skb)
 {
@@ -131,8 +82,6 @@ int ip_forward(struct sk_buff *skb)
 	struct rtable *rt;	/* Route we use */
 	struct ip_options *opt	= &(IPCB(skb)->opt);
 	struct net *net;
-        struct tcp_mf_cookie mfc;
-        struct tcphdr *tcph;
         
 	/* that should never happen */
 	if (skb->pkt_type != PACKET_HOST)
@@ -152,17 +101,6 @@ int ip_forward(struct sk_buff *skb)
 
 	skb_forward_csum(skb);
 	net = dev_net(skb->dev);
-        
-        tcph = tcp_hdr(skb);
-        if(tcph)
-        {
-            memset(&mfc, 0, sizeof(struct tcp_mf_cookie));
-            calc_opt_mf(skb, &mfc);
-            if(mfc.feedback_thput > 0 || mfc.req_thput > 0 )
-                pr_err("IN IP FORWARD: req_thput:%d feedback_thput:%d", 
-                    (int)mfc.req_thput, (int)mfc.feedback_thput);                        
-        }
-        
 
 	/*
 	 *	According to the RFC, we must first decrease the TTL field. If
