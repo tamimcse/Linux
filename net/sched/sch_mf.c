@@ -22,6 +22,7 @@
 
 struct mf_sched_data {
     struct tcp_mf_cookie mfc;
+    struct Qdisc	*qdisc;
 };
 
 
@@ -111,6 +112,7 @@ static inline struct sk_buff *mf_dequeue(struct Qdisc *sch)
 
 static int fifo_init(struct Qdisc *sch, struct nlattr *opt)
 {
+        struct mf_sched_data *q = qdisc_priv(sch);
 	bool bypass;
 	if (opt == NULL) {
 		u32 limit = qdisc_dev(sch)->tx_queue_len;
@@ -118,6 +120,13 @@ static int fifo_init(struct Qdisc *sch, struct nlattr *opt)
 	} 
 
 	return 0;
+}
+
+
+static void mf_destroy(struct Qdisc *sch)
+{
+	struct mf_sched_data *q = qdisc_priv(sch);
+	qdisc_destroy(q->qdisc);
 }
 
 static int fifo_dump(struct Qdisc *sch, struct sk_buff *skb)
@@ -132,8 +141,68 @@ nla_put_failure:
 	return -1;
 }
 
+static int mf_dump_class(struct Qdisc *sch, unsigned long cl,
+			  struct sk_buff *skb, struct tcmsg *tcm)
+{
+	struct mf_sched_data *q = qdisc_priv(sch);
+
+	tcm->tcm_handle |= TC_H_MIN(1);
+	tcm->tcm_info = q->qdisc->handle;
+
+	return 0;
+}
+
+static int mf_graft(struct Qdisc *sch, unsigned long arg, struct Qdisc *new,
+		     struct Qdisc **old)
+{
+	struct mf_sched_data *q = qdisc_priv(sch);
+
+	if (new == NULL)
+		new = &noop_qdisc;
+
+	*old = qdisc_replace(sch, new, &q->qdisc);
+	return 0;
+}
+
+static struct Qdisc *mf_leaf(struct Qdisc *sch, unsigned long arg)
+{
+	struct mf_sched_data *q = qdisc_priv(sch);
+	return q->qdisc;
+}
+
+static unsigned long mf_get(struct Qdisc *sch, u32 classid)
+{
+	return 1;
+}
+
+static void mf_put(struct Qdisc *sch, unsigned long arg)
+{
+}
+
+static void mf_walk(struct Qdisc *sch, struct qdisc_walker *walker)
+{
+	if (!walker->stop) {
+		if (walker->count >= walker->skip)
+			if (walker->fn(sch, 1, walker) < 0) {
+				walker->stop = 1;
+				return;
+			}
+		walker->count++;
+	}
+}
+
+static const struct Qdisc_class_ops mf_class_ops = {
+	.graft		=	mf_graft,
+	.leaf		=	mf_leaf,
+	.get		=	mf_get,
+	.put		=	mf_put,
+	.walk		=	mf_walk,
+	.dump		=	mf_dump_class,
+};
+
 struct Qdisc_ops mf_qdisc_ops __read_mostly = {
         .next		=	NULL,  
+        .cl_ops		=	&mf_class_ops,
 	.id		=	"mf",
 	.priv_size	=	sizeof(struct mf_sched_data),
 	.enqueue	=	mf_enqueue,
@@ -141,7 +210,7 @@ struct Qdisc_ops mf_qdisc_ops __read_mostly = {
 	.peek		=	qdisc_peek_head,
 	.init		=	fifo_init,
 	.reset		=	qdisc_reset_queue,
-        .destroy	=	qdisc_destroy,        
+        .destroy	=	mf_destroy,        
 	.change		=	fifo_init,
 	.dump		=	fifo_dump,
 	.owner		=	THIS_MODULE,
