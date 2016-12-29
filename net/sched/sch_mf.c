@@ -21,6 +21,7 @@
 
 
 struct mf_sched_data {
+    int nCon;
     struct tcp_mf_cookie mfc;
     struct Qdisc	*qdisc;
 };
@@ -77,7 +78,6 @@ static void parse_opt_mf(struct sk_buff *skb,
 }
 
 
-
 static int mf_enqueue(struct sk_buff *skb, struct Qdisc *sch,
 			 struct sk_buff **to_free)
 {
@@ -91,7 +91,6 @@ static int mf_enqueue(struct sk_buff *skb, struct Qdisc *sch,
 
 static inline struct sk_buff *mf_dequeue(struct Qdisc *sch)
 {
-        
         struct tcphdr *tcph;
         struct mf_sched_data *q = qdisc_priv(sch);
 	struct tcp_mf_cookie mfc;
@@ -110,16 +109,21 @@ static inline struct sk_buff *mf_dequeue(struct Qdisc *sch)
 	return skb;
 }
 
-static int fifo_init(struct Qdisc *sch, struct nlattr *opt)
+
+static int mf_init(struct Qdisc *sch, struct nlattr *opt)
 {
         struct mf_sched_data *q = qdisc_priv(sch);
 	bool bypass;
 	if (opt == NULL) {
 		u32 limit = qdisc_dev(sch)->tx_queue_len;
-		sch->limit = limit;
-	} 
-
-	return 0;
+                sch->limit = limit;
+                q->qdisc = fifo_create_dflt(sch, &bfifo_qdisc_ops, limit);
+		q->qdisc->limit = limit;
+	}
+        
+//	q->qdisc = &noop_qdisc;
+        
+        return 0;
 }
 
 
@@ -129,7 +133,7 @@ static void mf_destroy(struct Qdisc *sch)
 	qdisc_destroy(q->qdisc);
 }
 
-static int fifo_dump(struct Qdisc *sch, struct sk_buff *skb)
+static int mf_dump(struct Qdisc *sch, struct sk_buff *skb)
 {
 	struct tc_fifo_qopt opt = { .limit = sch->limit };
 
@@ -208,11 +212,11 @@ struct Qdisc_ops mf_qdisc_ops __read_mostly = {
 	.enqueue	=	mf_enqueue,
 	.dequeue	=	mf_dequeue,
 	.peek		=	qdisc_peek_head,
-	.init		=	fifo_init,
+	.init		=	mf_init,
 	.reset		=	qdisc_reset_queue,
         .destroy	=	mf_destroy,        
-	.change		=	fifo_init,
-	.dump		=	fifo_dump,
+	.change		=	mf_init,
+	.dump		=	mf_dump,
 	.owner		=	THIS_MODULE,
 };
 
