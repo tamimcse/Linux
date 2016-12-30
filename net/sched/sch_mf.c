@@ -81,11 +81,16 @@ static void parse_opt_mf(struct sk_buff *skb,
 static int mf_enqueue(struct sk_buff *skb, struct Qdisc *sch,
 			 struct sk_buff **to_free)
 {
+        struct mf_sched_data *q = qdisc_priv(sch);
 	if (likely(sch->q.qlen < sch->limit))
-		return qdisc_enqueue_tail(skb, sch);
-        
-        pr_err("This shouldn't happen!!!! You shouldn't drop packet here !!!!!!");
-	return qdisc_drop(skb, sch, to_free);
+        {
+            qdisc_qstats_backlog_inc(sch, skb);
+            sch->q.qlen++;
+            return qdisc_enqueue_tail(skb, q->qdisc);
+        }
+	qdisc_qstats_drop(sch);	
+//        pr_err("This shouldn't happen!!!! You shouldn't drop packet here !!!!!!");
+	return qdisc_drop(skb, q->qdisc, to_free);
 }
 
 
@@ -94,19 +99,26 @@ static inline struct sk_buff *mf_dequeue(struct Qdisc *sch)
         struct tcphdr *tcph;
         struct mf_sched_data *q = qdisc_priv(sch);
 	struct tcp_mf_cookie mfc;
-        struct sk_buff *skb = qdisc_dequeue_head(sch);
+        struct sk_buff *skb = qdisc_dequeue_head(q->qdisc);
         
-        tcph = tcp_hdr(skb);
-        if(tcph)
+        if(skb)
         {
-            memset(&mfc, 0, sizeof(struct tcp_mf_cookie));
-            parse_opt_mf(skb, &mfc);
-            if(mfc.feedback_thput > 0 || mfc.req_thput > 0 )
-                pr_err("IN SCH MF: req_thput:%d feedback_thput:%d", 
-                    (int)mfc.req_thput, (int)mfc.feedback_thput);                        
+            qdisc_bstats_update(sch, skb);
+            qdisc_qstats_backlog_dec(sch, skb);
+
+            tcph = tcp_hdr(skb);
+            if(tcph)
+            {
+                memset(&mfc, 0, sizeof(struct tcp_mf_cookie));
+                parse_opt_mf(skb, &mfc);
+                if(mfc.feedback_thput > 0 || mfc.req_thput > 0 )
+                    pr_err("IN SCH MF: req_thput:%d feedback_thput:%d", 
+                        (int)mfc.req_thput, (int)mfc.feedback_thput);                        
+            }
+            qdisc_qstats_overlimit(sch);
+            return skb;            
         }
-        
-	return skb;
+        return NULL;
 }
 
 
