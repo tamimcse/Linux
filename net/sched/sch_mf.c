@@ -115,7 +115,6 @@ static inline struct sk_buff *mf_dequeue(struct Qdisc *sch)
                     pr_err("IN SCH MF: req_thput:%d feedback_thput:%d", 
                         (int)mfc.req_thput, (int)mfc.feedback_thput);                        
             }
-            qdisc_qstats_overlimit(sch);
             return skb;            
         }
         return NULL;
@@ -127,8 +126,7 @@ static int mf_init(struct Qdisc *sch, struct nlattr *opt)
         struct mf_sched_data *q = qdisc_priv(sch);
 	bool bypass;
 	if (opt == NULL) {
-               //artificially make the queue very large
-		u32 limit = qdisc_dev(sch)->tx_queue_len * 1000;
+		u32 limit = qdisc_dev(sch)->tx_queue_len;
                 sch->limit = limit;
                 q->qdisc = fifo_create_dflt(sch, &bfifo_qdisc_ops, limit);
 		q->qdisc->limit = limit;
