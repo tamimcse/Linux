@@ -89,7 +89,6 @@ static int mf_enqueue(struct sk_buff *skb, struct Qdisc *sch,
             return qdisc_enqueue_tail(skb, q->qdisc);
         }
 	qdisc_qstats_drop(sch);	
-//        pr_err("This shouldn't happen!!!! You shouldn't drop packet here !!!!!!");
 	return qdisc_drop(skb, q->qdisc, to_free);
 }
 
@@ -105,7 +104,8 @@ static inline struct sk_buff *mf_dequeue(struct Qdisc *sch)
         {
             qdisc_bstats_update(sch, skb);
             qdisc_qstats_backlog_dec(sch, skb);
-
+            sch->q.qlen--;
+            
             tcph = tcp_hdr(skb);
             if(tcph)
             {
@@ -127,13 +127,12 @@ static int mf_init(struct Qdisc *sch, struct nlattr *opt)
         struct mf_sched_data *q = qdisc_priv(sch);
 	bool bypass;
 	if (opt == NULL) {
-		u32 limit = qdisc_dev(sch)->tx_queue_len;
+               //artificially make the queue very large
+		u32 limit = qdisc_dev(sch)->tx_queue_len * 1000;
                 sch->limit = limit;
                 q->qdisc = fifo_create_dflt(sch, &bfifo_qdisc_ops, limit);
 		q->qdisc->limit = limit;
 	}
-        
-//	q->qdisc = &noop_qdisc;
         
         return 0;
 }
