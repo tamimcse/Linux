@@ -977,13 +977,13 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
         {            
             if(!tp->mf_cookie_req)
                 tp->mf_cookie_req = kzalloc(sizeof(struct tcp_mf_cookie), sk->sk_allocation);
-            //Initially current thput = feedback throughput = required throughput        
+            //Initially current thput = feedback throughput = required throughput (in KB/s)
             if(!tp->rx_opt.mf_ok)
             {                
                 tp->mf_cookie_req->cur_thput
                         = tp->mf_cookie_req->feedback_thput
                         = tp->mf_cookie_req->req_thput
-                        = 10;
+                        = 1024/8;
                 tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;                     
             }
         }
