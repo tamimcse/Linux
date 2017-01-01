@@ -21,20 +21,27 @@
 
 
 struct mf_sched_data {
-    int nCon;
+    u32 numFlow;
+    u32 capacity;
     struct tcp_mf_cookie mfc;
     struct Qdisc	*qdisc;
 };
 
 
-static void parse_opt_mf(struct sk_buff *skb,
+static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 		       struct tcp_mf_cookie *mfc)
 {
+        struct mf_sched_data *q = qdisc_priv(sch);
+        //everything in kernel is interms of bytes. So convert Mininet kbits to bytes
+        u32 capacity = (q->capacity * 1024)/8; 
+        s64 rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/q->numFlow : 0;
+        //convert into bytes back to to Mininet kbits
+        rate = (rate/1024) * 8;        
+//        pr_info("backlog= %u kbit, rate= %lld", (sch->qstats.backlog * 8/1024), rate);        
+        
 	unsigned char *ptr;
 	const struct tcphdr *th = tcp_hdr(skb);
 	int length = (th->doff * 4) - sizeof(struct tcphdr);
-        u8 capacity;
-        u8 perFlow;
         char *feedback;
 
 	ptr = (const unsigned char *)(th + 1);
@@ -60,11 +67,10 @@ static void parse_opt_mf(struct sk_buff *skb,
 				if (opsize == TCPOLEN_MF) {    
                                         //We wrote 3 bytes in Option Write
                                         ptr++;     
-                                        capacity = 20;
-                                        perFlow = capacity/3;
                                         feedback = ptr + 2;
-                                        if(*feedback > perFlow)
-                                            *feedback = perFlow;
+//                                        pr_info("feedback= %d, rate= %lld", *feedback, rate);
+                                        if(*feedback > rate)
+                                            *feedback = rate;
 					mfc->req_thput = *ptr;
                                         mfc->cur_thput = *(ptr + 1);
                                         mfc->feedback_thput = *(ptr + 2);                                        
@@ -110,7 +116,7 @@ static inline struct sk_buff *mf_dequeue(struct Qdisc *sch)
             if(tcph)
             {
                 memset(&mfc, 0, sizeof(struct tcp_mf_cookie));
-                parse_opt_mf(skb, &mfc);
+                mf_apply(sch, skb, &mfc);
                 if(mfc.feedback_thput > 0 || mfc.req_thput > 0 )
                     pr_err("IN SCH MF: req_thput:%d feedback_thput:%d", 
                         (int)mfc.req_thput, (int)mfc.feedback_thput);                        
@@ -130,6 +136,8 @@ static int mf_init(struct Qdisc *sch, struct nlattr *opt)
                 sch->limit = limit;
                 q->qdisc = fifo_create_dflt(sch, &bfifo_qdisc_ops, limit);
 		q->qdisc->limit = limit;
+                q->capacity = 1024;
+                q->numFlow = 3;
 	}
         
         return 0;
