@@ -120,12 +120,19 @@ def main(cli=0):
 		net[router].cmd( 'tc qdisc add dev {0}-{1} root handle 1: tbf rate {2} latency {3} burst 1540'.format(router, inf, access_rate, queuing_del))
 		net[router].cmd( 'tc qdisc add dev {0}-{1} parent 1:1 handle 10: netem delay {2} {3}'.format(router, inf, access_delay, access_delay_var))
 
-    for router in routers:    	
+    for router in ['r1']:    	
 	net[router].cmd( 'tc qdisc add dev {0}-eth1 root handle 1: mf'.format(router))
 	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 1: handle 2: htb default 10'.format(router))
 	net[router].cmd( 'tc class add dev {0}-eth1 parent 2: classid 2:1 htb rate {1}'.format(router, bottleneck_rate))
 	net[router].cmd( 'tc class add dev {0}-eth1 parent 2:1 classid 2:10 htb rate {1}'.format(router, bottleneck_rate))
 	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 2:10 handle 10: netem delay {1} {2}'.format(router, bottleneck_delay, bottleneck_delay_var))	      
+
+    for router in ['r2']:    	
+	net[router].cmd( 'tc qdisc add dev {0}-eth1 root handle 1: htb default 10'.format(router))
+	net[router].cmd( 'tc class add dev {0}-eth1 parent 1: classid 1:1 htb rate {1}'.format(router, bottleneck_rate))
+	net[router].cmd( 'tc class add dev {0}-eth1 parent 1:1 classid 1:10 htb rate {1}'.format(router, bottleneck_rate))
+	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 1:10 handle 10: netem delay {1} {2}'.format(router, bottleneck_delay, bottleneck_delay_var))	      
+
 
     #net.pingAll()
 
