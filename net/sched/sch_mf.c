@@ -31,24 +31,26 @@ struct mf_sched_data {
 static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 		       struct tcp_mf_cookie *mfc)
 {
+        unsigned char *ptr;
+        u8 *feedback;
+	int opsize;
+        int opcode;
+        const struct tcphdr *th;
         struct mf_sched_data *q = qdisc_priv(sch);
         //everything in kernel is interms of bytes. So convert Mininet kbits to bytes
         u32 capacity = (q->capacity * 1024)/8; 
         s64 rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/q->numFlow : 0;
-        //convert into bytes back to to Mininet kbits
-        rate = (rate/1024) * 8;        
-//        pr_info("backlog= %u kbit, rate= %lld", (sch->qstats.backlog * 8/1024), rate);        
+        //convert into bytes back to to KB (as MF TCP option)
+        rate = rate/1024;        
+//        pr_info("backlog= %u kbit, rate= %lld KB", (sch->qstats.backlog * 8/1024), rate);        
         
-	unsigned char *ptr;
-	const struct tcphdr *th = tcp_hdr(skb);
-	int length = (th->doff * 4) - sizeof(struct tcphdr);
-        char *feedback;
+	th = tcp_hdr(skb);
+	int length = (th->doff * 4) - sizeof(struct tcphdr);        
 
-	ptr = (const unsigned char *)(th + 1);
+	ptr = (unsigned char *)(th + 1);
         
 	while (length > 0) {
-		int opcode = *ptr++;
-		int opsize;
+		opcode = *ptr++;
 
 		switch (opcode) {
 		case TCPOPT_EOL:
@@ -130,7 +132,6 @@ static inline struct sk_buff *mf_dequeue(struct Qdisc *sch)
 static int mf_init(struct Qdisc *sch, struct nlattr *opt)
 {
         struct mf_sched_data *q = qdisc_priv(sch);
-	bool bypass;
 	if (opt == NULL) {
 		u32 limit = qdisc_dev(sch)->tx_queue_len;
                 sch->limit = limit;
