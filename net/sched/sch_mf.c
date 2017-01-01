@@ -86,7 +86,7 @@ static int mf_enqueue(struct sk_buff *skb, struct Qdisc *sch,
         {
             qdisc_qstats_backlog_inc(sch, skb);
             sch->q.qlen++;
-            return qdisc_enqueue_tail(skb, q->qdisc);
+            return qdisc_enqueue(skb, q->qdisc, to_free);
         }
 	qdisc_qstats_drop(sch);	
 	return qdisc_drop(skb, q->qdisc, to_free);
@@ -98,7 +98,7 @@ static inline struct sk_buff *mf_dequeue(struct Qdisc *sch)
         struct tcphdr *tcph;
         struct mf_sched_data *q = qdisc_priv(sch);
 	struct tcp_mf_cookie mfc;
-        struct sk_buff *skb = qdisc_dequeue_head(q->qdisc);
+        struct sk_buff *skb = qdisc_dequeue_peeked(q->qdisc);
         
         if(skb)
         {
