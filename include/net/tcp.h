@@ -947,12 +947,14 @@ struct tcp_congestion_ops {
 	struct module 	*owner;
 };
 
+#if IS_ENABLED(CONFIG_TCP_MF)
 struct tcp_rate_subcriber {        
 	/* Update TCP rate */
 	void (*update_rate)(u8 rate);
 	char 		name[TCP_CA_NAME_MAX];
 	struct module 	*owner;
 };
+#endif
 
 int tcp_register_congestion_control(struct tcp_congestion_ops *type);
 void tcp_unregister_congestion_control(struct tcp_congestion_ops *type);
