@@ -3757,6 +3757,7 @@ void tcp_parse_options(const struct sk_buff *skb,
 		       struct tcp_fastopen_cookie *foc)
 {
 	const unsigned char *ptr;
+        char *seg_type;
 	const struct tcphdr *th = tcp_hdr(skb);
 	int length = (th->doff * 4) - sizeof(struct tcphdr);
 
@@ -3862,12 +3863,16 @@ void tcp_parse_options(const struct sk_buff *skb,
 					opt_rx->req_thput = *ptr;
                                         opt_rx->cur_thput = *(ptr + 1);
                                         opt_rx->feedback_thput = *(ptr + 2);
-                                pr_err("MF TCP option received on [%d.%d.%d.%d] : req_thput:%d curr: %d feedback_thput:%d", 
-                                        ip_hdr(skb)->daddr & 255, (ip_hdr(skb)->daddr >> 8U) & 255,
+                                        if(skb->data_len > 0)
+                                            seg_type = "DATA";
+                                        else
+                                            seg_type = "ACK";
+                                pr_err("Receiving MF TCP in %s segment on [%d.%d.%d.%d] : req_thput:%d curr: %d feedback_thput:%d", 
+                                        seg_type, ip_hdr(skb)->daddr & 255, (ip_hdr(skb)->daddr >> 8U) & 255,
                                         (ip_hdr(skb)->daddr >> 16U) & 255, (ip_hdr(skb)->daddr >> 24U) & 255,                                        
                                         (int)opt_rx->req_thput, (int)opt_rx->cur_thput, (int)opt_rx->feedback_thput);                                
 				}
-				break;                                        
+				break;    
 			}
 			ptr += opsize-2;
 			length -= opsize;

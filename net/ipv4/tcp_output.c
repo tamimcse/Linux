@@ -723,7 +723,7 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 	}
         
 	if (likely(tp->rx_opt.mf_ok) && sysctl_tcp_mf) {
-                pr_err("Setting MF TCP in DATA Packet on [%d.%d.%d.%d]",
+                pr_err("Sending MF TCP from [%d.%d.%d.%d]",
                         inet_sk(sk)->inet_saddr & 255, (inet_sk(sk)->inet_saddr >> 8U) & 255,
                         (inet_sk(sk)->inet_saddr >> 16U) & 255, (inet_sk(sk)->inet_saddr >> 24U) & 255);
 		opts->options |= OPTION_MF;
