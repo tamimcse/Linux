@@ -3862,7 +3862,9 @@ void tcp_parse_options(const struct sk_buff *skb,
 					opt_rx->req_thput = *ptr;
                                         opt_rx->cur_thput = *(ptr + 1);
                                         opt_rx->feedback_thput = *(ptr + 2);
-                                pr_err("MF TCP option received: req_thput:%d curr: %d feedback_thput:%d", 
+                                pr_err("MF TCP option received on [%d.%d.%d.%d] : req_thput:%d curr: %d feedback_thput:%d", 
+                                        ip_hdr(skb)->daddr & 255, (ip_hdr(skb)->daddr >> 8U) & 255,
+                                        (ip_hdr(skb)->daddr >> 16U) & 255, (ip_hdr(skb)->daddr >> 24U) & 255,                                        
                                         (int)opt_rx->req_thput, (int)opt_rx->cur_thput, (int)opt_rx->feedback_thput);                                
 				}
 				break;                                        
