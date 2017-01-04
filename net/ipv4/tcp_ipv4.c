@@ -1372,6 +1372,51 @@ static struct sock *tcp_v4_cookie_check(struct sock *sk, struct sk_buff *skb)
 	return sk;
 }
 
+static void skb_mf(struct sk_buff *skb, struct tcp_mf_cookie *mfc)
+{
+        unsigned char *ptr;
+        u8 *feedback;
+	int opsize;
+        int opcode;
+        const struct tcphdr *th;
+	th = tcp_hdr(skb);
+	int length = (th->doff * 4) - sizeof(struct tcphdr);        
+
+	ptr = (unsigned char *)(th + 1);
+        
+	while (length > 0) {
+		opcode = *ptr++;
+
+		switch (opcode) {
+		case TCPOPT_EOL:
+			return;
+		case TCPOPT_NOP:	/* Ref: RFC 793 section 3.1 */
+			length--;
+			continue;
+		default:
+			opsize = *ptr++;
+			if (opsize < 2) /* "silly options" */
+				return;
+			if (opsize > length)
+				return;	/* don't parse partial options */
+			switch (opcode) {
+			case TCPOPT_MF:
+				if (opsize == TCPOLEN_MF) {    
+                                        //We wrote 3 bytes in Option Write
+                                        ptr++;     
+                                        feedback = ptr + 2;
+					mfc->req_thput = *ptr;
+                                        mfc->cur_thput = *(ptr + 1);
+                                        mfc->feedback_thput = *(ptr + 2);                                        
+				}
+				return;                                        
+			}
+			ptr += opsize-2;
+			length -= opsize;
+		}
+	}
+}
+
 /* The socket must have it's spinlock held when we get
  * here, unless it is a TCP_LISTEN socket.
  *
@@ -1383,6 +1428,23 @@ static struct sock *tcp_v4_cookie_check(struct sock *sk, struct sk_buff *skb)
 int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 {
 	struct sock *rsk;
+	struct tcp_sock *tp = tcp_sk(sk);
+        __be32	dest_ip;
+        
+        //Copy the received option to TCP MF cookie for ACK segment
+        if(likely(sysctl_tcp_mf))
+        {       
+            if(!tp->mf_cookie_req)
+                tp->mf_cookie_req = (struct tcp_mf_cookie *) kzalloc(sizeof(struct tcp_mf_cookie), 
+                                            sk->sk_allocation);
+            skb_mf(skb, tp->mf_cookie_req);
+            if(skb->data_len == 0)
+            {
+                dest_ip = ip_hdr(skb)->daddr;
+                pr_info("Feedback throughput= %d on [%d.%d.%d.%d]", tp->mf_cookie_req->feedback_thput, 
+                    dest_ip & 255, (dest_ip >> 8U) & 255, (dest_ip >> 16U) & 255, (dest_ip >> 24U) & 255);                
+            }
+        }        
 
 	if (sk->sk_state == TCP_ESTABLISHED) { /* Fast path */
 		struct dst_entry *dst = sk->sk_rx_dst;
