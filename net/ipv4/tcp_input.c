@@ -3318,6 +3318,17 @@ static void tcp_cong_control(struct sock *sk, u32 ack, u32 acked_sacked,
 			     int flag, const struct rate_sample *rs)
 {
 	const struct inet_connection_sock *icsk = inet_csk(sk);
+        struct tcp_sock *tp = tcp_sk(sk);
+        
+        if(likely(sysctl_tcp_mf) && tp->rx_opt.mf_ok)
+        {
+            //MF TCP feedback is in KB and everything in kernel is in Byte
+            int wnd = (((tp->mf_cookie_req->feedback_thput * 1024) * (tp->srtt_us/USEC_PER_SEC)) / tp->mss_cache);
+            tp->snd_cwnd = wnd > tcp_packets_in_flight(tp) ? wnd - tcp_packets_in_flight(tp) : 0;
+            pr_info("Feedback= %d RTT= %d MSS= %d Cwnd= %d on ", 
+                    tp->mf_cookie_req->feedback_thput, tp->srtt_us, tp->mss_cache, tp->snd_cwnd);
+            return;
+        }
 
 	if (icsk->icsk_ca_ops->cong_control) {
 		icsk->icsk_ca_ops->cong_control(sk, rs);
