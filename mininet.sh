@@ -11,9 +11,20 @@ sudo cat /proc/net/tcpprobe > trace.data &
 TCPCAP=$! &&
 echo $TCPCAP &&
 sudo python router.py &&
-sudo cat trace.data | grep -a  '172.16.101.1:8554 172.16' > h1.data &&
-sudo cat trace.data | grep -a '172.16.103.1:8554 172.16' > h3.data &&
-sudo cat trace.data | grep -a '172.16.105.1:8554 172.16' > h5.data
+is_mf=$(cat /proc/sys/net/ipv4/tcp_mf) &&
+echo $is_mf &&
+
+if [ $is_mf -eq '1' ]
+then
+    sudo cat trace.data | grep -a '172.16.101.1:8554 172.16' > h1-im.data &&
+    sudo cat trace.data | grep -a '172.16.103.1:8554 172.16' > h3-im.data &&
+    sudo cat trace.data | grep -a '172.16.105.1:8554 172.16' > h5-im.data
+else
+    sudo cat trace.data | grep -a '172.16.101.1:8554 172.16' > h1.data &&
+    sudo cat trace.data | grep -a '172.16.103.1:8554 172.16' > h3.data &&
+    sudo cat trace.data | grep -a '172.16.105.1:8554 172.16' > h5.data
+fi
+
 #sudo kill $TCPCAP &&
 #sudo lsof | grep tcpprobe &&
 #for pid in $(sudo lsof | grep tcpprobe | awk '{print $2}') ; do sudo kill $pid ; done &&
