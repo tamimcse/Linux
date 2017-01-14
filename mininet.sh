@@ -11,8 +11,8 @@ sudo cat /proc/net/tcpprobe > trace.data &
 TCPCAP=$! &&
 echo $TCPCAP &&
 sudo python router.py &&
-is_mf=$(cat /proc/sys/net/ipv4/tcp_mf) &&
-echo $is_mf &&
+is_mf=$(cat /proc/sys/net/ipv4/tcp_mf)
+echo $is_mf
 
 if [ $is_mf -eq '1' ]
 then
