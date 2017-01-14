@@ -1,3 +1,3 @@
-make -j8
-sudo sh module.sh 
+make -j8 &&
+sudo sh module.sh &&
 sudo sh mininet.sh
