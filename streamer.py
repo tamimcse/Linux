@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-import os
+import os,time,thread
 import gi
 import sys, getopt
 gi.require_version('Gst', '1.0')
@@ -16,39 +16,50 @@ host = sys.argv[1]
 
 #https://blogs.gnome.org/uraeus/2012/11/08/gstreamer-python-and-videomixing/
 
-pipeline = Gst.Pipeline() 
+class CLI_Main:
+    def __init__(self):    
+	self.pipeline = Gst.Pipeline()
 
-src = Gst.ElementFactory.make("videotestsrc","src")
-src.set_property('pattern', 'snow')
-src.set_property('num-buffers', 1800)
+	src = Gst.ElementFactory.make("videotestsrc","src")
+	src.set_property('pattern', 'snow')
+	src.set_property('num-buffers', 1800)
 
-cfilter = Gst.ElementFactory.make("capsfilter", "cfilter")
-caps = Gst.Caps.from_string("video/x-raw, framerate=30/1, width=512, height=340")
-cfilter.set_property("caps", caps)
+	cfilter = Gst.ElementFactory.make("capsfilter", "cfilter")
+	caps = Gst.Caps.from_string("video/x-raw, framerate=30/1, width=512, height=340")
+	cfilter.set_property("caps", caps)
 
-enc = Gst.ElementFactory.make("x264enc","enc")
-enc.set_property('bitrate', 512)
+	enc = Gst.ElementFactory.make("x264enc","enc")
+	enc.set_property('bitrate', 512)
 
-svr = Gst.ElementFactory.make("tcpserversink","svr")
-svr.set_property('host', host)
-svr.set_property('port', 8554)
+	svr = Gst.ElementFactory.make("tcpserversink","svr")
+	svr.set_property('host', host)
+	svr.set_property('port', 8554)
 
-pipeline.add(src)
-pipeline.add(cfilter)
-pipeline.add(enc)
-pipeline.add(svr)
+	self.pipeline.add(src)
+	self.pipeline.add(cfilter)
+	self.pipeline.add(enc)
+	self.pipeline.add(svr)
 
-src.link(cfilter)
-cfilter.link(enc)
-enc.link(svr)
+	src.link(cfilter)
+	cfilter.link(enc)
+	enc.link(svr)
 
-if (not pipeline or not src or not cfilter or not enc or not svr):
-    print('Not all elements could be created.')
-    exit(-1)
+	if (not self.pipeline or not src or not cfilter or not enc or not svr):
+	    print('Not all elements could be created.')
+	    exit(-1)
 
-#print "Hello"
-pipeline.set_state(Gst.State.PLAYING)
+        bus=self.pipeline.get_bus()
+        bus.add_signal_watch()
+        bus.connect("message",self.on_message)
+    	    
+    def on_message(self,bus,message):
+	print "Hello message", message.type 
+
+    def main(self):
+	self.pipeline.set_state(Gst.State.PLAYING)
+
+mainclass=CLI_Main()
+thread.start_new_thread(mainclass.main,())
 loop = GLib.MainLoop()
 loop.run()
-#Gtk.main()
 
