@@ -5,7 +5,7 @@ import gi
 import sys, getopt
 gi.require_version('Gst', '1.0')
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gst, GObject, Gtk
+from gi.repository import Gst, GLib, GObject, Gtk
 GObject.threads_init()
 Gst.init(None)
 
@@ -48,5 +48,7 @@ if (not pipeline or not src or not cfilter or not enc or not svr):
 
 #print "Hello"
 pipeline.set_state(Gst.State.PLAYING)
-Gtk.main()
+loop = GLib.MainLoop()
+loop.run()
+#Gtk.main()
 
