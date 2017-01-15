@@ -6,13 +6,15 @@ import sys, getopt
 gi.require_version('Gst', '1.0')
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gst, GObject, Gtk
+GObject.threads_init()
+Gst.init(None)
 
 host = sys.argv[1]
 #pipeline_str = 'videotestsrc pattern=snow num-buffers=1800 ! video/x-raw, framerate=30/1, width=512, height=340 ! x264enc bitrate=512 ! tcpserversink host=' + host + ' port=8554'
 #pipeline = Gst.parse_launch(pipeline)
 
-GObject.threads_init()
-Gst.init(None)
+
+#https://blogs.gnome.org/uraeus/2012/11/08/gstreamer-python-and-videomixing/
 
 pipeline = Gst.Pipeline() 
 
