@@ -17,7 +17,7 @@ host = sys.argv[1]
 #https://blogs.gnome.org/uraeus/2012/11/08/gstreamer-python-and-videomixing/
 
 class CLI_Main:
-    def __init__(self):    
+    def __init__(self):    	
 	self.pipeline = Gst.Pipeline()
 
 	src = Gst.ElementFactory.make("videotestsrc","src")
@@ -53,10 +53,13 @@ class CLI_Main:
         bus.connect("message",self.on_message)
     	    
     def on_message(self,bus,message):
-	print "Hello message", message.type 
+	file = open('info.data','a')
+    	file.write("Hello\n")
+	file.close()
 
     def main(self):
 	self.pipeline.set_state(Gst.State.PLAYING)
+
 
 mainclass=CLI_Main()
 thread.start_new_thread(mainclass.main,())
