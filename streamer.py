@@ -53,13 +53,15 @@ class CLI_Main:
         bus.connect("message",self.on_message)
     	    
     def on_message(self,bus,message):
-	file = open('info.data','a')
-    	file.write("Hello\n")
-	file.close()
+	print 	
+#        fmt = "B"*7+"I"*21
+#        x = struct.unpack(fmt, s.getsockopt(socket.IPPROTO_TCP, socket.TCP_INFO, 92))
+#	file = open('info.data','a')
+#    	file.write(x+"\n")
+#	file.close()
 
     def main(self):
 	self.pipeline.set_state(Gst.State.PLAYING)
-
 
 mainclass=CLI_Main()
 thread.start_new_thread(mainclass.main,())
