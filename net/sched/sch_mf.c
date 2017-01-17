@@ -147,7 +147,12 @@ static void record_mf(struct Qdisc *sch)
 
 static void write_mf(void)
 {
-//    struct file *f = filp_open("mf_probe.data", O_WRONLY|O_CREAT, 0644);
+//    struct file *f = filp_open("backlog.data", O_WRONLY|O_CREAT, 0644);
+//    if(f == NULL)
+//    {
+//        pr_err("Cannot open backlog.data");
+//        return;
+//    }
      while(mf_probe.head > 0)
         {
             char tbuf[256];
@@ -155,14 +160,14 @@ static void write_mf(void)
                    = mf_probe.log + mf_probe.tail;           
             struct timespec64 ts
                     = ktime_to_timespec64(ktime_sub(p->tstamp, mf_probe.start));
-            scnprintf(tbuf, sizeof(tbuf),
+            int len = scnprintf(tbuf, sizeof(tbuf),
                             "%lu.%09lu %u\n",
                             (unsigned long)ts.tv_sec,
                             (unsigned long)ts.tv_nsec,
                             p->backlog);                
             mf_probe.tail = (mf_probe.tail + 1) & (bufsize - 1);
             mf_probe.head = (mf_probe.head - 1) & (bufsize - 1);
-//            file_write(f, 0, tbuf, sizeof(tbuf));
+//            file_write(f, &f->f_pos, tbuf, len);
             pr_info("%s",tbuf);
         }
 //    file_close(f);
