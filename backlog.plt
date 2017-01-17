@@ -1,5 +1,13 @@
 #!/bin/sh
 
+set print "-"
+set terminal png
+set autoscale x
+set autoscale y
+#Set legend
+set key inside right top
+set datafile missing "-nan"
+
 backlogtcp='backlog-tcp.data'
 backlogim='backlog-im.data'
 
