@@ -18,7 +18,9 @@
 #include <linux/tcp.h>
 #include <net/tcp.h>
 #include <net/pkt_sched.h>
+//#include <stdio.h>
 
+static unsigned long bufsize __read_mostly = 64 * 4096;
 
 struct mf_sched_data {
     u32 numFlow;
@@ -27,6 +29,18 @@ struct mf_sched_data {
     struct Qdisc	*qdisc;
 };
 
+struct mf_log {
+	ktime_t tstamp;
+	__u32	backlog;
+	__u32	drops;
+};
+
+static struct {
+	ktime_t		start;
+        __u32 last_backlog;
+        unsigned long	head, tail;
+        struct mf_log *log;
+} mf_probe;
 
 static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 		       struct tcp_mf_cookie *mfc)
@@ -85,11 +99,80 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 	}
 }
 
+static struct file* file_open(const char* path, int flags, int rights) {
+    struct file* filp = NULL;
+    mm_segment_t oldfs;
+    int err = 0;
+
+    oldfs = get_fs();
+    set_fs(get_ds());
+    filp = filp_open(path, flags, rights);
+    set_fs(oldfs);
+    if(IS_ERR(filp)) {
+        err = PTR_ERR(filp);
+        return NULL;
+    }
+    return filp;
+}
+
+static void file_close(struct file* file) {
+    filp_close(file, NULL);
+}
+
+static int file_write(struct file* file, unsigned long long offset, unsigned char* data, unsigned int size) {
+    mm_segment_t oldfs;
+    int ret;
+
+    oldfs = get_fs();
+    set_fs(get_ds());
+
+    ret = vfs_write(file, data, size, &offset);
+
+    set_fs(oldfs);
+    return ret;
+}
+
+static void record_mf(struct Qdisc *sch)
+{
+    if(mf_probe.start.tv64 == 0)
+    {
+        mf_probe.start = ktime_get();
+    }
+    struct mf_log *p = mf_probe.log + mf_probe.head;
+    p->tstamp = ktime_get();
+    p->backlog = sch->qstats.backlog;
+    p->drops = sch->qstats.drops;
+    mf_probe.head = (mf_probe.head + 1) & (bufsize - 1);
+}
+
+static void write_mf(void)
+{
+//    struct file *f = filp_open("mf_probe.data", O_WRONLY|O_CREAT, 0644);
+     while(mf_probe.head > 0)
+        {
+            char tbuf[256];
+            const struct mf_log *p
+                   = mf_probe.log + mf_probe.tail;           
+            struct timespec64 ts
+                    = ktime_to_timespec64(ktime_sub(p->tstamp, mf_probe.start));
+            scnprintf(tbuf, sizeof(tbuf),
+                            "%lu.%09lu %u\n",
+                            (unsigned long)ts.tv_sec,
+                            (unsigned long)ts.tv_nsec,
+                            p->backlog);                
+            mf_probe.tail = (mf_probe.tail + 1) & (bufsize - 1);
+            mf_probe.head = (mf_probe.head - 1) & (bufsize - 1);
+//            file_write(f, 0, tbuf, sizeof(tbuf));
+            pr_info("%s",tbuf);
+        }
+//    file_close(f);
+}
 
 static int mf_enqueue(struct sk_buff *skb, struct Qdisc *sch,
 			 struct sk_buff **to_free)
 {
         struct mf_sched_data *q = qdisc_priv(sch);
+        record_mf(sch);        
 	if (likely(sch->q.qlen < sch->limit))
         {
             qdisc_qstats_backlog_inc(sch, skb);
@@ -103,11 +186,16 @@ static int mf_enqueue(struct sk_buff *skb, struct Qdisc *sch,
 
 static inline struct sk_buff *mf_dequeue(struct Qdisc *sch)
 {
+    
+    if(sch->qstats.backlog < 1)
+    {
+            write_mf();    
+    }
+    
         struct tcphdr *tcph;
         struct mf_sched_data *q = qdisc_priv(sch);
 	struct tcp_mf_cookie mfc;
         struct sk_buff *skb = qdisc_dequeue_peeked(q->qdisc);
-        
         if(skb)
         {
             qdisc_bstats_update(sch, skb);
@@ -128,6 +216,13 @@ static inline struct sk_buff *mf_dequeue(struct Qdisc *sch)
         return NULL;
 }
 
+static void mf_probe_init(void)
+{
+	mf_probe.start.tv64 = 0;
+        mf_probe.head = mf_probe.tail = 0;
+        mf_probe.log = kcalloc(bufsize, sizeof(struct mf_log), GFP_KERNEL);    
+        mf_probe.last_backlog = 0;
+}
 
 static int mf_init(struct Qdisc *sch, struct nlattr *opt)
 {
@@ -140,10 +235,10 @@ static int mf_init(struct Qdisc *sch, struct nlattr *opt)
                 q->capacity = 1024;
                 q->numFlow = 3;
 	}
+        mf_probe_init();
         
         return 0;
 }
-
 
 static void mf_destroy(struct Qdisc *sch)
 {
@@ -154,7 +249,6 @@ static void mf_destroy(struct Qdisc *sch)
 static int mf_dump(struct Qdisc *sch, struct sk_buff *skb)
 {
 	struct tc_fifo_qopt opt = { .limit = sch->limit };
-
 	if (nla_put(skb, TCA_OPTIONS, sizeof(opt), &opt))
 		goto nla_put_failure;
 	return skb->len;
