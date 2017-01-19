@@ -90,7 +90,7 @@ def main(cli=0):
 
     bottleneck_delay = '50ms'
     bottleneck_delay_var = '3ms'
-    bottleneck_loss = '0.1%'
+    bottleneck_loss = '0%' #'0.1%'
     #mbps = Mega Bytes per sec
     bottleneck_rate = '1024kbit'#'2048' for avoiding congestion
 
@@ -125,7 +125,7 @@ def main(cli=0):
 	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 1: handle 2: htb default 10'.format(router))
 	net[router].cmd( 'tc class add dev {0}-eth1 parent 2: classid 2:1 htb rate {1}'.format(router, bottleneck_rate))
 	net[router].cmd( 'tc class add dev {0}-eth1 parent 2:1 classid 2:10 htb rate {1}'.format(router, bottleneck_rate))
-	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 2:10 handle 10: netem delay {1} {2}'.format(router, bottleneck_delay, bottleneck_delay_var))	      
+	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 2:10 handle 10: netem delay {1} {2} loss {3}'.format(router, bottleneck_delay, bottleneck_delay_var, bottleneck_loss))	      
 
     for router in ['r2']:    	
 	net[router].cmd( 'tc qdisc add dev {0}-eth1 root handle 1: htb default 10'.format(router))
