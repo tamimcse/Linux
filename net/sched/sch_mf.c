@@ -18,9 +18,10 @@
 #include <linux/tcp.h>
 #include <net/tcp.h>
 #include <net/pkt_sched.h>
-//#include <stdio.h>
+#include <linux/proc_fs.h>
 
 static unsigned long bufsize __read_mostly = 64 * 4096;
+static const char procname[] = "mf_probe";
 
 struct mf_sched_data {
     u32 numFlow;
@@ -37,7 +38,6 @@ struct mf_log {
 
 static struct {
 	ktime_t		start;
-        __u32 last_backlog;
         unsigned long	head, tail;
         struct mf_log *log;
 } mf_probe;
@@ -99,39 +99,6 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 	}
 }
 
-static struct file* file_open(const char* path, int flags, int rights) {
-    struct file* filp = NULL;
-    mm_segment_t oldfs;
-    int err = 0;
-
-    oldfs = get_fs();
-    set_fs(get_ds());
-    filp = filp_open(path, flags, rights);
-    set_fs(oldfs);
-    if(IS_ERR(filp)) {
-        err = PTR_ERR(filp);
-        return NULL;
-    }
-    return filp;
-}
-
-static void file_close(struct file* file) {
-    filp_close(file, NULL);
-}
-
-static int file_write(struct file* file, unsigned long long offset, unsigned char* data, unsigned int size) {
-    mm_segment_t oldfs;
-    int ret;
-
-    oldfs = get_fs();
-    set_fs(get_ds());
-
-    ret = vfs_write(file, data, size, &offset);
-
-    set_fs(oldfs);
-    return ret;
-}
-
 static void record_mf(struct Qdisc *sch)
 {
     if(mf_probe.start.tv64 == 0)
@@ -147,12 +114,6 @@ static void record_mf(struct Qdisc *sch)
 
 static void write_mf(void)
 {
-//    struct file *f = filp_open("backlog.data", O_WRONLY|O_CREAT, 0644);
-//    if(f == NULL)
-//    {
-//        pr_err("Cannot open backlog.data");
-//        return;
-//    }
      while(mf_probe.head > 0)
         {
             char tbuf[256];
@@ -167,10 +128,8 @@ static void write_mf(void)
                             p->backlog);                
             mf_probe.tail = (mf_probe.tail + 1) & (bufsize - 1);
             mf_probe.head = (mf_probe.head - 1) & (bufsize - 1);
-//            file_write(f, &f->f_pos, tbuf, len);
             pr_info("%s",tbuf);
         }
-//    file_close(f);
 }
 
 static int mf_enqueue(struct sk_buff *skb, struct Qdisc *sch,
@@ -191,12 +150,6 @@ static int mf_enqueue(struct sk_buff *skb, struct Qdisc *sch,
 
 static inline struct sk_buff *mf_dequeue(struct Qdisc *sch)
 {
-    
-    if(sch->qstats.backlog < 1)
-    {
-            write_mf();    
-    }
-    
         struct tcphdr *tcph;
         struct mf_sched_data *q = qdisc_priv(sch);
 	struct tcp_mf_cookie mfc;
@@ -221,12 +174,53 @@ static inline struct sk_buff *mf_dequeue(struct Qdisc *sch)
         return NULL;
 }
 
+static ssize_t mfprobe_read(struct file *file, char __user *buf,
+			     size_t len, loff_t *ppos)
+{
+        int error = 0;
+        size_t cnt = 0;    
+         while(mf_probe.head > 0)
+        {
+            char tbuf[256];
+            const struct mf_log *p
+                   = mf_probe.log + mf_probe.tail;           
+            struct timespec64 ts
+                    = ktime_to_timespec64(ktime_sub(p->tstamp, mf_probe.start));
+            int len = scnprintf(tbuf, sizeof(tbuf),
+                            "%lu.%09lu %u\n",
+                            (unsigned long)ts.tv_sec,
+                            (unsigned long)ts.tv_nsec,
+                            p->backlog);                
+            mf_probe.tail = (mf_probe.tail + 1) & (bufsize - 1);
+            mf_probe.head = (mf_probe.head - 1) & (bufsize - 1);
+            if (copy_to_user(buf + cnt, tbuf, len))
+                    return -EFAULT; 
+            cnt += len;
+        }
+        return cnt == 0 ? error : cnt;
+}
+
+static const struct file_operations mfpprobe_fops = {
+	.owner	 = THIS_MODULE,
+	.read    = mfprobe_read,
+	.llseek  = noop_llseek,
+};
+
 static void mf_probe_init(void)
 {
+        bufsize = roundup_pow_of_two(bufsize);
 	mf_probe.start.tv64 = 0;
         mf_probe.head = mf_probe.tail = 0;
         mf_probe.log = kcalloc(bufsize, sizeof(struct mf_log), GFP_KERNEL);    
-        mf_probe.last_backlog = 0;
+        if(!mf_probe.log)
+        {
+            kfree(mf_probe.log);
+            return ENOMEM;
+        }        
+	if (!proc_create(procname, S_IRUSR, init_net.proc_net, &mfpprobe_fops))
+        {
+            pr_err("Cannot create mf_probe proc file");
+        }
 }
 
 static int mf_init(struct Qdisc *sch, struct nlattr *opt)
