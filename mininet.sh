@@ -26,6 +26,7 @@ else
     sudo cat trace.data | grep -a '172.16.101.1:8554 172.16' > h1.data &&
     sudo cat trace.data | grep -a '172.16.103.1:8554 172.16' > h3.data &&
     sudo cat trace.data | grep -a '172.16.105.1:8554 172.16' > h5.data &&
+    sudo cat /proc/net/mf_probe > backlog-tcp.data &&
     sudo cat /proc/net/mf_probe > backlog-tcp.data
 fi
 
