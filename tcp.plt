@@ -39,3 +39,13 @@ set ylabel "Sending Rate"
 plot tcplog using 1:12 with linespoints title 'TCP CUBIC Rate', imlog using 1:12 with linespoints title 'IM-TCP Rate'
 #plot tcplog using 1:12 with linespoints title 'TCP CUBIC Rate'
 #plot imlog using 1:12 with linespoints title 'IM-TCP Rate'
+
+#Plot Jitter
+set yrange [0:500]
+set output sprintf("%s-jitter.png",outPre)
+set title "Jitter vs. Time"
+set xlabel "Time (Seconds)"
+set ylabel "Jitter (milliseconds)"
+plot tcplog using 1:($13/1000) with linespoints title 'TCP CUBIC Jitter', imlog using 1:($13/1000) with linespoints title 'IM-TCP Jitter'
+#plot tcplog using 1:($13/1000) with linespoints title 'TCP CUBIC Jitter'
+#plot imlog using 1:($13/1000) with linespoints title 'IM-TCP Jitter'
