@@ -179,23 +179,23 @@ static ssize_t mfprobe_read(struct file *file, char __user *buf,
 {
         int error = 0;
         size_t cnt = 0;    
-         while(mf_probe.head > 0)
+         while(mf_probe.head > 0 && cnt < len)
         {
             char tbuf[256];
             const struct mf_log *p
                    = mf_probe.log + mf_probe.tail;           
             struct timespec64 ts
                     = ktime_to_timespec64(ktime_sub(p->tstamp, mf_probe.start));
-            int len = scnprintf(tbuf, sizeof(tbuf),
+            int width = scnprintf(tbuf, sizeof(tbuf),
                             "%lu.%09lu %u\n",
                             (unsigned long)ts.tv_sec,
                             (unsigned long)ts.tv_nsec,
                             p->backlog);                
             mf_probe.tail = (mf_probe.tail + 1) & (bufsize - 1);
             mf_probe.head = (mf_probe.head - 1) & (bufsize - 1);
-            if (copy_to_user(buf + cnt, tbuf, len))
+            if (copy_to_user(buf + cnt, tbuf, width))
                     return -EFAULT; 
-            cnt += len;
+            cnt += width;
         }
         return cnt == 0 ? error : cnt;
 }
