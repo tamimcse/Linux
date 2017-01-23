@@ -80,6 +80,8 @@ def main(cli=0):
     net = Mininet( topo=topo, controller = None )
     net.start()
 
+    isRTP = False
+
     queuing_del = '100ms'
 
     access_delay = '10ms'
@@ -140,6 +142,15 @@ def main(cli=0):
         
     if cli:
         net.iperf(hosts, seconds=30, l4Type='UDP', udpBw='160M')
+        CLI( net )
+    elif isRTP:
+	net[ 'h1' ].cmd( 'sudo sh rtp-streamer.sh  172.16.102.1' )
+	net[ 'h2' ].cmd( 'sudo sh rtp-streaming.sh' )
+	net[ 'h3' ].cmd( 'sudo sh rtp-streamer.sh  172.16.104.1 &' )
+	net[ 'h4' ].cmd( 'sh rtp-streaming.sh' )
+	net[ 'h5' ].cmd( 'sudo sh rtp-streamer.sh  172.16.106.1 &' )
+	net[ 'h6' ].cmd( 'sh rtp-streaming.sh' )
+#	net[ 'r1' ].cmd( 'watch  -dc  tc -s qdisc show dev r1-eth1' )
         CLI( net )
     else:
 	net[ 'h1' ].cmd( 'sudo ./streamer  172.16.101.1 &' )
