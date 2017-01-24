@@ -16,7 +16,7 @@ outPre = ARG3
 set output sprintf("%s-cwnd.png",outPre)
 set title "Congestion Window vs. Time"
 set xlabel "Time (Seconds)"
-set ylabel "Congestion window"
+set ylabel "Congestion window size"
 plot tcplog using 1:7 with linespoints title 'TCP CUBIC Cwnd', imlog using 1:7 with linespoints title 'IM-TCP Cwnd'
 #plot tcplog using 1:7 with linespoints title 'TCP CUBIC Cwnd'
 #plot imlog using 1:7 with linespoints title 'IM-TCP Cwnd'
@@ -31,14 +31,14 @@ plot tcplog using 1:($10/1000) with linespoints title 'TCP CUBIC RTT', imlog usi
 #plot imlog using 1:($10/1000) with linespoints title 'IM-TCP RTT'
 
 
-#Plot rate delivered
+#Plot throughput
 set output sprintf("%s-rate.png",outPre)
-set title "Sending Rate vs. Time"
+set title "Throughput vs. Time"
 set xlabel "Time (Seconds)"
-set ylabel "Sending Rate"
-plot tcplog using 1:12 with linespoints title 'TCP CUBIC Rate', imlog using 1:12 with linespoints title 'IM-TCP Rate'
-#plot tcplog using 1:12 with linespoints title 'TCP CUBIC Rate'
-#plot imlog using 1:12 with linespoints title 'IM-TCP Rate'
+set ylabel "Throughput (kbps)"
+plot tcplog using 1:($12 * 8 /1024) with linespoints title 'TCP CUBIC Rate', imlog using 1:($12 * 8 /1024) with linespoints title 'IM-TCP Rate'
+#plot tcplog using 1:($12 * 8 /1024) with linespoints title 'TCP CUBIC Rate'
+#plot imlog using 1:($12 * 8 /1024) with linespoints title 'IM-TCP Rate'
 
 #Plot Jitter
 set yrange [0:500]
