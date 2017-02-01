@@ -585,6 +585,13 @@ static int fq_codel_dump_stats(struct Qdisc *sch, struct gnet_dump *d)
 	return gnet_stats_copy_app(d, &st, sizeof(st));
 }
 
+static int fq_codel_graft(struct Qdisc *sch, unsigned long arg, struct Qdisc *new,
+		     struct Qdisc **old)
+{
+	*old = qdisc_replace(sch, new, &sch);
+	return 0;
+}
+
 static struct Qdisc *fq_codel_leaf(struct Qdisc *sch, unsigned long arg)
 {
 	return NULL;
@@ -592,7 +599,7 @@ static struct Qdisc *fq_codel_leaf(struct Qdisc *sch, unsigned long arg)
 
 static unsigned long fq_codel_get(struct Qdisc *sch, u32 classid)
 {
-	return 0;
+	return 1;
 }
 
 static unsigned long fq_codel_bind(struct Qdisc *sch, unsigned long parent,
@@ -695,6 +702,7 @@ static void fq_codel_walk(struct Qdisc *sch, struct qdisc_walker *arg)
 
 static const struct Qdisc_class_ops fq_codel_class_ops = {
 	.leaf		=	fq_codel_leaf,
+        .graft		=	fq_codel_graft,
 	.get		=	fq_codel_get,
 	.put		=	fq_codel_put,
 	.tcf_chain	=	fq_codel_find_tcf,
