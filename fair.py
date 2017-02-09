@@ -1,36 +1,41 @@
 import csv
+
+def printme( h1, h3, h5, optimal ):
+  for row in h1:
+    baseTime = float(row[0])
+
+    x1 = (int(row[11]) * 8.0 / 1024)/optimal
+  
+    x3 = None
+    x5 = None
+    offset = None
+  
+    found = 100.0
+    for r in h3:
+      offset = abs(baseTime-float(r[0]))
+      if offset < found:
+        found = offset
+        x3 = (int(r[11]) * 8.0 / 1024)/optimal
+
+    found = 100.0
+    for r in h5:
+      offset = abs(baseTime-float(r[0]))
+      if offset < found:
+        found = offset
+        x5 = (int(r[11]) * 8.0 / 1024)/optimal
+  
+    fairness_index = pow(x1 + x3 + x5, 2)/(3 * (pow(x1, 2) + pow(x3, 2) + pow(x5, 2)))
+
+    print baseTime, fairness_index
+
 h1 = list(csv.reader(open("h1.data"), delimiter=" "))
 h3 = list(csv.reader(open("h3.data"), delimiter=" "))
 h5 = list(csv.reader(open("h5.data"), delimiter=" "))
-#h1_im = list(csv.reader(open("h1-im.data"), delimiter=" "))
-#h3_im = list(csv.reader(open("h3-im.data"), delimiter=" "))
-#h5_im = list(csv.reader(open("h5-im.data"), delimiter=" "))
+h1_im = list(csv.reader(open("h1-im.data"), delimiter=" "))
+h3_im = list(csv.reader(open("h3-im.data"), delimiter=" "))
+h5_im = list(csv.reader(open("h5-im.data"), delimiter=" "))
 
 optimal = 333
 
-for row in h1:
-  baseTime = float(row[0])
-
-  x1 = (int(row[11]) * 8.0 / 1024)/optimal
-  
-  x3 = None
-  x5 = None
-  offset = None
-  
-  found = 100.0
-  for r in h3:
-    offset = abs(baseTime-float(r[0]))
-    if offset < found:
-      found = offset
-      x3 = (int(r[11]) * 8.0 / 1024)/optimal
-
-  found = 100.0
-  for r in h5:
-    offset = abs(baseTime-float(r[0]))
-    if offset < found:
-      found = offset
-      x5 = (int(r[11]) * 8.0 / 1024)/optimal
-  
-  fairness_index = pow(x1 + x3 + x5, 2)/(3 * (pow(x1, 2) + pow(x3, 2) + pow(x5, 2)))
-
-  print baseTime, fairness_index
+printme(h1, h3, h5, optimal)
+printme(h1_im, h3_im, h5_im, optimal)
