@@ -45,3 +45,11 @@ set ylabel "Jitter (milliseconds)"
 plot tcplog using 1:($13/1000) with linespoints title 'TCP CUBIC Jitter', imlog using 1:($13/1000) with linespoints title 'IM-TCP Jitter'
 #plot tcplog using 1:($13/1000) with linespoints title 'TCP CUBIC Jitter'
 #plot imlog using 1:($13/1000) with linespoints title 'IM-TCP Jitter'
+
+#Plot log(throughput/delay)
+set autoscale x
+set autoscale y
+set output sprintf("%s-power.png",outPre)
+set xlabel "Time (Seconds)"
+set ylabel "log(throughput/delay)"
+plot tcplog using 1:(log10(($12 * 8)/($10/1000))) with linespoints title 'TCP CUBIC', imlog using 1:(log10(($12 * 8)/($10/1000))) with linespoints title 'IM-TCP'
