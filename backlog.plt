@@ -16,3 +16,9 @@ set output sprintf("backlog.png")
 set xlabel "Time (Seconds)"
 set ylabel "Queue Backlog (KB)"
 plot backlogtcp using 1:($2/(8*1024)) with linespoints title 'Queue backlog for TCP CUBIC', backlogim using 1:($2/(8*1024)) with linespoints title 'Queue backlog for IM-TCP'
+
+#Plot Fainess index
+set output sprintf("fairness.png")
+set xlabel "Time (Seconds)"
+set ylabel "Fairness index"
+plot "fairness.data" using 1:2 with linespoints title 'TCP CUBIC', "fairness-im.data" using 1:2 with linespoints title 'IM-TCP'
