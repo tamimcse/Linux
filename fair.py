@@ -27,7 +27,7 @@ def printme( h1, h3, h5, optimal, filename):
     #Jain's fairness index
     fairness = pow(x1 + x3 + x5, 2)/(3 * (pow(x1, 2) + pow(x3, 2) + pow(x5, 2)))
     f.write(str(baseTime) +" "+ str(fairness) + "\n")
-    print baseTime, fairness
+#    print baseTime, fairness
   f.close()
 
 
