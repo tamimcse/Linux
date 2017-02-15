@@ -14,7 +14,7 @@ backlogim='backlog-im.data'
 #Plot queue backlog
 set output sprintf("backlog.png")
 set xlabel "Time (Seconds)"
-set ylabel "Queue Backlog (KB)"
+set ylabel "Bottleneck queue length (KB)"
 plot backlogtcp using 1:($2/(8*1024)) with linespoints title 'Queue backlog for TCP CUBIC', backlogim using 1:($2/(8*1024)) with linespoints title 'Queue backlog for IM-TCP'
 
 #Plot Fainess index
