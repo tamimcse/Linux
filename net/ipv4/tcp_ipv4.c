@@ -1402,12 +1402,11 @@ static void skb_mf(struct sk_buff *skb, struct tcp_mf_cookie *mfc)
 			switch (opcode) {
 			case TCPOPT_MF:
 				if (opsize == TCPOLEN_MF) {    
-                                        //We wrote 3 bytes in Option Write
-                                        ptr++;     
                                         feedback = ptr + 2;
 					mfc->req_thput = *ptr;
                                         mfc->cur_thput = *(ptr + 1);
-                                        mfc->feedback_thput = *(ptr + 2);                                        
+                                        mfc->feedback_thput = *(ptr + 2);
+                                        mfc->prop_delay_est = *(ptr + 3);
 				}
 				return;                                        
 			}

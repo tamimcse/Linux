@@ -544,9 +544,10 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
                                 (TCPOPT_NOP << 16) |
 			        (TCPOPT_MF << 8) |
 			        TCPOLEN_MF);
-                *ptr++ = htonl((opts->mf_cookie->req_thput << 16) |
-                               (opts->mf_cookie->cur_thput << 8)  |
-                                opts->mf_cookie->feedback_thput);
+                *ptr++ = htonl((opts->mf_cookie->req_thput << 24) |
+                               (opts->mf_cookie->cur_thput << 16)  |
+                               (opts->mf_cookie->feedback_thput << 8)  |
+                                opts->mf_cookie->prop_delay_est);
 	}        
 }
 

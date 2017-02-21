@@ -72,7 +72,8 @@ struct tcp_mf_cookie {
         u8	len;
         u8 req_thput,           /* Required throughput in MF */ 
            cur_thput,           /* Current throughput in MF */
-           feedback_thput;      /* Feedback throughput in MF */
+           feedback_thput,      /* Feedback throughput in MF */
+           prop_delay_est;
 };
 
 
@@ -112,7 +113,8 @@ struct tcp_options_received {
 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
         u8      feedback_thput, /* Feedback throughput from network in option MF */
                 req_thput,      /* Required throughput from network in option MF */
-                cur_thput;      /* Current throughput from network in option MF */
+                cur_thput,      /* Current throughput from network in option MF */
+                prop_delay_est;
 };
 
 static inline void tcp_clear_options(struct tcp_options_received *rx_opt)

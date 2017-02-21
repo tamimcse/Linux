@@ -3868,12 +3868,11 @@ void tcp_parse_options(const struct sk_buff *skb,
 				break;     
 			case TCPOPT_MF:
 				if (opsize == TCPOLEN_MF) {
-                                        //We wrote 3 bytes in Option Write
-                                        ptr++;
                                         opt_rx->mf_ok = 1;     
 					opt_rx->req_thput = *ptr;
                                         opt_rx->cur_thput = *(ptr + 1);
                                         opt_rx->feedback_thput = *(ptr + 2);
+                                        opt_rx->prop_delay_est = *(ptr + 3);
                                         if(skb->data_len > 0)
                                             seg_type = "DATA";
                                         else
@@ -5695,6 +5694,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
             tp->mf_cookie_req->cur_thput = tp->rx_opt.cur_thput;
             tp->mf_cookie_req->feedback_thput = tp->rx_opt.feedback_thput;
             tp->mf_cookie_req->req_thput = tp->rx_opt.req_thput;
+            tp->mf_cookie_req->prop_delay_est = tp->rx_opt.prop_delay_est;
             tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;     
         }        
 
@@ -6366,6 +6366,7 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
             tp->mf_cookie_req->cur_thput = tmp_opt.cur_thput;
             tp->mf_cookie_req->feedback_thput = tmp_opt.feedback_thput;
             tp->mf_cookie_req->req_thput = tmp_opt.req_thput;
+            tp->mf_cookie_req->prop_delay_est = tmp_opt.prop_delay_est;
             tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;     
         }
         

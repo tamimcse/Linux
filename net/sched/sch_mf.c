@@ -81,15 +81,14 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 			switch (opcode) {
 			case TCPOPT_MF:
 				if (opsize == TCPOLEN_MF) {    
-                                        //We wrote 3 bytes in Option Write
-                                        ptr++;     
                                         feedback = ptr + 2;
 //                                        pr_info("feedback= %d, rate= %lld", *feedback, rate);
                                         if(*feedback > rate)
                                             *feedback = rate;
 					mfc->req_thput = *ptr;
                                         mfc->cur_thput = *(ptr + 1);
-                                        mfc->feedback_thput = *(ptr + 2);                                        
+                                        mfc->feedback_thput = *(ptr + 2);
+                                        mfc->prop_delay_est = *(ptr + 3); 
 				}
 				return;                                        
 			}
