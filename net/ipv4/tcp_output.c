@@ -983,10 +983,11 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
             //Initially current thput = feedback throughput = required throughput (in KB/s)
             if(!tp->rx_opt.mf_ok)
             {                
-                tp->mf_cookie_req->cur_thput
-                        = tp->mf_cookie_req->feedback_thput
+                tp->mf_cookie_req->feedback_thput
                         = tp->mf_cookie_req->req_thput
                         = 1024/8;
+                tp->mf_cookie_req->cur_thput = 512/8;
+                tp->mf_cookie_req->prop_delay_est = 140;
                 tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;                     
             }
         }
