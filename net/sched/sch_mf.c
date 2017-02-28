@@ -83,7 +83,7 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 				if (opsize == TCPOLEN_MF) {    
                                         feedback = ptr + 2;
 //                                        pr_info("feedback= %d, rate= %lld", *feedback, rate);
-                                        if(*feedback > rate)
+//                                        if(*feedback > rate)
                                             *feedback = rate;
 					mfc->req_thput = *ptr;
                                         mfc->cur_thput = *(ptr + 1);
