@@ -214,6 +214,7 @@ struct tcp_info {
 	__u32	tcpi_data_segs_out;	/* RFC4898 tcpEStatsDataSegsOut */
 
 	__u64   tcpi_delivery_rate;
+        __u8   tcpi_feedback_rate;
 };
 
 /* for TCP_MD5SIG socket option */

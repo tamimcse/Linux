@@ -2808,6 +2808,7 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
 		do_div(rate64, intv);
 		put_unaligned(rate64, &info->tcpi_delivery_rate);
 	}
+        put_unaligned(tp->mf_cookie_req->feedback_thput, &info->tcpi_feedback_rate);
 }
 EXPORT_SYMBOL_GPL(tcp_get_info);
 
