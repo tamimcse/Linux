@@ -30,7 +30,7 @@ plot tcplog using 1:($10/1000) with linespoints title 'TCP CUBIC RTT', imlog usi
 
 
 #Plot throughput
-set output sprintf("%s-rate.png",outPre)
+set output sprintf("%s-throughput.png",outPre)
 set xlabel "Time (Seconds)"
 set ylabel "Throughput (kbps)"
 plot tcplog using 1:($12 * 8 /1024) with linespoints title 'TCP CUBIC Rate', imlog using 1:($12 * 8 /1024) with linespoints title 'IM-TCP Rate'
