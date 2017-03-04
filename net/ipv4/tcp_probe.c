@@ -159,17 +159,15 @@ static void jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->ssthresh = tcp_current_ssthresh(sk);
 			p->srtt = tp->srtt_us >> 3;
                         p->rttvar = tp->mdev_us >> 2;
-                        p->delivery_rate = tp->mf_cookie_req->feedback_thput * 1024;
-                        if(p->delivery_rate == 0)
-                        {
-                            rate = tp->rate_delivered;
-                            intv = tp->rate_interval_us;
-                            if (rate && intv) {
-                                    rate64 = (u64)rate * tp->mss_cache * USEC_PER_SEC;
-                                    do_div(rate64, intv);
-                                    p->delivery_rate = rate64;
-                            }   
-                        }                        
+                        
+                        rate = tp->rate_delivered;
+                        intv = tp->rate_interval_us;
+                        if (rate && intv) {
+                                rate64 = (u64)rate * tp->mss_cache * USEC_PER_SEC;
+                                do_div(rate64, intv);
+                                p->delivery_rate = rate64;
+                        }
+                        
 			tcp_probe.head = (tcp_probe.head + 1) & (bufsize - 1);
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
