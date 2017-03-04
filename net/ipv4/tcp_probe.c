@@ -73,6 +73,7 @@ struct tcp_log {
 	u32	srtt;
         u64	delivery_rate;
         u32	rttvar;
+        u64     cwnd_bytes;
 };
 
 static struct {
@@ -159,6 +160,7 @@ static void jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->ssthresh = tcp_current_ssthresh(sk);
 			p->srtt = tp->srtt_us >> 3;
                         p->rttvar = tp->mdev_us >> 2;
+                        p->cwnd_bytes = tp->snd_cwnd * tp->mss_cache;
                         
                         rate = tp->rate_delivered;
                         intv = tp->rate_interval_us;
@@ -205,11 +207,11 @@ static int tcpprobe_sprint(char *tbuf, int n)
 		= ktime_to_timespec64(ktime_sub(p->tstamp, tcp_probe.start));
 
 	return scnprintf(tbuf, n,
-			"%lu.%09lu %pISpc %pISpc %d %#x %#x %u %u %u %u %u %llu %u\n",
+			"%lu.%09lu %pISpc %pISpc %d %#x %#x %u %u %u %u %u %llu %u %llu\n",
 			(unsigned long)ts.tv_sec,
 			(unsigned long)ts.tv_nsec,
 			&p->src, &p->dst, p->length, p->snd_nxt, p->snd_una,
-			p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt, p->rcv_wnd, p->delivery_rate, p->rttvar);
+			p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt, p->rcv_wnd, p->delivery_rate, p->rttvar, p->cwnd_bytes);
 }
 
 static ssize_t tcpprobe_read(struct file *file, char __user *buf,
