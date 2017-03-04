@@ -3324,7 +3324,7 @@ static void tcp_cong_control(struct sock *sk, u32 ack, u32 acked_sacked,
         {
             //MF TCP feedback is in KB and everything in kernel is in Byte
             int wnd = (((tp->mf_cookie_req->feedback_thput * 1024) * (tp->srtt_us/USEC_PER_SEC)) / tp->mss_cache);
-            tp->snd_cwnd = wnd > tcp_packets_in_flight(tp) ? wnd - tcp_packets_in_flight(tp) : 0;
+            tp->snd_cwnd = wnd;
             pr_info("Feedback= %d RTT= %d MSS= %d Cwnd= %d on ", 
                     tp->mf_cookie_req->feedback_thput, tp->srtt_us, tp->mss_cache, tp->snd_cwnd);
             return;
