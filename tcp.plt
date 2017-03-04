@@ -46,6 +46,14 @@ plot tcplog using 1:($13/1000) with linespoints title 'TCP CUBIC', imlog using 1
 #plot tcplog using 1:($13/1000) with linespoints title 'TCP CUBIC Jitter'
 #plot imlog using 1:($13/1000) with linespoints title 'IM-TCP Jitter'
 
+#Plot Cwnd bytes
+set autoscale y
+set output sprintf("%s-cwnd-bytes.png",outPre)
+set xlabel "Time (Seconds)"
+set ylabel "Congestion window size (kb)"
+#plot tcplog using 1:14 with linespoints title 'TCP CUBIC', imlog using 1:14 with linespoints title 'NA-TCP'
+plot imlog using 1:($14*8/1024) with linespoints title 'NA-TCP'
+
 #Plot log(throughput/delay)
 #set autoscale x
 #set autoscale y
