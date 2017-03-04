@@ -12,6 +12,7 @@ backlogtcp='backlog-tcp.data'
 backlogim='backlog-im.data'
 
 #Plot queue backlog
+set yrange [0:120]
 set output sprintf("backlog.png")
 set xlabel "Time (Seconds)"
 set ylabel "Bottleneck queue length (KB)"
