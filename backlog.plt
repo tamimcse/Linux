@@ -16,10 +16,12 @@ set yrange [0:120]
 set output sprintf("backlog.png")
 set xlabel "Time (Seconds)"
 set ylabel "Bottleneck queue length (KB)"
-plot backlogtcp using 1:($2/1024) with linespoints title 'Queue backlog for TCP CUBIC', backlogim using 1:($2/1024) with linespoints title 'Queue backlog for IM-TCP'
+plot backlogtcp using 1:($2/1024) with linespoints title 'TCP CUBIC', backlogim using 1:($2/1024) with linespoints title 'NA-TCP'
 
 #Plot Fainess index
+set autoscale x
+set autoscale y
 set output sprintf("fairness.png")
 set xlabel "Time (Seconds)"
 set ylabel "Fairness index"
-plot "fairness.data" using 1:2 with linespoints title 'TCP CUBIC', "fairness-im.data" using 1:2 with linespoints title 'IM-TCP'
+plot "fairness.data" using 1:2 with linespoints title 'TCP CUBIC', "fairness-im.data" using 1:2 with linespoints title 'NA-TCP'
