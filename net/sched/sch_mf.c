@@ -26,6 +26,10 @@ static const char procname[] = "mf_probe";
 struct mf_sched_data {
     u32 numFlow;
     u32 capacity;
+    u32 queue_sample;
+    ktime_t sample_time;
+    int queue_gradiant;
+    
     struct tcp_mf_cookie mfc;
     struct Qdisc	*qdisc;
 };
@@ -33,7 +37,6 @@ struct mf_sched_data {
 struct mf_log {
 	ktime_t tstamp;
 	__u32	backlog;
-	__u32	drops;
 };
 
 static struct {
@@ -51,12 +54,43 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
         int opcode;
         const struct tcphdr *th;
         struct mf_sched_data *q = qdisc_priv(sch);
+        int elapsed_time = (int)ktime_to_ms (ktime_sub(ktime_get(), q->sample_time));
+        if(elapsed_time > 20)
+        {
+            //Don't do it for the very first sample
+            if(q->sample_time.tv64 > 0)
+            {
+                //change of queue per millisecond
+                q->queue_gradiant = (int)(sch->qstats.backlog - q->queue_sample) /elapsed_time;
+                pr_info("Queue diff: %d Time diff: %d queue_gradiant=%d", 
+                        (sch->qstats.backlog - q->queue_sample), 
+                        elapsed_time, q->queue_gradiant);
+            }
+            q->queue_sample = sch->qstats.backlog;
+            q->sample_time = ktime_get();
+        }
         //everything in kernel is interms of bytes. So convert Mininet kbits to bytes
         u32 capacity = (q->capacity * 1024)/8; 
-        s64 rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/q->numFlow : 0;
+        s64 rate;
+        if(q->queue_gradiant > 0)
+        {
+            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog - 550 * q->queue_gradiant)/q->numFlow : 0;
+        }
+        else
+        {
+            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/q->numFlow : 0;
+            if(sch->qstats.backlog < 20000)
+            {
+              rate -= 1;  
+            }            
+        }
+            
+
+//        else
+//            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog - sch->qstats.backlog/20)/q->numFlow : 0;
         //convert into bytes back to to KB (as MF TCP option)
         rate = rate/1024;        
-//        pr_info("backlog= %u kbit, rate= %lld KB", (sch->qstats.backlog * 8/1024), rate);        
+        pr_info("backlog=%u KB, queue_gradiant=%d KB rate=%lld KB", sch->qstats.backlog/1000, q->queue_gradiant/1000, rate);        
         
 	th = tcp_hdr(skb);
 	int length = (th->doff * 4) - sizeof(struct tcphdr);        
@@ -107,7 +141,6 @@ static void record_mf(struct Qdisc *sch)
     struct mf_log *p = mf_probe.log + mf_probe.head;
     p->tstamp = ktime_get();
     p->backlog = sch->qstats.backlog;
-    p->drops = sch->qstats.drops;
     mf_probe.head = (mf_probe.head + 1) & (bufsize - 1);
 }
 
@@ -165,8 +198,8 @@ static inline struct sk_buff *mf_dequeue(struct Qdisc *sch)
                 memset(&mfc, 0, sizeof(struct tcp_mf_cookie));
                 mf_apply(sch, skb, &mfc);
                 if(mfc.feedback_thput > 0 || mfc.req_thput > 0 )
-                    pr_err("IN SCH MF: req_thput:%d feedback_thput:%d", 
-                        (int)mfc.req_thput, (int)mfc.feedback_thput);                        
+                    pr_err("IN SCH MF: req_thput:%d feedback_thput:%d curr_thput: %d prop_delay:%d", 
+                        (int)mfc.req_thput, (int)mfc.feedback_thput, (int)mfc.cur_thput, (int)mfc.prop_delay_est);                        
             }
             return skb;            
         }
@@ -232,6 +265,9 @@ static int mf_init(struct Qdisc *sch, struct nlattr *opt)
 		q->qdisc->limit = limit;
                 q->capacity = 1024;
                 q->numFlow = 3;
+                q->queue_sample = 0;
+                q->sample_time.tv64 = 0;
+                q->queue_gradiant = 0;
 	}
         mf_probe_init();
         
@@ -344,4 +380,3 @@ module_init(mf_module_init)
 module_exit(mf_module_exit)
 
 MODULE_LICENSE("GPL");
-
