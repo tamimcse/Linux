@@ -12,7 +12,7 @@ backlogtcp='backlog-tcp.data'
 backlogim='backlog-im.data'
 
 #Plot queue backlog
-#set yrange [0:80]
+#set yrange [0:70]
 set output sprintf("backlog.png")
 set xlabel "Time (Seconds)"
 set ylabel "Bottleneck queue length (KB)"
@@ -20,6 +20,7 @@ set ylabel "Bottleneck queue length (KB)"
 plot backlogim using 1:($2/1024) with linespoints title 'NA-TCP'
 
 #Plot Fainess index
+set autoscale y
 set output sprintf("fairness.png")
 set xlabel "Time (Seconds)"
 set ylabel "Fairness index"

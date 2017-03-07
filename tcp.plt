@@ -38,10 +38,10 @@ plot tcplog using 1:($12 /1024) with linespoints title 'TCP CUBIC', imlog using 
 #plot imlog using 1:($12 * 8 /1024) with linespoints title 'IM-TCP Rate'
 
 #Plot Jitter
-set yrange [0:500]
-set output sprintf("%s-jitter.png",outPre)
-set xlabel "Time (Seconds)"
-set ylabel "Jitter (milliseconds)"
+#set yrange [0:500]
+#set output sprintf("%s-jitter.png",outPre)
+#set xlabel "Time (Seconds)"
+#set ylabel "Jitter (milliseconds)"
 plot tcplog using 1:($13/1000) with linespoints title 'TCP CUBIC', imlog using 1:($13/1000) with linespoints title 'NA-TCP'
 #plot tcplog using 1:($13/1000) with linespoints title 'TCP CUBIC Jitter'
 #plot imlog using 1:($13/1000) with linespoints title 'IM-TCP Jitter'
