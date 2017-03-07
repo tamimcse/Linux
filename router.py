@@ -112,6 +112,7 @@ def main(cli=0):
     for host in hosts:
 	net[host].cmd( 'tc qdisc add dev {0}-eth0 root handle 1: tbf rate {1} latency {2} burst 1540'.format(host, access_rate, queuing_del))
 	net[host].cmd( 'tc qdisc add dev {0}-eth0 parent 1:1 handle 10: netem delay {1} {2}'.format(host, access_delay, access_delay_var))
+	net[host].cmd( 'tc qdisc add dev {0}-eth0 parent 10:  handle 101: fq'.format(host))
 #	net[host].cmd( 'tc qdisc change dev {0}-eth0 root netem loss {1}'.format(host, access_loss))
 #	net[host].cmd( 'tc -s qdisc show dev {0}-eth0'.format(host))
 
