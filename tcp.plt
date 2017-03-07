@@ -24,9 +24,9 @@ plot tcplog using 1:7 with linespoints title 'TCP CUBIC', imlog using 1:7 with l
 set output sprintf("%s-rtt.png",outPre)
 set xlabel "Time (Seconds)"
 set ylabel "SRTT (milliseconds)"
-plot tcplog using 1:($10/1000) with linespoints title 'TCP CUBIC', imlog using 1:($10/1000) with linespoints title 'NA-TCP RTT'
+#plot tcplog using 1:($10/1000) with linespoints title 'TCP CUBIC', imlog using 1:($10/1000) with linespoints title 'NA-TCP RTT'
 #plot tcplog using 1:($10/1000) with linespoints title 'TCP CUBIC RTT'
-#plot imlog using 1:($10/1000) with linespoints title 'IM-TCP RTT'
+plot imlog using 1:($10/1000) with linespoints title 'IM-TCP RTT'
 
 
 #Plot throughput
