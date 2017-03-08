@@ -15,47 +15,42 @@ tcplog = ARG1
 imlog = ARG2
 outPre = ARG3
 
+tcp1='BBR'
+tcp2='NA-TCP'
+
 #Plot Cwnd && SSTH
 set output sprintf("%s-cwnd.png",outPre)
 set xlabel "Time (Seconds)"
 set ylabel "Congestion window size"
-plot tcplog using 1:7 title 'TCP CUBIC', imlog using 1:7 title 'NA-TCP'
-#plot tcplog using 1:7 title 'TCP CUBIC Cwnd'
-#plot imlog using 1:7 title 'IM-TCP Cwnd'
+plot tcplog using 1:7 title tcp1, imlog using 1:7 title tcp2
+
 
 #Plot RTT
 set output sprintf("%s-rtt.png",outPre)
 set xlabel "Time (Seconds)"
 set ylabel "SRTT (milliseconds)"
-plot tcplog using 1:($10/1000) title 'TCP CUBIC', imlog using 1:($10/1000) title 'NA-TCP RTT'
-#plot tcplog using 1:($10/1000) title 'TCP CUBIC RTT'
-#plot imlog using 1:($10/1000) title 'IM-TCP RTT'
-
+plot tcplog using 1:($10/1000) title tcp1, imlog using 1:($10/1000) title tcp2
 
 #Plot throughput
 set output sprintf("%s-throughput.png",outPre)
 set xlabel "Time (Seconds)"
 set ylabel "Throughput (KB/s)"
-plot tcplog using 1:($12 /1024) title 'TCP CUBIC', imlog using 1:($12 /1024) title 'NA-TCP'
-#plot tcplog using 1:($12 * 8 /1024) title 'TCP CUBIC Rate'
-#plot imlog using 1:($12 * 8 /1024) title 'IM-TCP Rate'
+plot tcplog using 1:($12 /1024) title tcp1, imlog using 1:($12 /1024) title tcp2
 
 #Plot Jitter
 #set yrange [0:500]
 #set output sprintf("%s-jitter.png",outPre)
 #set xlabel "Time (Seconds)"
 #set ylabel "Jitter (milliseconds)"
-plot tcplog using 1:($13/1000) title 'TCP CUBIC', imlog using 1:($13/1000) title 'NA-TCP'
-#plot tcplog using 1:($13/1000) title 'TCP CUBIC Jitter'
-#plot imlog using 1:($13/1000) title 'IM-TCP Jitter'
+plot tcplog using 1:($13/1000) title tcp1, imlog using 1:($13/1000) title tcp2
 
 #Plot Cwnd bytes
 set autoscale y
 set output sprintf("%s-cwnd-bytes.png",outPre)
 set xlabel "Time (Seconds)"
 set ylabel "Congestion window size (kb)"
-#plot tcplog using 1:14 title 'TCP CUBIC', imlog using 1:14 title 'NA-TCP'
-plot imlog using 1:($14*8/1024) title 'NA-TCP'
+plot tcplog using 1:14 title tcp1, imlog using 1:14 title tcp2
+
 
 #Plot log(throughput/delay)
 #set autoscale x
@@ -63,4 +58,4 @@ plot imlog using 1:($14*8/1024) title 'NA-TCP'
 #set output sprintf("%s-power.png",outPre)
 #set xlabel "Time (Seconds)"
 #set ylabel "log(throughput/delay)"
-#plot tcplog using 1:(log10(($12 * 8)/($10/1000))) title 'TCP CUBIC', imlog using 1:(log10(($12 * 8)/($10/1000))) title 'IM-TCP'
+#plot tcplog using 1:(log10(($12 * 8)/($10/1000))) title tcp1, imlog using 1:(log10(($12 * 8)/($10/1000))) title tcp2
