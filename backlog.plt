@@ -18,8 +18,8 @@ backlogim='backlog-im.data'
 set output sprintf("backlog.png")
 set xlabel "Time (Seconds)"
 set ylabel "Bottleneck queue length (KB)"
-#plot backlogtcp using 1:($2/1024) title 'TCP CUBIC', backlogim using 1:($2/1024) title 'NA-TCP'
-plot backlogim using 1:($2/1024) title 'NA-TCP'
+plot backlogtcp using 1:($2/1024) title 'TCP CUBIC', backlogim using 1:($2/1024) title 'NA-TCP'
+#plot backlogim using 1:($2/1024) title 'NA-TCP'
 
 #Plot Fainess index
 set autoscale y
