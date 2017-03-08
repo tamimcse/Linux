@@ -26,6 +26,7 @@ plot backlogtcp using 1:($2/1024) title tcp1, backlogim using 1:($2/1024) title 
 
 #Plot Fainess index
 set autoscale y
+set key inside right bottom
 set output sprintf("fairness.png")
 set xlabel "Time (Seconds)"
 set ylabel "Fairness index"
