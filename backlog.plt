@@ -10,18 +10,20 @@ set datafile missing "-nan"
 set style data line
 #set style data linespoints
 
-backlogtcp='backlog-tcp.data'
+backlogbbr='backlog-bbr.data'
 backlogim='backlog-im.data'
+backlogcdg='backlog-cdg.data'
 
 tcp1='BBR'
 tcp2='NA-TCP'
+tcp3='CDG'
 
 #Plot queue backlog
 #set yrange [0:70]
 set output sprintf("backlog.png")
 set xlabel "Time (Seconds)"
 set ylabel "Bottleneck queue length (KB)"
-plot backlogtcp using 1:($2/1024) title tcp1, backlogim using 1:($2/1024) title tcp2
+plot backlogbbr using 1:($2/1024) title tcp1, backlogim using 1:($2/1024) title tcp2, backlogcdg using 1:($2/1024) title tcp3
 #plot backlogim using 1:($2/1024) title 'NA-TCP'
 
 #Plot Fainess index
@@ -30,4 +32,4 @@ set key inside right bottom
 set output sprintf("fairness.png")
 set xlabel "Time (Seconds)"
 set ylabel "Fairness index"
-plot "fairness.data" using 1:2 title tcp1, "fairness-im.data" using 1:2 title tcp2
+plot "fairness-bbr.data" using 1:2 title tcp1, "fairness-im.data" using 1:2 title tcp2, "fairness-cdg.data" using 1:2 title tcp3

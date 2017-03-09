@@ -14,19 +14,27 @@ sudo chmod a+rwx backlog-im.data &&
 sudo chmod a+rwx backlog-tcp.data &&
 sudo python router.py; 
 is_mf=$(cat /proc/sys/net/ipv4/tcp_mf)
+cong=$(cat /proc/sys/net/ipv4/tcp_congestion_control)
 echo $is_mf
+echo $cong
 if [ $is_mf -eq '1' ]
 then
     sudo cat trace.data | grep -a '172.16.101.1:8554 172.16' > h1-im.data &&
     sudo cat trace.data | grep -a '172.16.103.1:8554 172.16' > h3-im.data &&
     sudo cat trace.data | grep -a '172.16.105.1:8554 172.16' > h5-im.data &&
     sudo cat /proc/net/mf_probe > backlog-im.data
-else
-    sudo cat trace.data | grep -a '172.16.101.1:8554 172.16' > h1.data &&
-    sudo cat trace.data | grep -a '172.16.103.1:8554 172.16' > h3.data &&
-    sudo cat trace.data | grep -a '172.16.105.1:8554 172.16' > h5.data &&
-    sudo cat /proc/net/mf_probe > backlog-tcp.data 
+elif [ $cong = "cdg" ]
+then
+    sudo cat trace.data | grep -a '172.16.101.1:8554 172.16' > h1-cdg.data &&
+    sudo cat trace.data | grep -a '172.16.103.1:8554 172.16' > h3-cdg.data &&
+    sudo cat trace.data | grep -a '172.16.105.1:8554 172.16' > h5-cdg.data &&
+    sudo cat /proc/net/mf_probe > backlog-cdg.data 
 #    sudo cat /proc/net/mf_probe > backlog-tcp.data
+else
+    sudo cat trace.data | grep -a '172.16.101.1:8554 172.16' > h1-bbr.data &&
+    sudo cat trace.data | grep -a '172.16.103.1:8554 172.16' > h3-bbr.data &&
+    sudo cat trace.data | grep -a '172.16.105.1:8554 172.16' > h5-bbr.data &&
+    sudo cat /proc/net/mf_probe > backlog-bbr.data 
 fi
 
 #sudo kill $TCPCAP &&

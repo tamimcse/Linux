@@ -31,14 +31,20 @@ def printme( h1, h3, h5, optimal, filename):
   f.close()
 
 
-h1 = list(csv.reader(open("h1.data"), delimiter=" "))
-h3 = list(csv.reader(open("h3.data"), delimiter=" "))
-h5 = list(csv.reader(open("h5.data"), delimiter=" "))
+h1_bbr = list(csv.reader(open("h1-bbr.data"), delimiter=" "))
+h3_bbr = list(csv.reader(open("h3-bbr.data"), delimiter=" "))
+h5_bbr = list(csv.reader(open("h5-bbr.data"), delimiter=" "))
+
+h1_cdg = list(csv.reader(open("h1-cdg.data"), delimiter=" "))
+h3_cdg = list(csv.reader(open("h3-cdg.data"), delimiter=" "))
+h5_cdg = list(csv.reader(open("h5-cdg.data"), delimiter=" "))
+
 h1_im = list(csv.reader(open("h1-im.data"), delimiter=" "))
 h3_im = list(csv.reader(open("h3-im.data"), delimiter=" "))
 h5_im = list(csv.reader(open("h5-im.data"), delimiter=" "))
 
 optimal = 333
 
-printme(h1, h3, h5, optimal, "fairness.data")
+printme(h1_bbr, h3_bbr, h5_bbr, optimal, "fairness-bbr.data")
 printme(h1_im, h3_im, h5_im, optimal, "fairness-im.data")
+printme(h1_cdg, h3_cdg, h5_cdg, optimal, "fairness-cdg.data")
