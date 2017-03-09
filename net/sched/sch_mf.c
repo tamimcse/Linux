@@ -74,15 +74,11 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
         s64 rate;
         if(q->queue_gradiant > 0)
         {
-            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog - 140 * q->queue_gradiant)/q->numFlow : 0;
+            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog - 2*elapsed_time*q->queue_gradiant)/q->numFlow : 0;
         }
         else
         {
-            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/q->numFlow : 0;
-            if(sch->qstats.backlog < 20000)
-            {
-              rate -= 1;  
-            }            
+            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/q->numFlow : 0;        
         }
             
 
