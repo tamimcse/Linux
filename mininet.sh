@@ -11,7 +11,8 @@ sudo cat /proc/net/tcpprobe > trace.data &
 TCPCAP=$! &&
 echo $TCPCAP &&
 sudo chmod a+rwx backlog-im.data &&
-sudo chmod a+rwx backlog-tcp.data &&
+sudo chmod a+rwx backlog-bbr.data &&
+sudo chmod a+rwx backlog-cdg.data &&
 sudo python router.py; 
 is_mf=$(cat /proc/sys/net/ipv4/tcp_mf)
 cong=$(cat /proc/sys/net/ipv4/tcp_congestion_control)
