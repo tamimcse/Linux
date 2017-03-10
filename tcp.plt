@@ -24,22 +24,20 @@ tcp3='CDG'
 set output sprintf("%s-cwnd.png",outPre)
 set xlabel "Time (Seconds)"
 set ylabel "Congestion window size"
-plot imlog using 1:7 title tcp2, cdglog using 1:7 title tcp3
-#bbrlog using 1:7 title tcp1, 
+plot bbrlog using 1:7 title tcp1, imlog using 1:7 title tcp2, cdglog using 1:7 title tcp3
+
 
 #Plot RTT
 set output sprintf("%s-rtt.png",outPre)
 set xlabel "Time (Seconds)"
 set ylabel "SRTT (milliseconds)"
-plot imlog using 1:($10/1000) title tcp2, cdglog using 1:($10/1000) title tcp3
-#bbrlog using 1:($10/1000) title tcp1, 
+plot bbrlog using 1:($10/1000) title tcp1, imlog using 1:($10/1000) title tcp2, cdglog using 1:($10/1000) title tcp3
 
 #Plot throughput
 set output sprintf("%s-throughput.png",outPre)
 set xlabel "Time (Seconds)"
 set ylabel "Throughput (KB/s)"
-plot imlog using 1:($12 /1024) title tcp2, cdglog using 1:($12 /1024) title tcp3
-#bbrlog using 1:($12 /1024) title tcp1, 
+plot bbrlog using 1:($12 /1024) title tcp1, imlog using 1:($12 /1024) title tcp2, cdglog using 1:($12 /1024) title tcp3
 
 #Plot Jitter
 #set yrange [0:500]
@@ -53,8 +51,7 @@ set autoscale y
 set output sprintf("%s-cwnd-bytes.png",outPre)
 set xlabel "Time (Seconds)"
 set ylabel "Congestion window size (kb)"
-plot imlog using 1:14 title tcp2, cdglog using 1:14 title tcp3
-#bbrlog using 1:14 title tcp1, 
+plot bbrlog using 1:14 title tcp1, imlog using 1:14 title tcp2, cdglog using 1:14 title tcp3
 
 
 #Plot log(throughput/delay)
@@ -64,3 +61,4 @@ plot imlog using 1:14 title tcp2, cdglog using 1:14 title tcp3
 #set xlabel "Time (Seconds)"
 #set ylabel "log(throughput/delay)"
 #plot tcplog using 1:(log10(($12 * 8)/($10/1000))) title tcp1, imlog using 1:(log10(($12 * 8)/($10/1000))) title tcp2
+
