@@ -23,8 +23,8 @@ tcp3='CDG'
 set output sprintf("backlog.png")
 set xlabel "Time (Seconds)"
 set ylabel "Bottleneck queue length (KB)"
-plot backlogbbr using 1:($2/1024) title tcp1, backlogim using 1:($2/1024) title tcp2, backlogcdg using 1:($2/1024) title tcp3
-#plot backlogim using 1:($2/1024) title 'NA-TCP'
+#plot backlogbbr using 1:($2/1024) title tcp1, backlogim using 1:($2/1024) title tcp2, backlogcdg using 1:($2/1024) title tcp3
+plot backlogim using 1:($2/1024) title tcp2, backlogcdg using 1:($2/1024) title tcp3
 
 #Plot Fainess index
 set autoscale y
@@ -32,5 +32,6 @@ set key inside right bottom
 set output sprintf("fairness.png")
 set xlabel "Time (Seconds)"
 set ylabel "Fairness index"
-plot "fairness-bbr.data" using 1:2 title tcp1, "fairness-im.data" using 1:2 title tcp2, "fairness-cdg.data" using 1:2 title tcp3
+#plot "fairness-bbr.data" using 1:2 title tcp1, "fairness-im.data" using 1:2 title tcp2, "fairness-cdg.data" using 1:2 title tcp3
+plot "fairness-im.data" using 1:2 title tcp2, "fairness-cdg.data" using 1:2 title tcp3
 
