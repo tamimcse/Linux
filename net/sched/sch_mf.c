@@ -82,8 +82,6 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
         }
             
 
-//        else
-//            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog - sch->qstats.backlog/20)/q->numFlow : 0;
         //convert into bytes back to to KB (as MF TCP option)
         rate = rate/1024;        
         pr_info("backlog=%u KB, queue_gradiant=%d KB rate=%lld KB", sch->qstats.backlog/1000, q->queue_gradiant/1000, rate);        
