@@ -54,29 +54,29 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
         int opcode;
         const struct tcphdr *th;
         struct mf_sched_data *q = qdisc_priv(sch);
-        int elapsed_time = (int)ktime_to_ms (ktime_sub(ktime_get(), q->sample_time));
-        if(elapsed_time > 20)
-        {
-            //Don't do it for the very first sample
-            if(q->sample_time.tv64 > 0)
-            {
-                //change of queue per millisecond
-                q->queue_gradiant = (int)(sch->qstats.backlog - q->queue_sample) /elapsed_time;
-                pr_info("Queue diff: %d Time diff: %d queue_gradiant=%d", 
-                        (sch->qstats.backlog - q->queue_sample), 
-                        elapsed_time, q->queue_gradiant);
-            }
-            q->queue_sample = sch->qstats.backlog;
-            q->sample_time = ktime_get();
-        }
+//        int elapsed_time = (int)ktime_to_ms (ktime_sub(ktime_get(), q->sample_time));
+//        if(elapsed_time > 20)
+//        {
+//            //Don't do it for the very first sample
+//            if(q->sample_time.tv64 > 0)
+//            {
+//                //change of queue per millisecond
+//                q->queue_gradiant = (int)(sch->qstats.backlog - q->queue_sample) /elapsed_time;
+//                pr_info("Queue diff: %d Time diff: %d queue_gradiant=%d", 
+//                        (sch->qstats.backlog - q->queue_sample), 
+//                        elapsed_time, q->queue_gradiant);
+//            }
+//            q->queue_sample = sch->qstats.backlog;
+//            q->sample_time = ktime_get();
+//        }
         //everything in kernel is interms of bytes. So convert Mininet kbits to bytes
         u32 capacity = (q->capacity * 1024)/8; 
         s64 rate;
-        if(q->queue_gradiant > 0)
-        {
-            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog - 2*elapsed_time*q->queue_gradiant)/q->numFlow : 0;
-        }
-        else
+//        if(q->queue_gradiant > 0)
+//        {
+//            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog - 2*elapsed_time*q->queue_gradiant)/q->numFlow : 0;
+//        }
+//        else
         {
             rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/q->numFlow : 0;        
         }
