@@ -23,9 +23,9 @@ tcp3='CDG'
 #set yrange [0:70]
 set output sprintf("backlog.png")
 set xlabel "Time (Seconds)"
-set ylabel "Bottleneck queue length (KB)"
+set ylabel "Queuing delay (msec)"
 #plot backlogbbr using 1:($2/1024) title tcp1, backlogim using 1:($2/1024) title tcp2, backlogcdg using 1:($2/1024) title tcp3
-plot backlogim using 1:($2/1024) title tcp2, backlogcdg using 1:($2/1024) title tcp3
+plot backlogim using 1:($2*8/(1024*1024)) title tcp2, backlogcdg using 1:($2*8/(1024*1024)) title tcp3
 
 #Plot Fainess index
 set autoscale y
