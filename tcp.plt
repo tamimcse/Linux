@@ -4,6 +4,7 @@ set print "-"
 set terminal png
 set autoscale x
 set autoscale y
+set size ratio .5
 #Set legend
 set key inside right top
 set datafile missing "-nan"
