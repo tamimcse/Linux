@@ -23,8 +23,18 @@
 static unsigned long bufsize __read_mostly = 64 * 4096;
 static const char procname[] = "mf_probe";
 
+struct flow {
+    __be32  saddr;
+    __be32  daddr;
+    //Not the actual hash table but this pointer would be used to be added to hash table
+     struct hlist_node hash_item_ptr;
+};
+
+//Actual hash table of size 8
+static DEFINE_HASHTABLE(flows, 3);
+
 struct mf_sched_data {
-    u32 numFlow;
+    u32 nFlow;
     u32 capacity;
     u32 queue_sample;
     ktime_t sample_time;
@@ -54,6 +64,14 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
         int opcode;
         const struct tcphdr *th;
         struct mf_sched_data *q = qdisc_priv(sch);
+        if(q->nFlow == 0)
+        {
+            pr_err("Some thing is terribly wrong !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            return;
+        }
+        //everything in kernel is interms of bytes. So convert Mininet kbits to bytes
+        u32 capacity = (q->capacity * 1024)/8;
+        s64 rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/q->nFlow : 0;
 //        int elapsed_time = (int)ktime_to_ms (ktime_sub(ktime_get(), q->sample_time));
 //        if(elapsed_time > 20)
 //        {
@@ -69,17 +87,17 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 //            q->queue_sample = sch->qstats.backlog;
 //            q->sample_time = ktime_get();
 //        }
-        //everything in kernel is interms of bytes. So convert Mininet kbits to bytes
-        u32 capacity = (q->capacity * 1024)/8; 
-        s64 rate;
+//        everything in kernel is interms of bytes. So convert Mininet kbits to bytes
+//        u32 capacity = (q->capacity * 1024)/8; 
+//        s64 rate;
 //        if(q->queue_gradiant > 0)
 //        {
 //            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog - 2*elapsed_time*q->queue_gradiant)/q->numFlow : 0;
 //        }
 //        else
-        {
-            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/q->numFlow : 0;        
-        }
+//        {
+//            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/q->nFlow : 0;        
+//        }
             
 
         //convert into bytes back to to KB (as MF TCP option)
@@ -162,6 +180,39 @@ static int mf_enqueue(struct sk_buff *skb, struct Qdisc *sch,
 			 struct sk_buff **to_free)
 {
         struct mf_sched_data *q = qdisc_priv(sch);
+        struct iphdr *iph = ip_hdr(skb);
+        __be32  val;
+        
+        //check if it belongs to a new flow
+        int found = 0;
+        //Used by the hash_for_each()
+        int b;
+        struct flow *temp;
+        
+        //check the IP address belong to one of the Mininet
+        if((q->nFlow != 3 && iph->daddr & 255) == 172)
+        {   
+            //the last parameter is the pointer of the item to be added (it's not the variable itself but the variable w/o ref)
+            hash_for_each(flows, b, temp, hash_item_ptr)
+            {
+                if(temp->daddr == iph->daddr)
+                    found = 1;
+            };
+
+            if(found == 0)
+            {
+                //Declare the flow to be added
+                struct flow *f = kmalloc(sizeof(*f), GFP_KERNEL);
+                f->daddr = iph->daddr;
+                f->saddr = iph->saddr;
+    //            f->hash_item_ptr = 0; /* Will be initilaized when added to the hashtable */
+                hash_add(flows, &f->hash_item_ptr, f->saddr);
+                q->nFlow++;
+            }            
+        }
+        
+//        pr_info("Number of flows: %d !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", q->nFlow);
+        
         record_mf(sch);        
 	if (likely(sch->q.qlen < sch->limit))
         {
@@ -237,7 +288,7 @@ static void mf_probe_init(void)
         bufsize = roundup_pow_of_two(bufsize);
 	mf_probe.start.tv64 = 0;
         mf_probe.head = mf_probe.tail = 0;
-        mf_probe.log = kcalloc(bufsize, sizeof(struct mf_log), GFP_KERNEL);    
+        mf_probe.log = kcalloc(bufsize, sizeof(struct mf_log), GFP_KERNEL);            
         if(!mf_probe.log)
         {
             kfree(mf_probe.log);
@@ -258,7 +309,7 @@ static int mf_init(struct Qdisc *sch, struct nlattr *opt)
                 q->qdisc = fifo_create_dflt(sch, &bfifo_qdisc_ops, limit);
 		q->qdisc->limit = limit;
                 q->capacity = 1024;
-                q->numFlow = 3;
+                q->nFlow = 0;
                 q->queue_sample = 0;
                 q->sample_time.tv64 = 0;
                 q->queue_gradiant = 0;
