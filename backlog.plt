@@ -36,3 +36,17 @@ set ylabel "Fairness index"
 #plot "fairness-bbr.data" using 1:2 title tcp1, "fairness-im.data" using 1:2 title tcp2, "fairness-cdg.data" using 1:2 title tcp3
 plot "fairness-im.data" using 1:2 title tcp2, "fairness-cdg.data" using 1:2 title tcp3
 
+
+#Plot NA-TCP throughputs
+set output sprintf("flows-im.png",outPre)
+set xlabel "Time (Seconds)"
+set ylabel "Throughput (KB/s)"
+set autoscale y
+plot "h1-im.data" using 1:($12 /1024) title "flow 1", "h3-im.data" using 1:($12 /1024) title "flow 2", "h5-im.data" using 1:($12 /1024) title "flow 3"
+
+#Plot NA-TCP throughputs
+set output sprintf("flows-cdg.png",outPre)
+set xlabel "Time (Seconds)"
+set ylabel "Throughput (KB/s)"
+set autoscale y
+plot "h1-cdg.data" using 1:($12 /1024) title "flow 1", "h3-cdg.data" using 1:($12 /1024) title "flow 2", "h5-cdg.data" using 1:($12 /1024) title "flow 3"
