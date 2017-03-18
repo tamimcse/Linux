@@ -40,10 +40,10 @@ plot imlog using 1:($10/1000) title tcp2, cdglog using 1:($10/1000) title tcp3
 #Plot throughput
 set output sprintf("%s-throughput.png",outPre)
 set xlabel "Time (Seconds)"
-set ylabel "Throughput (KB/s)"
+set ylabel "Throughput (kbps)"
 set autoscale y
 #plot bbrlog using 1:($12 /1024) title tcp1, imlog using 1:($12 /1024) title tcp2, cdglog using 1:($12 /1024) title tcp3
-plot imlog using 1:($12 /1024) title tcp2, cdglog using 1:($12 /1024) title tcp3
+plot imlog using 1:($12 * 8 /1024) title tcp2, cdglog using 1:($12 * 8 /1024) title tcp3
 
 #Plot Jitter
 #set yrange [0:500]
