@@ -190,7 +190,7 @@ static int mf_enqueue(struct sk_buff *skb, struct Qdisc *sch,
         struct flow *temp;
         
         //check the IP address belong to one of the Mininet
-        if((iph->daddr & 255) == 172)
+        if((q->nFlow < 3) && ((iph->daddr & 255) == 172))
         {   
             //the last parameter is the pointer of the item to be added (it's not the variable itself but the variable w/o ref)
             hash_for_each(flows, b, temp, hash_item_ptr)
