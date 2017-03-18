@@ -211,7 +211,7 @@ static int mf_enqueue(struct sk_buff *skb, struct Qdisc *sch,
             }            
         }
         
-        pr_info("Number of flows: %d !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", q->nFlow);
+//        pr_info("Number of flows: %d !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", q->nFlow);
         
         record_mf(sch);        
 	if (likely(sch->q.qlen < sch->limit))
@@ -323,6 +323,16 @@ static void mf_destroy(struct Qdisc *sch)
 {
 	struct mf_sched_data *q = qdisc_priv(sch);
 	qdisc_destroy(q->qdisc);
+        
+        //Used by the hash_for_each()
+        int b;
+        struct flow *temp;        
+        //the last parameter is the pointer of the item to be added (it's not the variable itself but the variable w/o ref)
+        hash_for_each(flows, b, temp, hash_item_ptr)
+        {
+            hash_del(&temp->hash_item_ptr);
+        };
+        q->nFlow = 0;
 }
 
 static int mf_dump(struct Qdisc *sch, struct sk_buff *skb)
