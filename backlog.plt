@@ -38,6 +38,7 @@ plot "fairness-im.data" using 1:2 title tcp2, "fairness-cdg.data" using 1:2 titl
 
 
 #Plot NA-TCP throughputs
+set key inside right top
 set output sprintf("flows-im.png",outPre)
 set xlabel "Time (Seconds)"
 set ylabel "Throughput (KB/s)"
