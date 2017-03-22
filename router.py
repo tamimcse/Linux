@@ -158,10 +158,10 @@ def main(cli=0):
     else:
 	net[ 'h1' ].cmd( 'sudo ./streamer  172.16.101.1 &' )
 	net[ 'h2' ].cmd( 'sh streaming.sh 172.16.101.1' )
-	time.sleep(15)
+#	time.sleep(15)
 	net[ 'h3' ].cmd( 'sudo ./streamer  172.16.103.1 &' )
 	net[ 'h4' ].cmd( 'sh streaming.sh 172.16.103.1' )
-	time.sleep(15)
+#	time.sleep(15)
 	net[ 'h5' ].cmd( 'sudo ./streamer  172.16.105.1 &' )
 	net[ 'h6' ].cmd( 'sh streaming.sh 172.16.105.1' )
 #	net[ 'r1' ].cmd( 'watch  -dc  tc -s qdisc show dev r1-eth1' )
