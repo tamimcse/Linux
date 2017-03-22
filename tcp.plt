@@ -34,16 +34,16 @@ set output sprintf("%s-rtt.png",outPre)
 set xlabel "Time (Seconds)"
 set ylabel "SRTT (milliseconds)"
 set yrange [130:*]
-#plot bbrlog using 1:($10/1000) title tcp1, imlog using 1:($10/1000) title tcp2, cdglog using 1:($10/1000) title tcp3
-plot imlog using 1:($10/1000) title tcp2, cdglog using 1:($10/1000) title tcp3
+#plot imlog using 1:($10/1000) title tcp2, cdglog using 1:($10/1000) title tcp3, bbrlog using 1:($10/1000) title tcp1
+plot imlog using 1:($10/1000) title tcp2, bbrlog using 1:($10/1000) title tcp1
 
 #Plot throughput
 set output sprintf("%s-throughput.png",outPre)
 set xlabel "Time (Seconds)"
 set ylabel "Throughput (kbps)"
 set autoscale y
-#plot bbrlog using 1:($12 /1024) title tcp1, imlog using 1:($12 /1024) title tcp2, cdglog using 1:($12 /1024) title tcp3
-plot imlog using 1:($12 * 8 /1024) title tcp2, cdglog using 1:($12 * 8 /1024) title tcp3
+#plot imlog using 1:($12 * 8 /1024) title tcp2, cdglog using 1:($12 * 8 /1024) title tcp3, bbrlog using 1:($12 * 8 /1024) title tcp1
+plot imlog using 1:($12 * 8 /1024) title tcp2, bbrlog using 1:($12 * 8 /1024) title tcp1
 
 #Plot Jitter
 #set yrange [0:500]
