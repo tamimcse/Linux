@@ -1,0 +1,1069 @@
+From a3ae8f489ba756ec8465ba799701302141a6f03f Mon Sep 17 00:00:00 2001
+From: tamimcse <tamim@csebuet.org>
+Date: Wed, 22 Mar 2017 00:32:19 -0400
+Subject: [PATCH] Added TCP Inigo (Receiver based cc)
+
+---
+ arch/x86/configs/x86_64_defconfig |   1 +
+ include/linux/tcp.h               |  17 ++
+ include/net/tcp.h                 |  13 +
+ net/ipv4/Kconfig                  |   6 +
+ net/ipv4/Makefile                 |   1 +
+ net/ipv4/sysctl_net_ipv4.c        |  42 +++
+ net/ipv4/tcp_inigo.c              | 583 ++++++++++++++++++++++++++++++++++++++
+ net/ipv4/tcp_input.c              | 244 +++++++++++++++-
+ net/ipv4/tcp_output.c             |  10 +-
+ 9 files changed, 915 insertions(+), 2 deletions(-)
+ create mode 100644 net/ipv4/tcp_inigo.c
+
+diff --git a/arch/x86/configs/x86_64_defconfig b/arch/x86/configs/x86_64_defconfig
+index ac790cd..9e6c19e 100644
+--- a/arch/x86/configs/x86_64_defconfig
++++ b/arch/x86/configs/x86_64_defconfig
+@@ -327,6 +327,7 @@ CONFIG_ATH9K_HTC_DEBUGFS=y
+ 
+ 
+ CONFIG_TCP_MF=m
++CONFIG_TCP_INIGO=y
+ 
+ #Veth, Network namespace, and NetEm setup (Needed for Mininet)
+ CONFIG_VETH=y
+diff --git a/include/linux/tcp.h b/include/linux/tcp.h
+index 527db4b..0870d79 100755
+--- a/include/linux/tcp.h
++++ b/include/linux/tcp.h
+@@ -300,6 +300,23 @@ struct tcp_sock {
+ 	u32	sacked_out;	/* SACK'd packets			*/
+ 	u32	fackets_out;	/* FACK'd packets			*/
+ 
++/*
++ *	Receiver-side Relative Forward Delay (RFD) measurement and
++ *	congestion control. rcv_wnd and rcv_ssthresh are declared elsewhere.
++ *	TODO: adaptive millisecond to microsecond resolution time
++ */
++	u32	rcv_txts_prev;		/* Previous tx time stamp		*/
++	u32	rcv_rxts_prev;		/* Previous rx time stamp		*/
++	s32	rcv_rfd_total;		/* Acumulated Relative Forward Delay	*/
++	u32	rcv_rtt_min;		/* Minimum estimated rtt		*/
++	u32	rcv_rfd_bytes_late;	/* Late bytes, according to RFD		*/
++	u32	rcv_rfd_bytes_total;	/* Total bytes, used to get cong ratio	*/
++	u32	rcv_rfd_alpha;		/* RFD congestion ratio			*/
++	u32	rcv_cc_bytes_marked;	/* ECN or late bytes, according to RFD	*/
++	u32	rcv_cc_bytes_total;	/* Total bytes, used to get cong ratio	*/
++	u32	rcv_cc_alpha;		/* Congestion ratio			*/
++	u32	rcv_cwnd;		/* Receiver congestion window		*/
++
+ 	/* from STCP, retrans queue hinting */
+ 	struct sk_buff* lost_skb_hint;
+ 	struct sk_buff *retransmit_skb_hint;
+diff --git a/include/net/tcp.h b/include/net/tcp.h
+index e7ee23b..a697a09 100755
+--- a/include/net/tcp.h
++++ b/include/net/tcp.h
+@@ -276,6 +276,12 @@ extern int sysctl_tcp_autocorking;
+ extern int sysctl_tcp_invalid_ratelimit;
+ extern int sysctl_tcp_pacing_ss_ratio;
+ extern int sysctl_tcp_pacing_ca_ratio;
++extern int sysctl_tcp_rcv_cc_fairness;
++extern int sysctl_tcp_rcv_cc_rebase;
++extern int sysctl_tcp_rcv_congestion_control;
++extern int sysctl_tcp_rcv_dctcp;
++extern int sysctl_tcp_rcv_ecn_marking;
++extern int sysctl_tcp_us_tstamp;
+ 
+ extern atomic_long_t tcp_memory_allocated;
+ extern struct percpu_counter tcp_sockets_allocated;
+@@ -712,6 +718,9 @@ void tcp_send_window_probe(struct sock *sk);
+ 
+ static inline u32 tcp_skb_timestamp(const struct sk_buff *skb)
+ {
++	if (sysctl_tcp_us_tstamp)
++		return skb->skb_mstamp.stamp_us;
++
+ 	return skb->skb_mstamp.stamp_jiffies;
+ }
+ 
+@@ -942,6 +951,10 @@ struct tcp_congestion_ops {
+ 	/* get info for inet_diag (optional) */
+ 	size_t (*get_info)(struct sock *sk, u32 ext, int *attr,
+ 			   union tcp_cc_info *info);
++	/* receiver-side congestion control (optional) */
++	void (*rcv_cc)(struct sock *sk, struct sk_buff *skb);
++	/* receiver-side window (optional) */
++	u32 (*rcv_wnd)(struct sock *sk);
+ 
+ 	char 		name[TCP_CA_NAME_MAX];
+ 	struct module 	*owner;
+diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
+index 5ab6bc9..97af3aa 100644
+--- a/net/ipv4/Kconfig
++++ b/net/ipv4/Kconfig
+@@ -492,6 +492,12 @@ config TCP_MF
+ 	---help---
+ 	This is version 2.0 of MF-TCP which is a media-friendly TCP
+ 
++config TCP_INIGO
++	tristate "TCP Inigo"
++	default m
++	---help---
++	
++
+ config TCP_CONG_WESTWOOD
+ 	tristate "TCP Westwood+"
+ 	default m
+diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
+index 123d407..c4b1ccf 100644
+--- a/net/ipv4/Makefile
++++ b/net/ipv4/Makefile
+@@ -60,6 +60,7 @@ obj-$(CONFIG_TCP_CONG_YEAH) += tcp_yeah.o
+ obj-$(CONFIG_TCP_CONG_ILLINOIS) += tcp_illinois.o
+ obj-$(CONFIG_NETLABEL) += cipso_ipv4.o
+ obj-$(CONFIG_TCP_MF) += tcp_mf.o
++obj-$(CONFIG_TCP_INIGO) += tcp_inigo.o
+ 
+ 
+ obj-$(CONFIG_XFRM) += xfrm4_policy.o xfrm4_state.o xfrm4_input.o \
+diff --git a/net/ipv4/sysctl_net_ipv4.c b/net/ipv4/sysctl_net_ipv4.c
+index f82e67a..a4888db6 100644
+--- a/net/ipv4/sysctl_net_ipv4.c
++++ b/net/ipv4/sysctl_net_ipv4.c
+@@ -855,6 +855,48 @@ static struct ctl_table ipv4_net_table[] = {
+ 		.proc_handler	= proc_dointvec
+ 	},
+ 	{
++		.procname	= "tcp_rcv_cc_fairness",
++		.data		= &sysctl_tcp_rcv_cc_fairness,
++		.maxlen		= sizeof(int),
++		.mode		= 0644,
++		.proc_handler	= proc_dointvec,
++	},
++	{
++		.procname	= "tcp_rcv_cc_rebase",
++		.data		= &sysctl_tcp_rcv_cc_rebase,
++		.maxlen		= sizeof(int),
++		.mode		= 0644,
++		.proc_handler	= proc_dointvec,
++	},
++	{
++		.procname	= "tcp_rcv_congestion_control",
++		.data		= &sysctl_tcp_rcv_congestion_control,
++		.maxlen		= sizeof(int),
++		.mode		= 0644,
++		.proc_handler	= proc_dointvec,
++	},
++	{
++		.procname	= "tcp_rcv_dctcp",
++		.data		= &sysctl_tcp_rcv_dctcp,
++		.maxlen		= sizeof(int),
++		.mode		= 0644,
++		.proc_handler	= proc_dointvec,
++	},
++	{
++		.procname	= "tcp_rcv_ecn_marking",
++		.data		= &sysctl_tcp_rcv_ecn_marking,
++		.maxlen		= sizeof(int),
++		.mode		= 0644,
++		.proc_handler	= proc_dointvec,
++	},
++	{
++		.procname	= "tcp_us_tstamp",
++		.data		= &sysctl_tcp_us_tstamp,
++		.maxlen		= sizeof(int),
++		.mode		= 0644,
++		.proc_handler	= proc_dointvec,
++	},
++	{
+ 		.procname	= "igmp_max_memberships",
+ 		.data		= &init_net.ipv4.sysctl_igmp_max_memberships,
+ 		.maxlen		= sizeof(int),
+diff --git a/net/ipv4/tcp_inigo.c b/net/ipv4/tcp_inigo.c
+new file mode 100644
+index 0000000..83efed8
+--- /dev/null
++++ b/net/ipv4/tcp_inigo.c
+@@ -0,0 +1,583 @@
++/* TCP Inigo congestion control.
++ *
++ * This is an implementation of TCP Inigo, which takes the measure of
++ * the extent of congestion introduced in DCTCP and applies it to
++ * networks outside the data center.
++ *
++ * https://www.soe.ucsc.edu/research/technical-reports/UCSC-SOE-14-14
++ *
++ * The motivation behind the RTT fairness functionality comes from
++ * the 2nd DCTCP paper listed below.
++ *
++ * Authors:
++ *
++ *	Andrew Shewmaker <agshew@gmail.com>
++ *
++ * Forked from DataCenter TCP (DCTCP) congestion control.
++ *
++ * http://simula.stanford.edu/~alizade/Site/DCTCP.html
++ *
++ * This is an implementation of DCTCP, an enhancement to the
++ * TCP congestion control algorithm designed for data centers. DCTCP
++ * leverages Explicit Congestion Notification (ECN) in the network to
++ * provide multi-bit feedback to the end hosts. DCTCP's goal is to meet
++ * the following three data center transport requirements:
++ *
++ *  - High burst tolerance (incast due to partition/aggregate)
++ *  - Low latency (short flows, queries)
++ *  - High throughput (continuous data updates, large file transfers)
++ *    with commodity shallow buffered switches
++ *
++ * The algorithm is described in detail in the following two papers:
++ *
++ * 1) Mohammad Alizadeh, Albert Greenberg, David A. Maltz, Jitendra Padhye,
++ *    Parveen Patel, Balaji Prabhakar, Sudipta Sengupta, and Murari Sridharan:
++ *      "Data Center TCP (DCTCP)", Data Center Networks session
++ *      Proc. ACM SIGCOMM, New Delhi, 2010.
++ *   http://simula.stanford.edu/~alizade/Site/DCTCP_files/inigo-final.pdf
++ *
++ * 2) Mohammad Alizadeh, Adel Javanmard, and Balaji Prabhakar:
++ *      "Analysis of DCTCP: Stability, Convergence, and Fairness"
++ *      Proc. ACM SIGMETRICS, San Jose, 2011.
++ *   http://simula.stanford.edu/~alizade/Site/DCTCP_files/inigo_analysis-full.pdf
++ *
++ * Initial prototype from Abdul Kabbani, Masato Yasuda and Mohammad Alizadeh.
++ *
++ * Authors:
++ *
++ *	Daniel Borkmann <dborkman@redhat.com>
++ *	Florian Westphal <fw@strlen.de>
++ *	Glenn Judd <glenn.judd@morganstanley.com>
++ *
++ * RTT Fallback:
++ *
++ *	Andrew Shewmaker <shewa@lanl.gov>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or (at
++ * your option) any later version.
++ */
++
++#include <linux/module.h>
++#include <linux/mm.h>
++#include <net/tcp.h>
++#include <linux/inet_diag.h>
++
++#define DCTCP_MAX_ALPHA	1024U
++#define INIGO_MIN_FAIRNESS 3U   // alpha sensitivity of 684 / 1024
++#define INIGO_MAX_FAIRNESS 512U // alpha sensitivity of 4 / 1024
++#define INIGO_MAX_MARK 1024U
++
++struct inigo {
++	u32 acked_bytes_ecn;
++	u32 acked_bytes_total;
++	u32 prior_snd_una;
++	u32 prior_rcv_nxt;
++	u32 inigo_alpha;
++	u32 next_seq;
++	u32 delayed_ack_reserved;
++	u32 rtt_min;
++	u32 rtts_late;
++	u32 rtts_observed;
++	u8 ce_state;
++};
++
++static unsigned int inigo_shift_g __read_mostly = 4; /* g = 1/2^4 */
++module_param(inigo_shift_g, uint, 0644);
++MODULE_PARM_DESC(inigo_shift_g, "parameter g for updating inigo_alpha");
++
++static unsigned int inigo_alpha_on_init __read_mostly = DCTCP_MAX_ALPHA;
++module_param(inigo_alpha_on_init, uint, 0644);
++MODULE_PARM_DESC(inigo_alpha_on_init, "parameter for initial alpha value");
++
++static unsigned int inigo_clamp_alpha_on_loss __read_mostly;
++module_param(inigo_clamp_alpha_on_loss, uint, 0644);
++MODULE_PARM_DESC(inigo_clamp_alpha_on_loss,
++		 "parameter for clamping alpha on loss");
++
++static unsigned int markthresh __read_mostly = 174;
++module_param(markthresh, uint, 0644);
++MODULE_PARM_DESC(markthresh, "rtts >  rtt_min + rtt_min * markthresh / 1024"
++		" are considered marks of congestion, defaults to 174 out of 1024");
++
++static unsigned int slowstart_rtt_observations_needed __read_mostly = 8;
++module_param(slowstart_rtt_observations_needed, uint, 0644);
++MODULE_PARM_DESC(slowstart_rtt_observations_needed, "minimum number of RTT observations needed"
++		 " to exit slowstart, defaults to 8");
++
++static unsigned int rtt_fairness  __read_mostly = 10;
++module_param(rtt_fairness, uint, 0644);
++MODULE_PARM_DESC(rtt_fairness, "if non-zero, react to congestion every x acks during cong avoid,"
++		 " 0 indicates once per window, otherwise 3 < x < 512, defaults to 10");
++
++static unsigned int inigo_force_ecn __read_mostly = 0;
++module_param(inigo_force_ecn, uint, 0644);
++MODULE_PARM_DESC(inigo_force_ecn, "force use of ecn (needed for Mininet testing of fallback)");
++
++static struct tcp_congestion_ops inigo;
++static struct tcp_congestion_ops inigo_rtt;
++
++static void inigo_reset(const struct tcp_sock *tp, struct inigo *ca)
++{
++	ca->next_seq = tp->snd_nxt;
++
++	ca->acked_bytes_ecn = 0;
++	ca->acked_bytes_total = 0;
++}
++
++static void inigo_init(struct sock *sk)
++{
++	struct tcp_sock *tp = tcp_sk(sk);
++	struct inigo *ca = inet_csk_ca(sk);
++	const struct inet_sock *inet = inet_sk(sk);
++
++	if (rtt_fairness != 0)
++		rtt_fairness = clamp(rtt_fairness, INIGO_MIN_FAIRNESS, INIGO_MAX_FAIRNESS);
++
++	ca->inigo_alpha = 0;
++	ca->rtt_min = USEC_PER_SEC;
++	ca->rtts_late = 0;
++	ca->rtts_observed = 0;
++
++	if (inigo_force_ecn || (tp->ecn_flags & TCP_ECN_OK) ||
++	    (sk->sk_state == TCP_LISTEN ||
++	     sk->sk_state == TCP_CLOSE)) {
++		bool use_ecn = sock_net(sk)->ipv4.sysctl_tcp_ecn == 1 || tcp_ca_needs_ecn(sk);
++		const struct dst_entry *dst = __sk_dst_get(sk);
++		pr_info("inigo: ecn enabled %pI4 force=%u ecn_ok=%u state=%u use_ecn=%u dst_feature=%u\n",
++			&inet->inet_saddr, inigo_force_ecn, tp->ecn_flags & TCP_ECN_OK, sk->sk_state, use_ecn, dst && dst_feature(dst, RTAX_FEATURE_ECN));
++
++		inigo.flags |= TCP_CONG_NEEDS_ECN;
++		//TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_ECE | TCPHDR_CWR;
++		tp->ecn_flags = TCP_ECN_OK;
++		INET_ECN_xmit(sk);
++
++		ca->inigo_alpha = min(inigo_alpha_on_init, DCTCP_MAX_ALPHA);
++
++		ca->prior_snd_una = tp->snd_una;
++		ca->prior_rcv_nxt = tp->rcv_nxt;
++
++		ca->delayed_ack_reserved = 0;
++		ca->ce_state = 0;
++
++		inigo_reset(tp, ca);
++		return;
++	}
++
++	/* No ECN support? Fall back to RTT. Also need to clear
++	 * ECT from sk since it is set during 3WHS for DCTCP.
++	 */
++	pr_info("inigo: ecn disabled %pI4 force=%u ecn_ok=%u state=%u\n", &inet->inet_saddr, inigo_force_ecn, tp->ecn_flags & TCP_ECN_OK, sk->sk_state);
++	inet_csk(sk)->icsk_ca_ops = &inigo_rtt;
++	INET_ECN_dontxmit(sk);
++}
++
++static u32 inigo_ssthresh(struct sock *sk)
++{
++	const struct inigo *ca = inet_csk_ca(sk);
++	struct tcp_sock *tp = tcp_sk(sk);
++
++	return max(tp->snd_cwnd - ((tp->snd_cwnd * ca->inigo_alpha) >> 11U), 2U);
++}
++
++static u32 inigo_rtt_ssthresh(struct sock *sk)
++{
++	const struct inigo *ca = inet_csk_ca(sk);
++	struct tcp_sock *tp = tcp_sk(sk);
++	u32 nsubwnd = 1;
++
++	if (rtt_fairness) {
++		nsubwnd = tp->snd_cwnd;
++		if (do_div(nsubwnd, rtt_fairness))
++			nsubwnd++;
++	}
++
++	return max(tp->snd_cwnd - ((tp->snd_cwnd * ca->inigo_alpha) >> 11U) / nsubwnd, 2U);
++}
++
++/* Minimal DCTP CE state machine:
++ *
++ * S:	0 <- last pkt was non-CE
++ *	1 <- last pkt was CE
++ */
++
++static void inigo_ce_state_0_to_1(struct sock *sk)
++{
++	struct inigo *ca = inet_csk_ca(sk);
++	struct tcp_sock *tp = tcp_sk(sk);
++
++	/* State has changed from CE=0 to CE=1 and delayed
++	 * ACK has not sent yet.
++	 */
++	if (!ca->ce_state && ca->delayed_ack_reserved) {
++		u32 tmp_rcv_nxt;
++
++		/* Save current rcv_nxt. */
++		tmp_rcv_nxt = tp->rcv_nxt;
++
++		/* Generate previous ack with CE=0. */
++		tp->ecn_flags &= ~TCP_ECN_DEMAND_CWR;
++		tp->rcv_nxt = ca->prior_rcv_nxt;
++
++		tcp_send_ack(sk);
++
++		/* Recover current rcv_nxt. */
++		tp->rcv_nxt = tmp_rcv_nxt;
++	}
++
++	ca->prior_rcv_nxt = tp->rcv_nxt;
++	ca->ce_state = 1;
++
++	tp->ecn_flags |= TCP_ECN_DEMAND_CWR;
++}
++
++static void inigo_ce_state_1_to_0(struct sock *sk)
++{
++	struct inigo *ca = inet_csk_ca(sk);
++	struct tcp_sock *tp = tcp_sk(sk);
++
++	/* State has changed from CE=1 to CE=0 and delayed
++	 * ACK has not sent yet.
++	 */
++	if (ca->ce_state && ca->delayed_ack_reserved) {
++		u32 tmp_rcv_nxt;
++
++		/* Save current rcv_nxt. */
++		tmp_rcv_nxt = tp->rcv_nxt;
++
++		/* Generate previous ack with CE=1. */
++		tp->ecn_flags |= TCP_ECN_DEMAND_CWR;
++		tp->rcv_nxt = ca->prior_rcv_nxt;
++
++		tcp_send_ack(sk);
++
++		/* Recover current rcv_nxt. */
++		tp->rcv_nxt = tmp_rcv_nxt;
++	}
++
++	ca->prior_rcv_nxt = tp->rcv_nxt;
++	ca->ce_state = 0;
++
++	tp->ecn_flags &= ~TCP_ECN_DEMAND_CWR;
++}
++
++static void inigo_update_rtt_alpha(struct inigo *ca)
++{
++	u32 alpha = ca->inigo_alpha;
++	u32 marks = ca->rtts_late;
++	u32 total = ca->rtts_observed;
++
++	/* alpha = (1 - g) * alpha + g * F */
++        alpha -= min_not_zero(alpha, alpha >> inigo_shift_g);
++
++	if (marks) {
++		/* If shift_g == 1, a 32bit value would overflow
++		 * after 8 M.
++		 */
++		marks <<= (10 - inigo_shift_g);
++		do_div(marks, max(1U, total));
++
++		alpha = min(alpha + (u32)marks, DCTCP_MAX_ALPHA);
++        }
++
++	ca->inigo_alpha = alpha;
++}
++
++/* The cwnd reduction in CWR and Recovery use the PRR algorithm
++ * https://datatracker.ietf.org/doc/draft-ietf-tcpm-proportional-rate-reduction/
++ * It computes the number of packets to send (sndcnt) based on packets newly
++ * delivered:
++ *   1) If the packets in flight is larger than ssthresh, PRR spreads the
++ *      cwnd reductions across a full RTT.
++ *   2) If packets in flight is lower than ssthresh (such as due to excess
++ *      losses and/or application stalls), do not perform any further cwnd
++ *      reductions, but instead slow start up to ssthresh.
++ */
++static void inigo_init_cwnd_reduction(struct sock *sk)
++{
++	struct inigo *ca = inet_csk_ca(sk);
++	struct tcp_sock *tp = tcp_sk(sk);
++
++	tp->high_seq = tp->snd_nxt;
++	tp->tlp_high_seq = 0;
++	// tp->snd_cwnd_cnt = 0; commented out because of rtt-fairness support
++	tp->prior_cwnd = tp->snd_cwnd;
++	tp->prr_delivered = 0;
++	tp->prr_out = 0;
++	tp->snd_ssthresh = inigo_rtt_ssthresh(sk);
++	ca->rtts_late = 0;
++	ca->rtts_observed = 0;
++}
++
++/* Enter CWR state. Disable cwnd undo since congestion is proven with ECN or Delay */
++void inigo_enter_cwr(struct sock *sk)
++{
++	struct tcp_sock *tp = tcp_sk(sk);
++
++	tp->prior_ssthresh = 0;
++	if (inet_csk(sk)->icsk_ca_state < TCP_CA_CWR) {
++		tp->undo_marker = 0;
++		inigo_init_cwnd_reduction(sk);
++		tcp_set_ca_state(sk, TCP_CA_CWR);
++	}
++}
++
++static void inigo_update_alpha(struct sock *sk, u32 flags)
++{
++	struct tcp_sock *tp = tcp_sk(sk);
++	struct inigo *ca = inet_csk_ca(sk);
++	u32 acked_bytes = tp->snd_una - ca->prior_snd_una;
++
++	/* If ack did not advance snd_una, count dupack as MSS size.
++	 * If ack did update window, do not count it at all.
++	 */
++	if (acked_bytes == 0 && !(flags & CA_ACK_WIN_UPDATE))
++		acked_bytes = inet_csk(sk)->icsk_ack.rcv_mss;
++	if (acked_bytes) {
++		if (flags & CA_ACK_ECE) {
++			if (ca->acked_bytes_ecn == 0 && tcp_in_slow_start(tp)) {
++				tp->snd_ssthresh = tp->snd_cwnd;
++			}
++
++			ca->acked_bytes_ecn += acked_bytes;
++		}
++		ca->acked_bytes_total += acked_bytes;
++		ca->prior_snd_una = tp->snd_una;
++	}
++
++	/* Expired RTT */
++	if (!before(tp->snd_una, ca->next_seq)) {
++		u64 bytes_ecn = ca->acked_bytes_ecn;
++		u32 alpha = ca->inigo_alpha;
++
++		/* alpha = (1 - g) * alpha + g * F */
++
++		alpha -= min_not_zero(alpha, alpha >> inigo_shift_g);
++		if (bytes_ecn) {
++			/* If inigo_shift_g == 1, a 32bit value would overflow
++			 * after 8 Mbytes.
++			 */
++			bytes_ecn <<= (10 - inigo_shift_g);
++			do_div(bytes_ecn, max(1U, ca->acked_bytes_total));
++
++			alpha = min(alpha + (u32)bytes_ecn, DCTCP_MAX_ALPHA);
++		}
++		/* inigo_alpha can be read from inigo_get_info() without
++		 * synchro, so we ask compiler to not use inigo_alpha
++		 * as a temporary variable in prior operations.
++		 */
++		WRITE_ONCE(ca->inigo_alpha, alpha);
++		inigo_reset(tp, ca);
++
++		/* Fall back to RTT-based congestion control if alpha stays low
++		 * even though RTTs are increasing during the window.
++		 */
++		if (ca->acked_bytes_ecn == 0 && ca->rtts_late > 1 && ca->rtts_observed >= slowstart_rtt_observations_needed) {
++			pr_info("inigo: ecn unconfigured, falling back to RTT-based congestion control\n");
++			inet_csk(sk)->icsk_ca_ops = &inigo_rtt;
++			INET_ECN_dontxmit(sk);
++
++/*
++			inigo_update_rtt_alpha(ca);
++
++			if (ca->inigo_alpha) {
++				inigo_enter_cwr(sk);
++				return;
++			}
++ */
++		}
++		ca->rtts_late = 0;
++	}
++}
++
++static void inigo_state(struct sock *sk, u8 new_state)
++{
++	if (inigo_clamp_alpha_on_loss && new_state == TCP_CA_Loss) {
++		struct inigo *ca = inet_csk_ca(sk);
++
++		/* If this extension is enabled, we clamp inigo_alpha to
++		 * max on packet loss; the motivation is that inigo_alpha
++		 * is an indicator to the extend of congestion and packet
++		 * loss is an indicator of extreme congestion; setting
++		 * this in practice turned out to be beneficial, and
++		 * effectively assumes total congestion which reduces the
++		 * window by half.
++		 */
++		ca->inigo_alpha = DCTCP_MAX_ALPHA;
++	}
++}
++
++static void inigo_update_ack_reserved(struct sock *sk, enum tcp_ca_event ev)
++{
++	struct inigo *ca = inet_csk_ca(sk);
++
++	switch (ev) {
++	case CA_EVENT_DELAYED_ACK:
++		if (!ca->delayed_ack_reserved)
++			ca->delayed_ack_reserved = 1;
++		break;
++	case CA_EVENT_NON_DELAYED_ACK:
++		if (ca->delayed_ack_reserved)
++			ca->delayed_ack_reserved = 0;
++		break;
++	default:
++		/* Don't care for the rest. */
++		break;
++	}
++}
++
++static void inigo_cwnd_event(struct sock *sk, enum tcp_ca_event ev)
++{
++	switch (ev) {
++	case CA_EVENT_ECN_IS_CE:
++		inigo_ce_state_0_to_1(sk);
++		break;
++	case CA_EVENT_ECN_NO_CE:
++		inigo_ce_state_1_to_0(sk);
++		break;
++	case CA_EVENT_DELAYED_ACK:
++	case CA_EVENT_NON_DELAYED_ACK:
++		inigo_update_ack_reserved(sk, ev);
++		break;
++	default:
++		/* Don't care for the rest. */
++		break;
++	}
++}
++
++/* This is the same as newer tcp_slow_start(). It is only here for while inigo
++ * is being built out of tree against older kernels that don't do it this way.
++ */
++u32 inigo_slow_start(struct tcp_sock *tp, u32 acked)
++{
++	u32 cwnd = tp->snd_cwnd + acked;
++
++	if (cwnd > tp->snd_ssthresh)
++		cwnd = tp->snd_ssthresh + 1;
++	acked -= cwnd - tp->snd_cwnd;
++	tp->snd_cwnd = min(cwnd, tp->snd_cwnd_clamp);
++
++	return acked;
++}
++
++void inigo_cong_avoid_ai(struct sock *sk, u32 w, u32 acked)
++{
++	struct inigo *ca = inet_csk_ca(sk);
++	struct tcp_sock *tp = tcp_sk(sk);
++	u32 interval = tp->snd_cwnd;
++
++	if (tp->snd_cwnd_cnt >= w) {
++		if (tp->snd_cwnd < tp->snd_cwnd_clamp) {
++			tp->snd_cwnd++;
++			if (rtt_fairness)
++				tp->snd_cwnd++;
++		}
++
++		tp->snd_cwnd_cnt = 0;
++	}
++
++	if (rtt_fairness)
++		interval = min(interval, rtt_fairness);
++
++	if (tp->snd_cwnd_cnt >= interval) {
++		if (tp->snd_cwnd_cnt % interval == 0 || tp->snd_cwnd_cnt >= w) {
++			inigo_update_rtt_alpha(ca);
++
++			if (ca->inigo_alpha)
++				inigo_enter_cwr(sk);
++		}
++	}
++
++	if (tp->snd_cwnd_cnt < w) {
++		tp->snd_cwnd_cnt += acked;
++	}
++}
++
++void inigo_cong_avoid(struct sock *sk, u32 ack, u32 acked)
++{
++	struct inigo *ca = inet_csk_ca(sk);
++	struct tcp_sock *tp = tcp_sk(sk);
++
++	if (!tcp_is_cwnd_limited(sk)) {
++		return;
++	}
++
++	if (tp->snd_cwnd <= tp->snd_ssthresh) {
++		if (ca->rtts_observed >= slowstart_rtt_observations_needed) {
++			inigo_update_rtt_alpha(ca);
++
++			if (ca->inigo_alpha) {
++				inigo_enter_cwr(sk);
++				return;
++			}
++		}
++
++		/* In "safe" area, increase. */
++		acked = inigo_slow_start(tp, acked);
++		if (!acked)
++			return;
++	}
++	/* In dangerous area, increase slowly. */
++	inigo_cong_avoid_ai(sk, tp->snd_cwnd, acked);
++}
++
++static void inigo_pkts_acked(struct sock *sk, const struct ack_sample *sample)
++{
++        u32 num_acked = sample->pkts_acked;
++        s32 rtt = sample->rtt_us;
++	struct inigo *ca = inet_csk_ca(sk);
++
++	/* Some calls are for duplicates without timetamps */
++	if (rtt <= 0)
++		return;
++
++	ca->rtts_observed++;
++
++	ca->rtt_min = min((u32) rtt, ca->rtt_min);
++
++	/* Mimic DCTCP's ECN marking threshhold of approximately 0.17*BDP */
++	if ((u32) rtt > (ca->rtt_min + (ca->rtt_min * markthresh / INIGO_MAX_MARK)))
++		ca->rtts_late++;
++}
++
++static struct tcp_congestion_ops inigo __read_mostly = {
++	.init		= inigo_init,
++	.in_ack_event   = inigo_update_alpha,
++	.cwnd_event	= inigo_cwnd_event,
++	.ssthresh	= inigo_ssthresh,
++	.cong_avoid	= tcp_reno_cong_avoid,
++	.pkts_acked 	= inigo_pkts_acked,
++	.set_state	= inigo_state,
++	.owner		= THIS_MODULE,
++	.name		= "inigo",
++};
++
++static struct tcp_congestion_ops inigo_rtt __read_mostly = {
++	.ssthresh	= inigo_rtt_ssthresh,
++	.cong_avoid	= inigo_cong_avoid,
++	.pkts_acked 	= inigo_pkts_acked,
++	.owner		= THIS_MODULE,
++	.name		= "inigo-rtt",
++};
++
++static int __init inigo_register(void)
++{
++	BUILD_BUG_ON(sizeof(struct inigo) > ICSK_CA_PRIV_SIZE);
++	return tcp_register_congestion_control(&inigo);
++}
++
++static void __exit inigo_unregister(void)
++{
++	tcp_unregister_congestion_control(&inigo);
++}
++
++module_init(inigo_register);
++module_exit(inigo_unregister);
++
++MODULE_AUTHOR("Daniel Borkmann <dborkman@redhat.com>");
++MODULE_AUTHOR("Florian Westphal <fw@strlen.de>");
++MODULE_AUTHOR("Glenn Judd <glenn.judd@morganstanley.com>");
++
++MODULE_LICENSE("GPL v2");
++MODULE_DESCRIPTION("TCP Inigo");
+diff --git a/net/ipv4/tcp_input.c b/net/ipv4/tcp_input.c
+index 0bd158b..a858f90 100755
+--- a/net/ipv4/tcp_input.c
++++ b/net/ipv4/tcp_input.c
+@@ -15,7 +15,7 @@
+  *		Alan Cox, <gw4pts@gw4pts.ampr.org>
+  *		Matthew Dillon, <dillon@apollo.west.oic.com>
+  *		Arnt Gulbrandsen, <agulbra@nvg.unit.no>
+- *		Jorge Cwik, <jorge@laser.satlink.net>
++ *		Jorge Cwik, <jorge@laser.satlink.net>tcp_rcv_cc_fairness
+  */
+ 
+ /*
+@@ -102,6 +102,13 @@ int sysctl_tcp_moderate_rcvbuf __read_mostly = 1;
+ int sysctl_tcp_early_retrans __read_mostly = 3;
+ int sysctl_tcp_invalid_ratelimit __read_mostly = HZ/2;
+ 
++int sysctl_tcp_rcv_cc_fairness  __read_mostly = 0;
++int sysctl_tcp_rcv_cc_rebase __read_mostly = 0;
++int sysctl_tcp_rcv_congestion_control __read_mostly = 0;
++int sysctl_tcp_rcv_dctcp  __read_mostly = 0;
++int sysctl_tcp_rcv_ecn_marking __read_mostly = 0;
++int sysctl_tcp_us_tstamp  __read_mostly = 0;
++
+ #define FLAG_DATA		0x01 /* Incoming frame contained data.		*/
+ #define FLAG_WIN_UPDATE		0x02 /* Incoming ACK was a window update.	*/
+ #define FLAG_DATA_ACKED		0x04 /* This ACK acknowledged new data.		*/
+@@ -196,6 +203,7 @@ static void tcp_enter_quickack_mode(struct sock *sk)
+ 	icsk->icsk_ack.pingpong = 0;
+ 	icsk->icsk_ack.ato = TCP_ATO_MIN;
+ }
++EXPORT_SYMBOL(tcp_enter_quickack_mode);
+ 
+ /* Send ACKs quickly, if "quick" count is not exhausted
+  * and the session is not interactive.
+@@ -227,8 +235,242 @@ static void tcp_ecn_withdraw_cwr(struct tcp_sock *tp)
+ 	tp->ecn_flags &= ~TCP_ECN_DEMAND_CWR;
+ }
+ 
++static void tcp_rcv_cc(struct tcp_sock *tp)
++{
++	const struct inet_sock *inet = inet_sk((struct sock *) tp);
++	u32 alpha = tp->rcv_rfd_alpha;
++	u32 interval;
++
++	if (sysctl_tcp_rcv_ecn_marking)
++		return;
++
++	if (!tp->rcv_cwnd)
++		tp->rcv_cwnd = tp->rcv_wnd;
++
++	interval = tp->rcv_cwnd;
++
++	if (sysctl_tcp_rcv_cc_fairness)
++		interval = min(interval, (u32) sysctl_tcp_rcv_cc_fairness * tp->advmss);
++
++	if (ntohs(inet->inet_dport) == 5001 || ntohs(inet->inet_sport) == 5001)
++		pr_debug_ratelimited("RFDCC: %pI4 %pI4 rfd_total=%d, rfd_late=%u, rtt_min=%u, alpha=%u, cwnd=%u, ssthresh=%u, interval=%u, \n",
++		     &inet->inet_saddr, &inet->inet_daddr, tp->rcv_rfd_total, tp->rcv_rfd_bytes_late, tp->rcv_rtt_min, alpha, tp->rcv_cwnd, tp->rcv_ssthresh, interval);
++
++	if (tp->rcv_rfd_bytes_total >= interval) {
++		u32 shift_g = 4;
++		u64 bytes_late = tp->rcv_rfd_bytes_late;
++
++		/* alpha = (1 - g) * alpha + g * F */
++		if (alpha > (1 << shift_g))
++			alpha -= alpha >> shift_g;
++		else
++			alpha = 0; // otherwise, alpha can never reach zero
++
++		if (bytes_late) {
++			/* If shift_g == 1, a 32bit value would overflow
++			 * after 8 Mbytes.
++			 */
++			bytes_late <<= (10 - shift_g);
++			do_div(bytes_late, max(1U, tp->rcv_rfd_bytes_total));
++
++			alpha = min(alpha + (u32)bytes_late, 1024U);
++                }
++
++		tp->rcv_rfd_alpha = alpha;
++		tp->rcv_rfd_bytes_total = 0;
++		tp->rcv_rfd_bytes_late = 0;
++
++		if (alpha) {
++			/* congestion response */
++			u32 bytes = (interval * alpha) >> 11U;
++			tp->rcv_cwnd = max(tp->rcv_cwnd - bytes, (u32) (tp->advmss << 1U));
++		} else if (tp->rcv_cwnd > tp->rcv_ssthresh) {
++			/* sub-window congestion avoidance */
++			tp->rcv_cwnd += tp->advmss * interval / tp->rcv_cwnd;
++		} else {
++			/* sub-window slow start */
++			tp->rcv_cwnd += interval;
++		}
++
++		if (ntohs(inet->inet_dport) == 5001 || ntohs(inet->inet_sport) == 5001)
++			pr_debug_ratelimited("RFDCC: %pI4 %pI4 rfd_total=%d, rtt_min=%u, alpha=%u, cwnd=%u, ssthresh=%u\n",
++			     &inet->inet_saddr, &inet->inet_daddr, tp->rcv_rfd_total, tp->rcv_rtt_min, alpha, tp->rcv_cwnd, tp->rcv_ssthresh);
++
++		/* FIXME: only quickack when passing a mss threshold */
++		tcp_enter_quickack_mode((struct sock *)tp);
++	}
++}
++
++static void tcp_rcv_dctcp(struct tcp_sock *tp, const struct sk_buff *skb)
++{
++	const struct inet_sock *inet = inet_sk((struct sock *) tp);
++	u32 alpha = tp->rcv_cc_alpha;
++
++	if (!tp->rcv_cwnd)
++		tp->rcv_cwnd = tp->rcv_wnd;
++
++	tp->rcv_cc_bytes_total += skb->len;
++
++	switch (TCP_SKB_CB(skb)->ip_dsfield & INET_ECN_MASK) {
++	case INET_ECN_CE:
++		tp->rcv_cc_bytes_marked += skb->len;
++		TCP_SKB_CB(skb)->ip_dsfield &= ~INET_ECN_CE;
++
++		if (tp->rcv_cwnd < tp->rcv_ssthresh) {
++			//tp->rcv_cwnd = (tp->rcv_cwnd >> 1); // tighter latencies, but less fair
++			tp->rcv_ssthresh = tp->rcv_cwnd;
++		}
++		break;
++	default:
++		break;
++	}
++
++	if (ntohs(inet->inet_dport) == 5001 || ntohs(inet->inet_sport) == 5001)
++		pr_debug_ratelimited("RDCTCP: %pI4 %pI4 marked_bytes=%u, total_bytes=%u, alpha=%u, cwnd=%u, ecn=%u\n",
++		     &inet->inet_saddr, &inet->inet_daddr, tp->rcv_cc_bytes_marked, tp->rcv_cc_bytes_total, alpha, tp->rcv_cwnd, TCP_SKB_CB(skb)->ip_dsfield & INET_ECN_MASK);
++
++	if (tp->rcv_cc_bytes_total >= tp->rcv_cwnd) {
++		u32 shift_g = 4;
++		u64 bytes_marked = tp->rcv_cc_bytes_marked;
++		u32 bytes;
++
++		/* alpha = (1 - g) * alpha + g * F */
++		alpha -= min_not_zero(alpha, alpha >> shift_g);
++
++		if (bytes_marked) {
++			/* If shift_g == 1, a 32bit value would overflow
++			 * after 8 Mbytes.
++			 */
++			bytes_marked <<= (10 - shift_g);
++			do_div(bytes_marked, max(1U, tp->rcv_cc_bytes_total));
++
++			alpha = min(alpha + (u32)bytes_marked, 1024U);
++                }
++
++		tp->rcv_cc_alpha = alpha;
++		bytes = (tp->rcv_cwnd * alpha) >> 11U;
++		tp->rcv_cwnd = max(tp->rcv_cwnd - bytes, (u32) (tp->advmss << 1U));
++
++		if (!alpha) {
++			if (tp->rcv_cwnd >= tp->rcv_ssthresh)
++				tp->rcv_cwnd += tp->advmss;	// congestion avoidance
++			else
++				tp->rcv_cwnd += tp->rcv_cwnd;	// slow start
++		} else if (tp->rcv_cwnd < tp->rcv_ssthresh) {
++			tp->rcv_ssthresh = tp->rcv_cwnd;
++		}
++
++		/* FIXME: only quickack when passing a mss threshold */
++		tcp_enter_quickack_mode((struct sock *)tp);
++
++		if (alpha && (ntohs(inet->inet_dport) == 5001 || ntohs(inet->inet_sport) == 5001))
++			pr_debug_ratelimited("RDCTCP: %pI4 %pI4 marked_bytes=%u, total_bytes=%u, alpha=%u, cwnd=%u, ecn=%u\n",
++			&inet->inet_saddr, &inet->inet_daddr, tp->rcv_cc_bytes_marked, tp->rcv_cc_bytes_total, alpha, tp->rcv_cwnd, TCP_SKB_CB(skb)->ip_dsfield & INET_ECN_MASK);
++
++		tp->rcv_cc_bytes_total = 0;
++		tp->rcv_cc_bytes_marked = 0;
++	}
++}
++
++static void tcp_rcv_rfd(struct tcp_sock *tp, const struct sk_buff *skb)
++{
++	const struct inet_sock *inet = inet_sk((struct sock *) tp);
++	s32 thresh = 0, delta_txts = 0, delta_rxts = 0;
++	u32 rtt_sample = (u32) jiffies_to_usecs(tp->rcv_rtt_est.rtt);
++
++	if (!sysctl_tcp_rcv_congestion_control && sysctl_tcp_rcv_ecn_marking)
++		sysctl_tcp_rcv_congestion_control = 1;
++
++	if (sysctl_tcp_rcv_congestion_control < 1)
++		return;
++
++	if (rtt_sample) {
++		if (!tp->rcv_rtt_min || rtt_sample <= tp->rcv_rtt_min)
++			tp->rcv_rtt_min = rtt_sample;
++		else
++			tp->rcv_rtt_min++;
++	}
++
++	if (!tp->rcv_txts_prev || !tp->rcv_rxts_prev || !tp->rcv_rtt_min) {
++		tp->rcv_cwnd = tp->rcv_wnd;
++		goto save_ts;
++	}
++
++	delta_txts = (s32) jiffies_to_usecs(tp->rx_opt.rcv_tsval - tp->rcv_txts_prev);
++	delta_rxts = (s32) jiffies_to_usecs(tp->rx_opt.rcv_tsecr - tp->rcv_rxts_prev);
++
++	pr_debug_ratelimited("RFDCC: %pI4 %pI4 rfd_total=%d, rtt=%u, rtt_min=%u, dsfield=%u, delta_rxts=%u, delta_txts=%u, alpha=%u, cwnd=%u, ssthresh=%u\n",
++	     &inet->inet_saddr, &inet->inet_daddr, tp->rcv_rfd_total, rtt_sample, tp->rcv_rtt_min, TCP_SKB_CB(skb)->ip_dsfield, delta_rxts, delta_txts, tp->rcv_rfd_alpha, tp->rcv_cwnd, tp->rcv_ssthresh);
++
++	/* wait until something is actually measured */
++	if (!delta_txts && !delta_rxts)
++		return;
++
++	tp->rcv_rfd_total += delta_rxts - delta_txts;
++
++	/* If the total accumulated RFD drops below zero, then the measurements started during congestion
++         * and we should reset so that we can track it from a better baseline. In fact, it might make sense to
++	 * to back off (even though congestion just abated) in order to encourage fairness. Flows with
++	 * larger windows will back off proportionally more. */
++	if (tp->rcv_rfd_total < 0) {
++		tp->rcv_rfd_total = 0;
++		if (sysctl_tcp_rcv_cc_rebase) {
++			tp->rcv_cwnd = tp->rcv_cwnd * sysctl_tcp_rcv_cc_rebase / 1024U;
++			tp->rcv_cwnd = max(tp->rcv_cwnd, (u32) (tp->advmss << 1U));
++		}
++	}
++
++	if (sysctl_tcp_rcv_congestion_control == 1)
++		thresh = (s32) (tp->rcv_rtt_min * 17 / 100);
++	else if (sysctl_tcp_rcv_congestion_control > 1)
++		thresh = (s32) (tp->rcv_rtt_min * sysctl_tcp_rcv_congestion_control / 100);
++
++	tp->rcv_rfd_bytes_total += skb->len;
++	if (tp->rcv_rfd_total > thresh) {
++		if (sysctl_tcp_rcv_ecn_marking && tp->ecn_flags & TCP_ECN_OK) {
++			TCP_SKB_CB(skb)->ip_dsfield |= INET_ECN_CE;
++			goto save_ts;
++		}
++
++		tp->rcv_rfd_bytes_late += skb->len;
++
++		if (tp->rcv_cwnd < tp->rcv_ssthresh) {
++			tp->rcv_cwnd = tp->rcv_cwnd >> 1;
++			tp->rcv_ssthresh = tp->rcv_cwnd;
++		}
++
++		if (ntohs(inet->inet_dport) == 5001 || ntohs(inet->inet_sport) == 5001)
++			pr_debug_ratelimited("RFDCC: %pI4 %pI4 rfd_total=%d, rtt=%u, rtt_min=%u, thresh=%u, dsfield=%u, delta_rxts=%u, delta_txts=%u, alpha=%u, cwnd=%u, ssthresh=%u\n",
++			     &inet->inet_saddr, &inet->inet_daddr, tp->rcv_rfd_total, rtt_sample, tp->rcv_rtt_min, thresh, TCP_SKB_CB(skb)->ip_dsfield, delta_rxts, delta_txts, tp->rcv_rfd_alpha, tp->rcv_cwnd, tp->rcv_ssthresh);
++	} else {
++		if (sysctl_tcp_rcv_ecn_marking && tp->ecn_flags & TCP_ECN_OK) {
++			TCP_SKB_CB(skb)->ip_dsfield &= ~INET_ECN_CE;
++			goto save_ts;
++		}
++	}
++
++	tcp_rcv_cc(tp);
++
++save_ts:
++	tp->rcv_txts_prev = tp->rx_opt.rcv_tsval;
++	tp->rcv_rxts_prev = tp->rx_opt.rcv_tsecr;
++}
++
+ static void __tcp_ecn_check_ce(struct tcp_sock *tp, const struct sk_buff *skb)
+ {
++	struct sock *sk = (struct sock *)tp;
++	const struct inet_connection_sock *icsk = inet_csk(sk);
++
++	/* Receiver-side Congestion Control may mark INET_ECN_CE */
++	if (icsk->icsk_ca_ops->rcv_cc) {
++		icsk->icsk_ca_ops->rcv_cc(sk, skb);
++	} else if (sysctl_tcp_rcv_dctcp) {
++		tcp_rcv_dctcp(tp, skb);
++	} else if (sysctl_tcp_timestamps &&
++	    (sysctl_tcp_rcv_congestion_control || sysctl_tcp_rcv_ecn_marking)) {
++		tcp_rcv_rfd(tp, skb);
++	}
++
+ 	switch (TCP_SKB_CB(skb)->ip_dsfield & INET_ECN_MASK) {
+ 	case INET_ECN_NOT_ECT:
+ 		/* Funny extension: if ECT is not set on a segment,
+diff --git a/net/ipv4/tcp_output.c b/net/ipv4/tcp_output.c
+index b6ab6a5..0df8812f 100755
+--- a/net/ipv4/tcp_output.c
++++ b/net/ipv4/tcp_output.c
+@@ -282,7 +282,15 @@ static u16 tcp_select_window(struct sock *sk)
+ 				      LINUX_MIB_TCPWANTZEROWINDOWADV);
+ 		new_win = ALIGN(cur_win, 1 << tp->rx_opt.rcv_wscale);
+ 	}
+-	tp->rcv_wnd = new_win;
++
++	if ((sysctl_tcp_rcv_congestion_control && !sysctl_tcp_rcv_ecn_marking) || sysctl_tcp_rcv_dctcp) {
++		if (!tp->rcv_cwnd)
++			tp->rcv_cwnd = tp->rcv_wnd;
++		tp->rcv_wnd = min(tp->rcv_cwnd, new_win);
++	} else {
++		tp->rcv_wnd = new_win;
++	}
++
+ 	tp->rcv_wup = tp->rcv_nxt;
+ 
+ 	/* Make sure we do not exceed the maximum possible
+-- 
+2.7.4
+
