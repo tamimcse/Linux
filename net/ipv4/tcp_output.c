@@ -282,7 +282,15 @@ static u16 tcp_select_window(struct sock *sk)
 				      LINUX_MIB_TCPWANTZEROWINDOWADV);
 		new_win = ALIGN(cur_win, 1 << tp->rx_opt.rcv_wscale);
 	}
-	tp->rcv_wnd = new_win;
+
+	if ((sysctl_tcp_rcv_congestion_control && !sysctl_tcp_rcv_ecn_marking) || sysctl_tcp_rcv_dctcp) {
+		if (!tp->rcv_cwnd)
+			tp->rcv_cwnd = tp->rcv_wnd;
+		tp->rcv_wnd = min(tp->rcv_cwnd, new_win);
+	} else {
+		tp->rcv_wnd = new_win;
+	}
+
 	tp->rcv_wup = tp->rcv_nxt;
 
 	/* Make sure we do not exceed the maximum possible

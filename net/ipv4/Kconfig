@@ -492,6 +492,12 @@ config TCP_MF
 	---help---
 	This is version 2.0 of MF-TCP which is a media-friendly TCP
 
+config TCP_INIGO
+	tristate "TCP Inigo"
+	default m
+	---help---
+	
+
 config TCP_CONG_WESTWOOD
 	tristate "TCP Westwood+"
 	default m

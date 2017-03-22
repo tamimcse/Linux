@@ -300,6 +300,23 @@ struct tcp_sock {
 	u32	sacked_out;	/* SACK'd packets			*/
 	u32	fackets_out;	/* FACK'd packets			*/
 
+/*
+ *	Receiver-side Relative Forward Delay (RFD) measurement and
+ *	congestion control. rcv_wnd and rcv_ssthresh are declared elsewhere.
+ *	TODO: adaptive millisecond to microsecond resolution time
+ */
+	u32	rcv_txts_prev;		/* Previous tx time stamp		*/
+	u32	rcv_rxts_prev;		/* Previous rx time stamp		*/
+	s32	rcv_rfd_total;		/* Acumulated Relative Forward Delay	*/
+	u32	rcv_rtt_min;		/* Minimum estimated rtt		*/
+	u32	rcv_rfd_bytes_late;	/* Late bytes, according to RFD		*/
+	u32	rcv_rfd_bytes_total;	/* Total bytes, used to get cong ratio	*/
+	u32	rcv_rfd_alpha;		/* RFD congestion ratio			*/
+	u32	rcv_cc_bytes_marked;	/* ECN or late bytes, according to RFD	*/
+	u32	rcv_cc_bytes_total;	/* Total bytes, used to get cong ratio	*/
+	u32	rcv_cc_alpha;		/* Congestion ratio			*/
+	u32	rcv_cwnd;		/* Receiver congestion window		*/
+
 	/* from STCP, retrans queue hinting */
 	struct sk_buff* lost_skb_hint;
 	struct sk_buff *retransmit_skb_hint;

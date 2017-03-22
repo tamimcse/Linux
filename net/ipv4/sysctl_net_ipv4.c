@@ -855,6 +855,48 @@ static struct ctl_table ipv4_net_table[] = {
 		.proc_handler	= proc_dointvec
 	},
 	{
+		.procname	= "tcp_rcv_cc_fairness",
+		.data		= &sysctl_tcp_rcv_cc_fairness,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "tcp_rcv_cc_rebase",
+		.data		= &sysctl_tcp_rcv_cc_rebase,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "tcp_rcv_congestion_control",
+		.data		= &sysctl_tcp_rcv_congestion_control,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "tcp_rcv_dctcp",
+		.data		= &sysctl_tcp_rcv_dctcp,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "tcp_rcv_ecn_marking",
+		.data		= &sysctl_tcp_rcv_ecn_marking,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "tcp_us_tstamp",
+		.data		= &sysctl_tcp_us_tstamp,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
 		.procname	= "igmp_max_memberships",
 		.data		= &init_net.ipv4.sysctl_igmp_max_memberships,
 		.maxlen		= sizeof(int),

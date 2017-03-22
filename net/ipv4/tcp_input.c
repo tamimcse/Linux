@@ -15,7 +15,7 @@
  *		Alan Cox, <gw4pts@gw4pts.ampr.org>
  *		Matthew Dillon, <dillon@apollo.west.oic.com>
  *		Arnt Gulbrandsen, <agulbra@nvg.unit.no>
- *		Jorge Cwik, <jorge@laser.satlink.net>
+ *		Jorge Cwik, <jorge@laser.satlink.net>tcp_rcv_cc_fairness
  */
 
 /*
@@ -101,6 +101,13 @@ int sysctl_tcp_thin_dupack __read_mostly;
 int sysctl_tcp_moderate_rcvbuf __read_mostly = 1;
 int sysctl_tcp_early_retrans __read_mostly = 3;
 int sysctl_tcp_invalid_ratelimit __read_mostly = HZ/2;
+
+int sysctl_tcp_rcv_cc_fairness  __read_mostly = 0;
+int sysctl_tcp_rcv_cc_rebase __read_mostly = 0;
+int sysctl_tcp_rcv_congestion_control __read_mostly = 0;
+int sysctl_tcp_rcv_dctcp  __read_mostly = 0;
+int sysctl_tcp_rcv_ecn_marking __read_mostly = 0;
+int sysctl_tcp_us_tstamp  __read_mostly = 0;
 
 #define FLAG_DATA		0x01 /* Incoming frame contained data.		*/
 #define FLAG_WIN_UPDATE		0x02 /* Incoming ACK was a window update.	*/
@@ -196,6 +203,7 @@ static void tcp_enter_quickack_mode(struct sock *sk)
 	icsk->icsk_ack.pingpong = 0;
 	icsk->icsk_ack.ato = TCP_ATO_MIN;
 }
+EXPORT_SYMBOL(tcp_enter_quickack_mode);
 
 /* Send ACKs quickly, if "quick" count is not exhausted
  * and the session is not interactive.
@@ -227,8 +235,242 @@ static void tcp_ecn_withdraw_cwr(struct tcp_sock *tp)
 	tp->ecn_flags &= ~TCP_ECN_DEMAND_CWR;
 }
 
+static void tcp_rcv_cc(struct tcp_sock *tp)
+{
+	const struct inet_sock *inet = inet_sk((struct sock *) tp);
+	u32 alpha = tp->rcv_rfd_alpha;
+	u32 interval;
+
+	if (sysctl_tcp_rcv_ecn_marking)
+		return;
+
+	if (!tp->rcv_cwnd)
+		tp->rcv_cwnd = tp->rcv_wnd;
+
+	interval = tp->rcv_cwnd;
+
+	if (sysctl_tcp_rcv_cc_fairness)
+		interval = min(interval, (u32) sysctl_tcp_rcv_cc_fairness * tp->advmss);
+
+	if (ntohs(inet->inet_dport) == 5001 || ntohs(inet->inet_sport) == 5001)
+		pr_debug_ratelimited("RFDCC: %pI4 %pI4 rfd_total=%d, rfd_late=%u, rtt_min=%u, alpha=%u, cwnd=%u, ssthresh=%u, interval=%u, \n",
+		     &inet->inet_saddr, &inet->inet_daddr, tp->rcv_rfd_total, tp->rcv_rfd_bytes_late, tp->rcv_rtt_min, alpha, tp->rcv_cwnd, tp->rcv_ssthresh, interval);
+
+	if (tp->rcv_rfd_bytes_total >= interval) {
+		u32 shift_g = 4;
+		u64 bytes_late = tp->rcv_rfd_bytes_late;
+
+		/* alpha = (1 - g) * alpha + g * F */
+		if (alpha > (1 << shift_g))
+			alpha -= alpha >> shift_g;
+		else
+			alpha = 0; // otherwise, alpha can never reach zero
+
+		if (bytes_late) {
+			/* If shift_g == 1, a 32bit value would overflow
+			 * after 8 Mbytes.
+			 */
+			bytes_late <<= (10 - shift_g);
+			do_div(bytes_late, max(1U, tp->rcv_rfd_bytes_total));
+
+			alpha = min(alpha + (u32)bytes_late, 1024U);
+                }
+
+		tp->rcv_rfd_alpha = alpha;
+		tp->rcv_rfd_bytes_total = 0;
+		tp->rcv_rfd_bytes_late = 0;
+
+		if (alpha) {
+			/* congestion response */
+			u32 bytes = (interval * alpha) >> 11U;
+			tp->rcv_cwnd = max(tp->rcv_cwnd - bytes, (u32) (tp->advmss << 1U));
+		} else if (tp->rcv_cwnd > tp->rcv_ssthresh) {
+			/* sub-window congestion avoidance */
+			tp->rcv_cwnd += tp->advmss * interval / tp->rcv_cwnd;
+		} else {
+			/* sub-window slow start */
+			tp->rcv_cwnd += interval;
+		}
+
+		if (ntohs(inet->inet_dport) == 5001 || ntohs(inet->inet_sport) == 5001)
+			pr_debug_ratelimited("RFDCC: %pI4 %pI4 rfd_total=%d, rtt_min=%u, alpha=%u, cwnd=%u, ssthresh=%u\n",
+			     &inet->inet_saddr, &inet->inet_daddr, tp->rcv_rfd_total, tp->rcv_rtt_min, alpha, tp->rcv_cwnd, tp->rcv_ssthresh);
+
+		/* FIXME: only quickack when passing a mss threshold */
+		tcp_enter_quickack_mode((struct sock *)tp);
+	}
+}
+
+static void tcp_rcv_dctcp(struct tcp_sock *tp, const struct sk_buff *skb)
+{
+	const struct inet_sock *inet = inet_sk((struct sock *) tp);
+	u32 alpha = tp->rcv_cc_alpha;
+
+	if (!tp->rcv_cwnd)
+		tp->rcv_cwnd = tp->rcv_wnd;
+
+	tp->rcv_cc_bytes_total += skb->len;
+
+	switch (TCP_SKB_CB(skb)->ip_dsfield & INET_ECN_MASK) {
+	case INET_ECN_CE:
+		tp->rcv_cc_bytes_marked += skb->len;
+		TCP_SKB_CB(skb)->ip_dsfield &= ~INET_ECN_CE;
+
+		if (tp->rcv_cwnd < tp->rcv_ssthresh) {
+			//tp->rcv_cwnd = (tp->rcv_cwnd >> 1); // tighter latencies, but less fair
+			tp->rcv_ssthresh = tp->rcv_cwnd;
+		}
+		break;
+	default:
+		break;
+	}
+
+	if (ntohs(inet->inet_dport) == 5001 || ntohs(inet->inet_sport) == 5001)
+		pr_debug_ratelimited("RDCTCP: %pI4 %pI4 marked_bytes=%u, total_bytes=%u, alpha=%u, cwnd=%u, ecn=%u\n",
+		     &inet->inet_saddr, &inet->inet_daddr, tp->rcv_cc_bytes_marked, tp->rcv_cc_bytes_total, alpha, tp->rcv_cwnd, TCP_SKB_CB(skb)->ip_dsfield & INET_ECN_MASK);
+
+	if (tp->rcv_cc_bytes_total >= tp->rcv_cwnd) {
+		u32 shift_g = 4;
+		u64 bytes_marked = tp->rcv_cc_bytes_marked;
+		u32 bytes;
+
+		/* alpha = (1 - g) * alpha + g * F */
+		alpha -= min_not_zero(alpha, alpha >> shift_g);
+
+		if (bytes_marked) {
+			/* If shift_g == 1, a 32bit value would overflow
+			 * after 8 Mbytes.
+			 */
+			bytes_marked <<= (10 - shift_g);
+			do_div(bytes_marked, max(1U, tp->rcv_cc_bytes_total));
+
+			alpha = min(alpha + (u32)bytes_marked, 1024U);
+                }
+
+		tp->rcv_cc_alpha = alpha;
+		bytes = (tp->rcv_cwnd * alpha) >> 11U;
+		tp->rcv_cwnd = max(tp->rcv_cwnd - bytes, (u32) (tp->advmss << 1U));
+
+		if (!alpha) {
+			if (tp->rcv_cwnd >= tp->rcv_ssthresh)
+				tp->rcv_cwnd += tp->advmss;	// congestion avoidance
+			else
+				tp->rcv_cwnd += tp->rcv_cwnd;	// slow start
+		} else if (tp->rcv_cwnd < tp->rcv_ssthresh) {
+			tp->rcv_ssthresh = tp->rcv_cwnd;
+		}
+
+		/* FIXME: only quickack when passing a mss threshold */
+		tcp_enter_quickack_mode((struct sock *)tp);
+
+		if (alpha && (ntohs(inet->inet_dport) == 5001 || ntohs(inet->inet_sport) == 5001))
+			pr_debug_ratelimited("RDCTCP: %pI4 %pI4 marked_bytes=%u, total_bytes=%u, alpha=%u, cwnd=%u, ecn=%u\n",
+			&inet->inet_saddr, &inet->inet_daddr, tp->rcv_cc_bytes_marked, tp->rcv_cc_bytes_total, alpha, tp->rcv_cwnd, TCP_SKB_CB(skb)->ip_dsfield & INET_ECN_MASK);
+
+		tp->rcv_cc_bytes_total = 0;
+		tp->rcv_cc_bytes_marked = 0;
+	}
+}
+
+static void tcp_rcv_rfd(struct tcp_sock *tp, const struct sk_buff *skb)
+{
+	const struct inet_sock *inet = inet_sk((struct sock *) tp);
+	s32 thresh = 0, delta_txts = 0, delta_rxts = 0;
+	u32 rtt_sample = (u32) jiffies_to_usecs(tp->rcv_rtt_est.rtt);
+
+	if (!sysctl_tcp_rcv_congestion_control && sysctl_tcp_rcv_ecn_marking)
+		sysctl_tcp_rcv_congestion_control = 1;
+
+	if (sysctl_tcp_rcv_congestion_control < 1)
+		return;
+
+	if (rtt_sample) {
+		if (!tp->rcv_rtt_min || rtt_sample <= tp->rcv_rtt_min)
+			tp->rcv_rtt_min = rtt_sample;
+		else
+			tp->rcv_rtt_min++;
+	}
+
+	if (!tp->rcv_txts_prev || !tp->rcv_rxts_prev || !tp->rcv_rtt_min) {
+		tp->rcv_cwnd = tp->rcv_wnd;
+		goto save_ts;
+	}
+
+	delta_txts = (s32) jiffies_to_usecs(tp->rx_opt.rcv_tsval - tp->rcv_txts_prev);
+	delta_rxts = (s32) jiffies_to_usecs(tp->rx_opt.rcv_tsecr - tp->rcv_rxts_prev);
+
+	pr_debug_ratelimited("RFDCC: %pI4 %pI4 rfd_total=%d, rtt=%u, rtt_min=%u, dsfield=%u, delta_rxts=%u, delta_txts=%u, alpha=%u, cwnd=%u, ssthresh=%u\n",
+	     &inet->inet_saddr, &inet->inet_daddr, tp->rcv_rfd_total, rtt_sample, tp->rcv_rtt_min, TCP_SKB_CB(skb)->ip_dsfield, delta_rxts, delta_txts, tp->rcv_rfd_alpha, tp->rcv_cwnd, tp->rcv_ssthresh);
+
+	/* wait until something is actually measured */
+	if (!delta_txts && !delta_rxts)
+		return;
+
+	tp->rcv_rfd_total += delta_rxts - delta_txts;
+
+	/* If the total accumulated RFD drops below zero, then the measurements started during congestion
+         * and we should reset so that we can track it from a better baseline. In fact, it might make sense to
+	 * to back off (even though congestion just abated) in order to encourage fairness. Flows with
+	 * larger windows will back off proportionally more. */
+	if (tp->rcv_rfd_total < 0) {
+		tp->rcv_rfd_total = 0;
+		if (sysctl_tcp_rcv_cc_rebase) {
+			tp->rcv_cwnd = tp->rcv_cwnd * sysctl_tcp_rcv_cc_rebase / 1024U;
+			tp->rcv_cwnd = max(tp->rcv_cwnd, (u32) (tp->advmss << 1U));
+		}
+	}
+
+	if (sysctl_tcp_rcv_congestion_control == 1)
+		thresh = (s32) (tp->rcv_rtt_min * 17 / 100);
+	else if (sysctl_tcp_rcv_congestion_control > 1)
+		thresh = (s32) (tp->rcv_rtt_min * sysctl_tcp_rcv_congestion_control / 100);
+
+	tp->rcv_rfd_bytes_total += skb->len;
+	if (tp->rcv_rfd_total > thresh) {
+		if (sysctl_tcp_rcv_ecn_marking && tp->ecn_flags & TCP_ECN_OK) {
+			TCP_SKB_CB(skb)->ip_dsfield |= INET_ECN_CE;
+			goto save_ts;
+		}
+
+		tp->rcv_rfd_bytes_late += skb->len;
+
+		if (tp->rcv_cwnd < tp->rcv_ssthresh) {
+			tp->rcv_cwnd = tp->rcv_cwnd >> 1;
+			tp->rcv_ssthresh = tp->rcv_cwnd;
+		}
+
+		if (ntohs(inet->inet_dport) == 5001 || ntohs(inet->inet_sport) == 5001)
+			pr_debug_ratelimited("RFDCC: %pI4 %pI4 rfd_total=%d, rtt=%u, rtt_min=%u, thresh=%u, dsfield=%u, delta_rxts=%u, delta_txts=%u, alpha=%u, cwnd=%u, ssthresh=%u\n",
+			     &inet->inet_saddr, &inet->inet_daddr, tp->rcv_rfd_total, rtt_sample, tp->rcv_rtt_min, thresh, TCP_SKB_CB(skb)->ip_dsfield, delta_rxts, delta_txts, tp->rcv_rfd_alpha, tp->rcv_cwnd, tp->rcv_ssthresh);
+	} else {
+		if (sysctl_tcp_rcv_ecn_marking && tp->ecn_flags & TCP_ECN_OK) {
+			TCP_SKB_CB(skb)->ip_dsfield &= ~INET_ECN_CE;
+			goto save_ts;
+		}
+	}
+
+	tcp_rcv_cc(tp);
+
+save_ts:
+	tp->rcv_txts_prev = tp->rx_opt.rcv_tsval;
+	tp->rcv_rxts_prev = tp->rx_opt.rcv_tsecr;
+}
+
 static void __tcp_ecn_check_ce(struct tcp_sock *tp, const struct sk_buff *skb)
 {
+	struct sock *sk = (struct sock *)tp;
+	const struct inet_connection_sock *icsk = inet_csk(sk);
+
+	/* Receiver-side Congestion Control may mark INET_ECN_CE */
+	if (icsk->icsk_ca_ops->rcv_cc) {
+		icsk->icsk_ca_ops->rcv_cc(sk, skb);
+	} else if (sysctl_tcp_rcv_dctcp) {
+		tcp_rcv_dctcp(tp, skb);
+	} else if (sysctl_tcp_timestamps &&
+	    (sysctl_tcp_rcv_congestion_control || sysctl_tcp_rcv_ecn_marking)) {
+		tcp_rcv_rfd(tp, skb);
+	}
+
 	switch (TCP_SKB_CB(skb)->ip_dsfield & INET_ECN_MASK) {
 	case INET_ECN_NOT_ECT:
 		/* Funny extension: if ECT is not set on a segment,

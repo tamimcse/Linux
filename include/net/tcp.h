@@ -276,6 +276,12 @@ extern int sysctl_tcp_autocorking;
 extern int sysctl_tcp_invalid_ratelimit;
 extern int sysctl_tcp_pacing_ss_ratio;
 extern int sysctl_tcp_pacing_ca_ratio;
+extern int sysctl_tcp_rcv_cc_fairness;
+extern int sysctl_tcp_rcv_cc_rebase;
+extern int sysctl_tcp_rcv_congestion_control;
+extern int sysctl_tcp_rcv_dctcp;
+extern int sysctl_tcp_rcv_ecn_marking;
+extern int sysctl_tcp_us_tstamp;
 
 extern atomic_long_t tcp_memory_allocated;
 extern struct percpu_counter tcp_sockets_allocated;
@@ -712,6 +718,9 @@ void tcp_send_window_probe(struct sock *sk);
 
 static inline u32 tcp_skb_timestamp(const struct sk_buff *skb)
 {
+	if (sysctl_tcp_us_tstamp)
+		return skb->skb_mstamp.stamp_us;
+
 	return skb->skb_mstamp.stamp_jiffies;
 }
 
@@ -942,6 +951,10 @@ struct tcp_congestion_ops {
 	/* get info for inet_diag (optional) */
 	size_t (*get_info)(struct sock *sk, u32 ext, int *attr,
 			   union tcp_cc_info *info);
+	/* receiver-side congestion control (optional) */
+	void (*rcv_cc)(struct sock *sk, struct sk_buff *skb);
+	/* receiver-side window (optional) */
+	u32 (*rcv_wnd)(struct sock *sk);
 
 	char 		name[TCP_CA_NAME_MAX];
 	struct module 	*owner;
