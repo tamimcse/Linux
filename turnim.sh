@@ -9,8 +9,12 @@ then
     sudo sysctl net.ipv4.tcp_congestion_control=cdg
 elif [ $cong = "cdg" ]
 then
-    sudo sysctl net.ipv4.tcp_congestion_control=bbr
+    sudo sysctl net.ipv4.tcp_rcv_cc_fairness=1
+    sudo sysctl net.ipv4.tcp_rcv_congestion_control=1
+    sudo sysctl net.ipv4.tcp_congestion_control=inigo
 else
+    sudo sysctl net.ipv4.tcp_rcv_cc_fairness=0
+    sudo sysctl net.ipv4.tcp_rcv_congestion_control=0
     sudo sysctl net.ipv4.tcp_mf=1
     sudo sysctl net.ipv4.tcp_congestion_control=cubic
 fi
