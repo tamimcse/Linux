@@ -11,11 +11,11 @@ set datafile missing "-nan"
 set style data line
 #set style data linespoints
 
-backlogbbr='backlog-bbr.data'
+backloginigo='backlog-inigo.data'
 backlogim='backlog-im.data'
 backlogcdg='backlog-cdg.data'
 
-tcp1='BBR'
+tcp1='Inigo'
 tcp2='NA-TCP'
 tcp3='CDG'
 
@@ -24,8 +24,7 @@ tcp3='CDG'
 set output sprintf("backlog.png")
 set xlabel "Time (Seconds)"
 set ylabel "Queuing delay (msec)"
-#plot backlogim using 1:($2*8/(1024*1024)) title tcp2, backlogcdg using 1:($2*8/(1024*1024)) title tcp3, backlogbbr using 1:($2*8/(1024*1024)) title tcp1
-plot backlogim using 1:($2*8/(1024*1024)) title tcp2, backlogbbr using 1:($2*8/(1024*1024)) title tcp1
+plot backlogim using 1:($2*8/(1024*1024)) title tcp2, backloginigo using 1:($2*8/(1024*1024)) title tcp1
 
 #Plot Fainess index
 set autoscale y
@@ -33,8 +32,7 @@ set key inside right bottom
 set output sprintf("fairness.png")
 set xlabel "Time (Seconds)"
 set ylabel "Fairness index"
-#plot "fairness-im.data" using 1:2 title tcp2, "fairness-cdg.data" using 1:2 title tcp3, "fairness-bbr.data" using 1:2 title tcp1
-plot "fairness-im.data" using 1:2 title tcp2, "fairness-bbr.data" using 1:2 title tcp1
+plot "fairness-im.data" using 1:2 title tcp2, "fairness-inigo.data" using 1:2 title tcp1
 
 
 #Plot NA-TCP throughputs
@@ -46,12 +44,12 @@ set autoscale y
 plot "h1-im.data" using 1:($12 * 8 /1024) title "flow 1", "h3-im.data" using 1:($12 * 8 /1024) title "flow 2", "h5-im.data" using 1:($12 * 8 /1024) title "flow 3"
 
 #Plot CDG throughputs
-set key inside right top
-set output sprintf("flows-cdg.png",outPre)
-set xlabel "Time (Seconds)"
-set ylabel "Throughput (kbps)"
-set autoscale y
-plot "h1-cdg.data" using 1:($12 * 8 /1024) title "flow 1", "h3-cdg.data" using 1:($12 * 8 /1024) title "flow 2", "h5-cdg.data" using 1:($12 * 8 /1024) title "flow 3"
+#set key inside right top
+#set output sprintf("flows-cdg.png",outPre)
+#set xlabel "Time (Seconds)"
+#set ylabel "Throughput (kbps)"
+#set autoscale y
+#plot "h1-cdg.data" using 1:($12 * 8 /1024) title "flow 1", "h3-cdg.data" using 1:($12 * 8 /1024) title "flow 2", "h5-cdg.data" using 1:($12 * 8 /1024) title "flow 3"
 
 #Plot Inigo throughputs
 set key inside right top
@@ -59,4 +57,4 @@ set output sprintf("flows-inigo.png",outPre)
 set xlabel "Time (Seconds)"
 set ylabel "Throughput (kbps)"
 set autoscale y
-plot "h1-bbr.data" using 1:($12 * 8 /1024) title "flow 1", "h3-bbr.data" using 1:($12 * 8 /1024) title "flow 2", "h5-bbr.data" using 1:($12 * 8 /1024) title "flow 3"
+plot "h1-inigo.data" using 1:($12 * 8 /1024) title "flow 1", "h3-inigo.data" using 1:($12 * 8 /1024) title "flow 2", "h5-inigo.data" using 1:($12 * 8 /1024) title "flow 3"

@@ -12,12 +12,12 @@ set style data line
 #set style data linespoints
 
 
-bbrlog = ARG1
+inigolog = ARG1
 imlog = ARG2
 cdglog = ARG3
 outPre = ARG4
 
-tcp1='BBR'
+tcp1='Inigo'
 tcp2='NA-TCP'
 tcp3='CDG'
 
@@ -35,7 +35,7 @@ set xlabel "Time (Seconds)"
 set ylabel "SRTT (milliseconds)"
 set yrange [130:*]
 #plot imlog using 1:($10/1000) title tcp2, cdglog using 1:($10/1000) title tcp3, bbrlog using 1:($10/1000) title tcp1
-plot imlog using 1:($10/1000) title tcp2, bbrlog using 1:($10/1000) title tcp1
+plot imlog using 1:($10/1000) title tcp2, inigolog using 1:($10/1000) title tcp1
 
 #Plot throughput
 set output sprintf("%s-throughput.png",outPre)
@@ -43,7 +43,7 @@ set xlabel "Time (Seconds)"
 set ylabel "Throughput (kbps)"
 set autoscale y
 #plot imlog using 1:($12 * 8 /1024) title tcp2, cdglog using 1:($12 * 8 /1024) title tcp3, bbrlog using 1:($12 * 8 /1024) title tcp1
-plot imlog using 1:($12 * 8 /1024) title tcp2, bbrlog using 1:($12 * 8 /1024) title tcp1
+plot imlog using 1:($12 * 8 /1024) title tcp2, inigolog using 1:($12 * 8 /1024) title tcp1
 
 #Plot Jitter
 #set yrange [0:500]
