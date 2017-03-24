@@ -18,7 +18,7 @@ cdglog = ARG3
 outPre = ARG4
 
 tcp1='Inigo'
-tcp2='NA-TCP'
+tcp2='NC-TCP'
 tcp3='CDG'
 
 #Plot Cwnd && SSTH

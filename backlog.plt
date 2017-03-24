@@ -16,7 +16,7 @@ backlogim='backlog-im.data'
 backlogcdg='backlog-cdg.data'
 
 tcp1='Inigo'
-tcp2='NA-TCP'
+tcp2='NC-TCP'
 tcp3='CDG'
 
 #Plot queue backlog
@@ -35,7 +35,7 @@ set ylabel "Fairness index"
 plot "fairness-im.data" using 1:2 title tcp2, "fairness-inigo.data" using 1:2 title tcp1
 
 
-#Plot NA-TCP throughputs
+#Plot NC-TCP throughputs
 set key inside right top
 set output sprintf("flows-im.png",outPre)
 set xlabel "Time (Seconds)"
