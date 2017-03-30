@@ -1,0 +1,13 @@
+#! @sbindir@nft -f
+
+#! @sbindir@nft -f
+
+table ip filter {
+        chain input {
+                 type filter hook input priority 0; policy accept;
+                 # this is the 3º matching rule
+                 ip saddr 1.1.1.1 ip daddr 2.2.2.2 tcp dport 111 tcp dport 222 accept
+                 cluster
+        }
+}
+
