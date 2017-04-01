@@ -1,13 +1,11 @@
 #! @sbindir@nft -f
 
-#! @sbindir@nft -f
-
 table ip filter {
         chain input {
                  type filter hook input priority 0; policy accept;
-                 ip saddr 1.1.1.1 ip daddr 2.2.2.2 tcp dport 111 tcp dport 222 accept
-		 ct state established,related accept
-                 cluster iif lo accept
+#                 ip saddr 1.1.1.1 ip daddr 2.2.2.2 tcp dport 111 tcp dport 222 accept
+#		 ct state established,related accept
+                 meta iif h1-eth0 drop
         }
 }
 

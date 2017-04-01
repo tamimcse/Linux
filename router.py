@@ -156,6 +156,7 @@ def main(cli=0):
 #	net[ 'r1' ].cmd( 'watch  -dc  tc -s qdisc show dev r1-eth1' )
         CLI( net )
     else:
+#	net[ 'h1' ].cmd( 'sudo sh nftest.sh &' )
 	net[ 'h1' ].cmd( 'sudo ./streamer  172.16.101.1 &' )
 	net[ 'h2' ].cmd( 'sh streaming.sh 172.16.101.1' )
 #	time.sleep(15)
