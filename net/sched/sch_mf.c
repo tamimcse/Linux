@@ -59,6 +59,7 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 		       struct tcp_mf_cookie *mfc)
 {
         unsigned char *ptr;
+        u32 tsval;
         u8 *feedback;
 	int opsize;
         int opcode;
@@ -125,6 +126,13 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 			if (opsize > length)
 				return;	/* don't parse partial options */
 			switch (opcode) {
+                        
+                        case TCPOPT_TIMESTAMP:
+                            if (opsize == TCPOLEN_TIMESTAMP) {    
+                                tsval = get_unaligned_be32(ptr);
+//                                pr_info("Time stamp: %u !!!!!!!!!!!!!!!!!!!!", tsval);
+                            }
+                            break;
 			case TCPOPT_MF:
 				if (opsize == TCPOLEN_MF) {    
                                         feedback = ptr + 2;
