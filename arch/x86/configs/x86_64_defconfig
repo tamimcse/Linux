@@ -380,6 +380,9 @@ CONFIG_ETHERNET=y
 CONFIG_X86=y
 CONFIG_PCI=y
 
+#PCI card virtualization
+CONFIG_PCI_IOV=y
+
 #Mellanox Ethernet card
 CONFIG_NET_VENDOR_MELLANOX=y
 CONFIG_MLXSW_PCI=m
