@@ -400,6 +400,9 @@ CONFIG_PCI=y
 #PCI card virtualization
 CONFIG_PCI_IOV=y
 
+#enable RTL8111/8168/8411 PCI Express Gigabit Ethernet Interface
+CONFIG_R8169=m
+
 #Mellanox Ethernet card
 CONFIG_NET_VENDOR_MELLANOX=y
 CONFIG_MLXSW_PCI=m
@@ -417,9 +420,16 @@ CONFIG_NFP_NET=y
 CONFIG_PCI_MSI=y
 CONFIG_GENERIC_MSI_IRQ=y
 
+#Intel Ethernet cards 
 
-#enable RTL8111/8168/8411 PCI Express Gigabit Ethernet Interface
-CONFIG_R8169=m
+#FlexPipe
+CONFIG_FM10K=m
+#XL710 Ethernet Controller 
+CONFIG_I40E=m
+CONFIG_I40EVF=m
+#10GbE PCI Express adapters
+CONFIG_IXGBE=m
+CONFIG_IXGBEVF=m
 
 #NVIDIA
 CONFIG_DRM_NOUVEAU=m
