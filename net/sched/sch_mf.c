@@ -59,7 +59,7 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 		       struct tcp_mf_cookie *mfc)
 {
         unsigned char *ptr;
-        u32 tsval;
+//        u32 tsval;
         u8 *feedback;
 	int opsize;
         int opcode;
@@ -127,12 +127,12 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 				return;	/* don't parse partial options */
 			switch (opcode) {
                         
-                        case TCPOPT_TIMESTAMP:
-                            if (opsize == TCPOLEN_TIMESTAMP) {    
-                                tsval = get_unaligned_be32(ptr);
+//                        case TCPOPT_TIMESTAMP:
+//                            if (opsize == TCPOLEN_TIMESTAMP) {    
+//                                tsval = get_unaligned_be32(ptr);
 //                                pr_info("Time stamp: %u !!!!!!!!!!!!!!!!!!!!", tsval);
-                            }
-                            break;
+//                            }
+//                            break;
 			case TCPOPT_MF:
 				if (opsize == TCPOLEN_MF) {    
                                         feedback = ptr + 2;
@@ -317,7 +317,7 @@ static int mf_init(struct Qdisc *sch, struct nlattr *opt)
                 q->qdisc = fifo_create_dflt(sch, &bfifo_qdisc_ops, limit);
 		q->qdisc->limit = limit;
                 q->capacity = 1024;
-                q->nFlow = 0;
+                q->nFlow = 3; //Make it 0 when flows are apart from each other
                 q->queue_sample = 0;
                 q->sample_time.tv64 = 0;
                 q->queue_gradiant = 0;
