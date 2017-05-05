@@ -92,15 +92,15 @@ class NetworkTopo( Topo ):
         self.addLink( h6, r3, intfName2='r3-eth2', params2={ 'ip' : '172.16.106.2/24' })
         self.addLink( h8, r4, intfName2='r4-eth2', params2={ 'ip' : '172.16.108.2/24' })
 #       Don't move the line. It doesn't work for some reason
-        self.addLink( r1, r2, intfName1='r1-eth10', params1={ 'ip' : '172.16.10.2/24' }, intfName2='r2-eth10', params2={ 'ip' : '172.16.10.3/24' })
-        self.addLink( r2, r3, intfName1='r2-eth11', params1={ 'ip' : '172.16.11.2/24' }, intfName2='r3-eth10', params2={ 'ip' : '172.16.11.3/24' })
-        self.addLink( r3, r4, intfName1='r3-eth11', params1={ 'ip' : '172.16.12.2/24' }, intfName2='r4-eth10', params2={ 'ip' : '172.16.12.3/24' })
+        self.addLink( r1, r2, intfName1='r1-eth10', params1={ 'ip' : '172.16.10.2/24' }, intfName2='r2-eth11', params2={ 'ip' : '172.16.10.3/24' })
+        self.addLink( r2, r3, intfName1='r2-eth10', params1={ 'ip' : '172.16.11.2/24' }, intfName2='r3-eth11', params2={ 'ip' : '172.16.11.3/24' })
+        self.addLink( r3, r4, intfName1='r3-eth10', params1={ 'ip' : '172.16.12.2/24' }, intfName2='r4-eth11', params2={ 'ip' : '172.16.12.3/24' })
 
 
         self.addLink( h3, r1, intfName2='r1-eth3', params2={ 'ip' : '172.16.103.2/24' })
-        self.addLink( h5, r2, intfName2='r2-eth5', params2={ 'ip' : '172.16.105.2/24' })
-        self.addLink( h7, r3, intfName2='r3-eth7', params2={ 'ip' : '172.16.107.2/24' })
-        self.addLink( h2, r4, intfName2='r4-eth8', params2={ 'ip' : '172.16.102.2/24' })
+        self.addLink( h5, r2, intfName2='r2-eth3', params2={ 'ip' : '172.16.105.2/24' })
+        self.addLink( h7, r3, intfName2='r3-eth3', params2={ 'ip' : '172.16.107.2/24' })
+        self.addLink( h2, r4, intfName2='r4-eth3', params2={ 'ip' : '172.16.102.2/24' })
 
 def main(cli=0):
     "Test linux router"
@@ -112,17 +112,17 @@ def main(cli=0):
 
     queuing_del = '100ms'
 
-    access_delay = '10ms'
+    access_delay = '20ms'
     access_delay_var = '2ms'
     access_loss = '0.1%'
     #mbps = Mega Bytes per sec
     access_rate = '1024kbit' 
 
-    bottleneck_delay = '50ms'
+    bottleneck_delay = '20ms'
     bottleneck_delay_var = '3ms'
     bottleneck_loss = '0%' #'0.1%'
     #mbps = Mega Bytes per sec
-    bottleneck_rate = '1024kbit'#'2048' for avoiding congestion
+    bottleneck_rate = '750kbit'#'2048' for avoiding congestion
 
     info( '*** Configuring routers:\n' )
 #    net[ 'r1' ].cmd( 'ip neigh add 172.16.10.3 lladdr 2e:a9:cf:14:b4:6a dev r1-eth1' )
@@ -144,8 +144,79 @@ def main(cli=0):
 
     info( '*** Routing Table on Router:\n' )
     info( net[ 'r1' ].cmd( 'route' ) )
+
+    hosts = ['h3', 'h4', 'h5', 'h6', 'h7', 'h8']
+    for host in hosts:
+	net[host].cmd( 'tc qdisc add dev {0}-eth0 root handle 1: tbf rate {1} latency {2} burst 1540'.format(host, access_rate, queuing_del))
+	net[host].cmd( 'tc qdisc add dev {0}-eth0 parent 1:1 handle 10: netem delay {1} {2}'.format(host, access_delay, access_delay_var))
+	net[host].cmd( 'tc qdisc add dev {0}-eth0 parent 10:  handle 101: fq'.format(host))
+
+    hosts = ['h1', 'h2']
+    for host in hosts:
+	net[host].cmd( 'tc qdisc add dev {0}-eth0 root handle 1: tbf rate {1} latency {2} burst 1540'.format(host, access_rate, queuing_del))
+	net[host].cmd( 'tc qdisc add dev {0}-eth0 parent 1:1 handle 10: netem delay {1} {2}'.format(host, '1ms', access_delay_var))
+	net[host].cmd( 'tc qdisc add dev {0}-eth0 parent 10:  handle 101: fq'.format(host))
+
+    routers = ['r1', 'r2', 'r3', 'r4']
+    ifs = ['eth2', 'eth3']
+    for router in routers:
+    	for inf in ifs:
+		net[router].cmd( 'tc qdisc add dev {0}-{1} root handle 1: tbf rate {2} latency {3} burst 1540'.format(router, inf, access_rate, queuing_del))
+		net[router].cmd( 'tc qdisc add dev {0}-{1} parent 1:1 handle 10: netem delay {2} {3}'.format(router, inf, access_delay, access_delay_var))
+
+    net['r1'].cmd( 'tc qdisc change dev r1-eth2 parent 1:1 handle 10: netem delay 1ms 1ms')
+    net['r2'].cmd( 'tc qdisc change dev r4-eth3 parent 1:1 handle 10: netem delay 1ms 1ms')
+
+    routers = ['r1', 'r2', 'r3', 'r4']
+    ifs = ['eth10', 'eth11']
+    for router in routers:
+    	for inf in ifs:
+		net[router].cmd( 'tc qdisc add dev {0}-{1} root handle 1: tbf rate {2} latency {3} burst 1540'.format(router, inf, access_rate, queuing_del))
+		net[router].cmd( 'tc qdisc add dev {0}-{1} parent 1:1 handle 10: netem delay {2} {3}'.format(router, inf, access_delay, access_delay_var))
+
+
+    for router in ['r1', 'r2', 'r3']:    	
+	net[router].cmd( 'tc qdisc add dev {0}-eth10 root handle 1: mf'.format(router))
+	net[router].cmd( 'tc qdisc add dev {0}-eth10 parent 1: handle 2: htb default 10'.format(router))
+	net[router].cmd( 'tc class add dev {0}-eth10 parent 2: classid 2:1 htb rate {1}'.format(router, bottleneck_rate))
+	net[router].cmd( 'tc class add dev {0}-eth10 parent 2:1 classid 2:10 htb rate {1}'.format(router, bottleneck_rate))
+	net[router].cmd( 'tc qdisc add dev {0}-eth10 parent 2:10 handle 10: netem delay {1} {2} loss {3}'.format(router, bottleneck_delay, bottleneck_delay_var, bottleneck_loss))
+
+
+    for router in ['r2', 'r3', 'r4']:    	
+	net[router].cmd( 'tc qdisc add dev {0}-eth11 root handle 1: htb default 10'.format(router))
+	net[router].cmd( 'tc class add dev {0}-eth11 parent 1: classid 1:1 htb rate {1}'.format(router, bottleneck_rate))
+	net[router].cmd( 'tc class add dev {0}-eth11 parent 1:1 classid 1:10 htb rate {1}'.format(router, bottleneck_rate))
+	net[router].cmd( 'tc qdisc add dev {0}-eth11 parent 1:10 handle 10: netem delay {1} {2}'.format(router, bottleneck_delay, bottleneck_delay_var))	    
+
+
+    hosts = [net['h1'], net['h2']]
+        
+    if cli:
+        net.iperf(hosts, seconds=30, l4Type='UDP', udpBw='160M')
+        CLI( net )
+    elif isRTP:
+	net[ 'h1' ].cmd( 'sudo sh rtp-streamer.sh  172.16.102.1' )
+	net[ 'h2' ].cmd( 'sudo sh rtp-streaming.sh' )
+	net[ 'h3' ].cmd( 'sudo sh rtp-streamer.sh  172.16.104.1 &' )
+	net[ 'h4' ].cmd( 'sh rtp-streaming.sh' )
+	net[ 'h5' ].cmd( 'sudo sh rtp-streamer.sh  172.16.106.1 &' )
+	net[ 'h6' ].cmd( 'sh rtp-streaming.sh' )
+#	net[ 'r1' ].cmd( 'watch  -dc  tc -s qdisc show dev r1-eth1' )
+        CLI( net )
+    else:
+	net[ 'h1' ].cmd( 'sudo ./streamer  172.16.101.1 &' )
+	net[ 'h2' ].cmd( 'sh streaming.sh 172.16.101.1' )
+	net[ 'h3' ].cmd( 'sudo ./streamer  172.16.103.1 &' )
+	net[ 'h4' ].cmd( 'sh streaming.sh 172.16.103.1' )
+	net[ 'h5' ].cmd( 'sudo ./streamer  172.16.105.1 &' )
+	net[ 'h6' ].cmd( 'sh streaming.sh 172.16.105.1' )
+	net[ 'h7' ].cmd( 'sudo ./streamer  172.16.107.1 &' )
+	net[ 'h8' ].cmd( 'sh streaming.sh 172.16.107.1' )
+#	net[ 'r1' ].cmd( 'watch  -dc  tc -s qdisc show dev r1-eth1' )
     
-    CLI( net )
+	CLI( net )
+
     net.stop()
 
 if __name__ == '__main__':
