@@ -23,6 +23,9 @@
 static unsigned long bufsize __read_mostly = 64 * 4096;
 static const char procname[] = "mf_probe";
 
+int mf = 0;//NC-TCP
+module_param(mf, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+
 struct flow {
     __be32  saddr;
     __be32  daddr;
@@ -63,6 +66,7 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
         u8 *feedback;
 	int opsize;
         int opcode;
+        s64 rate;
         const struct tcphdr *th;
         struct mf_sched_data *q = qdisc_priv(sch);
         if(q->nFlow == 0)
@@ -72,7 +76,15 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
         }
         //everything in kernel is interms of bytes. So convert Mininet kbits to bytes
         u32 capacity = (q->capacity * 1024)/8;
-        s64 rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/q->nFlow : 0;
+        if (likely(mf==0))
+        {
+            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/q->nFlow : 0;
+        }
+        else
+        {
+            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/(q->nFlow+1) : 0;
+        }
+        
 //        int elapsed_time = (int)ktime_to_ms (ktime_sub(ktime_get(), q->sample_time));
 //        if(elapsed_time > 20)
 //        {
@@ -436,7 +448,8 @@ static int __init mf_module_init(void)
 
 static void __exit mf_module_exit(void)
 {
-	unregister_qdisc(&mf_qdisc_ops);
+    remove_proc_entry(procname, init_net.proc_net);
+    unregister_qdisc(&mf_qdisc_ops);
 }
 
 module_init(mf_module_init)

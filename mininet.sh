@@ -1,3 +1,11 @@
+is_mf=$(cat /proc/sys/net/ipv4/tcp_mf)
+is_xcp=$(cat /proc/sys/net/ipv4/tcp_xcp)
+cong=$(cat /proc/sys/net/ipv4/tcp_congestion_control)
+echo $is_mf
+echo $is_xcp
+echo $cong
+sudo modprobe -r sch_mf &&
+sudo modprobe sch_mf mf=$is_xcp &&
 for pid in $(sudo lsof | grep tcpprobe | awk '{print $2}') ; do sudo kill $pid ; done &&
 sudo modprobe -r tcp_probe &&
 sudo dmesg -c > old.log &&
@@ -10,20 +18,20 @@ sudo chmod a+rwx /proc/net/tcpprobe &&
 sudo cat /proc/net/tcpprobe > trace.data &
 TCPCAP=$! &&
 echo $TCPCAP &&
-sudo chmod a+rwx backlog-im.data &&
-sudo chmod a+rwx backlog-inigo.data &&
-sudo chmod a+rwx backlog-cdg.data &&
+sudo chmod a+rwx -R *.data &&
 sudo python router.py; 
-is_mf=$(cat /proc/sys/net/ipv4/tcp_mf)
-cong=$(cat /proc/sys/net/ipv4/tcp_congestion_control)
-echo $is_mf
-echo $cong
-if [ $is_mf -eq '1' ]
+if [ $is_mf -eq '1' ] && [ $is_xcp -eq '0' ]
 then
     sudo cat trace.data | grep -a '172.16.101.1:8554 172.16' > h1-im.data &&
     sudo cat trace.data | grep -a '172.16.103.1:8554 172.16' > h3-im.data &&
     sudo cat trace.data | grep -a '172.16.105.1:8554 172.16' > h5-im.data &&
     sudo cat /proc/net/mf_probe > backlog-im.data
+elif [ $is_xcp -eq '1' ]
+then
+    sudo cat trace.data | grep -a '172.16.101.1:8554 172.16' > h1-xcp.data &&
+    sudo cat trace.data | grep -a '172.16.103.1:8554 172.16' > h3-xcp.data &&
+    sudo cat trace.data | grep -a '172.16.105.1:8554 172.16' > h5-xcp.data &&
+    sudo cat /proc/net/mf_probe > backlog-xcp.data 
 elif [ $cong = "cdg" ]
 then
     sudo cat trace.data | grep -a '172.16.101.1:8554 172.16' > h1-cdg.data &&

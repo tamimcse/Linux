@@ -240,6 +240,7 @@ extern struct inet_timewait_death_row tcp_death_row;
 /* sysctl variables for tcp */
 extern int sysctl_tcp_timestamps;
 extern int sysctl_tcp_mf;
+extern int sysctl_tcp_xcp;
 extern int sysctl_tcp_window_scaling;
 extern int sysctl_tcp_sack;
 extern int sysctl_tcp_fastopen;
