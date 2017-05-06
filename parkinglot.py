@@ -122,7 +122,7 @@ def main(cli=0):
     bottleneck_delay_var = '3ms'
     bottleneck_loss = '0%' #'0.1%'
     #mbps = Mega Bytes per sec
-    bottleneck_rate = '750kbit'#'2048' for avoiding congestion
+    bottleneck_rate = '666kbit'#'2048' for avoiding congestion
 
     info( '*** Configuring routers:\n' )
 #    net[ 'r1' ].cmd( 'ip neigh add 172.16.10.3 lladdr 2e:a9:cf:14:b4:6a dev r1-eth1' )
@@ -145,6 +145,7 @@ def main(cli=0):
     info( '*** Routing Table on Router:\n' )
     info( net[ 'r1' ].cmd( 'route' ) )
 
+#Connecting hosts to routers via access links
     hosts = ['h3', 'h4', 'h5', 'h6', 'h7', 'h8']
     for host in hosts:
 	net[host].cmd( 'tc qdisc add dev {0}-eth0 root handle 1: tbf rate {1} latency {2} burst 1540'.format(host, access_rate, queuing_del))
@@ -157,6 +158,7 @@ def main(cli=0):
 	net[host].cmd( 'tc qdisc add dev {0}-eth0 parent 1:1 handle 10: netem delay {1} {2}'.format(host, '1ms', access_delay_var))
 	net[host].cmd( 'tc qdisc add dev {0}-eth0 parent 10:  handle 101: fq'.format(host))
 
+#Connecting routers to hosts via access links
     routers = ['r1', 'r2', 'r3', 'r4']
     ifs = ['eth2', 'eth3']
     for router in routers:
@@ -167,14 +169,8 @@ def main(cli=0):
     net['r1'].cmd( 'tc qdisc change dev r1-eth2 parent 1:1 handle 10: netem delay 1ms 1ms')
     net['r2'].cmd( 'tc qdisc change dev r4-eth3 parent 1:1 handle 10: netem delay 1ms 1ms')
 
-    routers = ['r1', 'r2', 'r3', 'r4']
-    ifs = ['eth10', 'eth11']
-    for router in routers:
-    	for inf in ifs:
-		net[router].cmd( 'tc qdisc add dev {0}-{1} root handle 1: tbf rate {2} latency {3} burst 1540'.format(router, inf, access_rate, queuing_del))
-		net[router].cmd( 'tc qdisc add dev {0}-{1} parent 1:1 handle 10: netem delay {2} {3}'.format(router, inf, access_delay, access_delay_var))
 
-
+#Connecting routers to routers via bottleneck links
     for router in ['r1', 'r2', 'r3']:    	
 	net[router].cmd( 'tc qdisc add dev {0}-eth10 root handle 1: mf'.format(router))
 	net[router].cmd( 'tc qdisc add dev {0}-eth10 parent 1: handle 2: htb default 10'.format(router))
