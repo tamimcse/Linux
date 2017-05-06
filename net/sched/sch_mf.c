@@ -22,6 +22,7 @@
 
 static unsigned long bufsize __read_mostly = 64 * 4096;
 static const char procname[] = "mf_probe";
+struct proc_dir_entry *proc_entry;
 
 int mf = 0;//NC-TCP
 module_param(mf, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
@@ -313,10 +314,12 @@ static void mf_probe_init(void)
         {
             kfree(mf_probe.log);
             return ENOMEM;
-        }        
-	if (!proc_create(procname, S_IRUSR, init_net.proc_net, &mfpprobe_fops))
+        }    
+        proc_entry = proc_create(procname, S_IRUSR, init_net.proc_net, &mfpprobe_fops);
+	if (!proc_entry)
         {
             pr_err("Cannot create mf_probe proc file");
+            return ENOMEM;
         }
 }
 
@@ -448,7 +451,10 @@ static int __init mf_module_init(void)
 
 static void __exit mf_module_exit(void)
 {
-    remove_proc_entry(procname, init_net.proc_net);
+    if (proc_entry)
+        remove_proc_entry(procname, init_net.proc_net);
+    proc_entry = 0;
+    
     unregister_qdisc(&mf_qdisc_ops);
 }
 
