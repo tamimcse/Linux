@@ -22,7 +22,7 @@
 
 static unsigned long bufsize __read_mostly = 64 * 4096;
 static const char procname[] = "mf_probe";
-static int queue_id = 0;
+static atomic_t queue_id = ATOMIC_INIT(0);
 
 int mf = 0;//NC-TCP
 module_param(mf, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
@@ -44,21 +44,23 @@ struct mf_sched_data {
     u32 queue_sample;
     ktime_t sample_time;
     int queue_gradiant;
-    
+
     struct tcp_mf_cookie mfc;
     struct Qdisc	*qdisc;
 };
+
+struct {
+        ktime_t		start;
+        unsigned long	head, tail;
+        struct mf_log *log;
+} mf_probe;
 
 struct mf_log {
 	ktime_t tstamp;
 	__u32	backlog;
 };
 
-static struct {
-	ktime_t		start;
-        unsigned long	head, tail;
-        struct mf_log *log;
-} mf_probe;
+
 
 static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 		       struct tcp_mf_cookie *mfc)
@@ -168,6 +170,7 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 
 static void record_mf(struct Qdisc *sch)
 {
+    struct mf_sched_data *q = qdisc_priv(sch);
     if(mf_probe.start.tv64 == 0)
     {
         mf_probe.start = ktime_get();
@@ -178,25 +181,6 @@ static void record_mf(struct Qdisc *sch)
     mf_probe.head = (mf_probe.head + 1) & (bufsize - 1);
 }
 
-static void write_mf(void)
-{
-     while(mf_probe.head > 0)
-        {
-            char tbuf[256];
-            const struct mf_log *p
-                   = mf_probe.log + mf_probe.tail;           
-            struct timespec64 ts
-                    = ktime_to_timespec64(ktime_sub(p->tstamp, mf_probe.start));
-            int len = scnprintf(tbuf, sizeof(tbuf),
-                            "%lu.%09lu %u\n",
-                            (unsigned long)ts.tv_sec,
-                            (unsigned long)ts.tv_nsec,
-                            p->backlog);                
-            mf_probe.tail = (mf_probe.tail + 1) & (bufsize - 1);
-            mf_probe.head = (mf_probe.head - 1) & (bufsize - 1);
-            pr_info("%s",tbuf);
-        }
-}
 
 static int mf_enqueue(struct sk_buff *skb, struct Qdisc *sch,
 			 struct sk_buff **to_free)
@@ -305,8 +289,9 @@ static const struct file_operations mfpprobe_fops = {
 	.llseek  = noop_llseek,
 };
 
-static void mf_probe_init(char procname [])
+static void mf_probe_init(struct Qdisc *sch, char procname [])
 {
+        struct mf_sched_data *q = qdisc_priv(sch);
         bufsize = roundup_pow_of_two(bufsize);
 	mf_probe.start.tv64 = 0;
         mf_probe.head = mf_probe.tail = 0;
@@ -337,9 +322,11 @@ static int mf_init(struct Qdisc *sch, struct nlattr *opt)
                 q->queue_sample = 0;
                 q->sample_time.tv64 = 0;
                 q->queue_gradiant = 0;
-                scnprintf(q->procname, sizeof(q->procname), "%s%d", procname, queue_id++);
+                //TODO: should hold 
+                scnprintf(q->procname, sizeof(q->procname), "%s%d", procname, atomic_read(&queue_id));
+                atomic_inc(&queue_id);
 	}
-        mf_probe_init(q->procname);
+        mf_probe_init(sch, q->procname);
         
         return 0;
 }
@@ -453,7 +440,8 @@ static int __init mf_module_init(void)
 static void __exit mf_module_exit(void)
 {
     int i;
-    for(i = 0; i < queue_id; i++)
+    int nqueue = atomic_read(&queue_id);
+    for(i = 0; i < nqueue; i++)
     {
         char proc_name [30];
         scnprintf(proc_name, sizeof(proc_name), "%s%d", procname, i);
