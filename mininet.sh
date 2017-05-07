@@ -25,25 +25,25 @@ then
     sudo cat trace.data | grep -a '172.16.101.1:8554 172.16' > h1-im.data &&
     sudo cat trace.data | grep -a '172.16.103.1:8554 172.16' > h3-im.data &&
     sudo cat trace.data | grep -a '172.16.105.1:8554 172.16' > h5-im.data &&
-    sudo cat /proc/net/mf_probe > backlog-im.data
+    sudo cat /proc/net/mf_probe0 > backlog0-im.data
 elif [ $is_xcp -eq '1' ]
 then
     sudo cat trace.data | grep -a '172.16.101.1:8554 172.16' > h1-xcp.data &&
     sudo cat trace.data | grep -a '172.16.103.1:8554 172.16' > h3-xcp.data &&
     sudo cat trace.data | grep -a '172.16.105.1:8554 172.16' > h5-xcp.data &&
-    sudo cat /proc/net/mf_probe > backlog-xcp.data 
+    sudo cat /proc/net/mf_probe0 > backlog0-xcp.data 
 elif [ $cong = "cdg" ]
 then
     sudo cat trace.data | grep -a '172.16.101.1:8554 172.16' > h1-cdg.data &&
     sudo cat trace.data | grep -a '172.16.103.1:8554 172.16' > h3-cdg.data &&
     sudo cat trace.data | grep -a '172.16.105.1:8554 172.16' > h5-cdg.data &&
-    sudo cat /proc/net/mf_probe > backlog-cdg.data 
-#    sudo cat /proc/net/mf_probe > backlog-tcp.data
+    sudo cat /proc/net/mf_probe0 > backlog0-cdg.data 
+#    sudo cat /proc/net/mf_probe0 > backlog-tcp.data
 else
     sudo cat trace.data | grep -a '172.16.101.1:8554 172.16' > h1-inigo.data &&
     sudo cat trace.data | grep -a '172.16.103.1:8554 172.16' > h3-inigo.data &&
     sudo cat trace.data | grep -a '172.16.105.1:8554 172.16' > h5-inigo.data &&
-    sudo cat /proc/net/mf_probe > backlog-inigo.data 
+    sudo cat /proc/net/mf_probe0 > backlog0-inigo.data 
 fi
 
 #sudo kill $TCPCAP &&
