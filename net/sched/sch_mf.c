@@ -22,7 +22,7 @@
 
 static unsigned long bufsize __read_mostly = 64 * 4096;
 static const char procname[] = "mf_probe";
-struct proc_dir_entry *proc_entry;
+static int queue_id = 0;
 
 int mf = 0;//NC-TCP
 module_param(mf, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
@@ -39,6 +39,7 @@ static DEFINE_HASHTABLE(flows, 3);
 
 struct mf_sched_data {
     u32 nFlow;
+    char procname[20];
     u32 capacity;
     u32 queue_sample;
     ktime_t sample_time;
@@ -83,7 +84,7 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
         }
         else
         {
-            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/(q->nFlow+1) : 0;
+            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/(q->nFlow) : 0;
         }
         
 //        int elapsed_time = (int)ktime_to_ms (ktime_sub(ktime_get(), q->sample_time));
@@ -150,7 +151,7 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 				if (opsize == TCPOLEN_MF) {    
                                         feedback = ptr + 2;
 //                                        pr_info("feedback= %d, rate= %lld", *feedback, rate);
-//                                        if(*feedback > rate)
+                                        if(*feedback > rate)
                                             *feedback = rate;
 					mfc->req_thput = *ptr;
                                         mfc->cur_thput = *(ptr + 1);
@@ -304,7 +305,7 @@ static const struct file_operations mfpprobe_fops = {
 	.llseek  = noop_llseek,
 };
 
-static void mf_probe_init(void)
+static void mf_probe_init(char procname [])
 {
         bufsize = roundup_pow_of_two(bufsize);
 	mf_probe.start.tv64 = 0;
@@ -314,9 +315,9 @@ static void mf_probe_init(void)
         {
             kfree(mf_probe.log);
             return ENOMEM;
-        }    
-        proc_entry = proc_create(procname, S_IRUSR, init_net.proc_net, &mfpprobe_fops);
-	if (!proc_entry)
+        }        
+        
+	if (!proc_create(procname, S_IRUSR, init_net.proc_net, &mfpprobe_fops))
         {
             pr_err("Cannot create mf_probe proc file");
             return ENOMEM;
@@ -336,8 +337,9 @@ static int mf_init(struct Qdisc *sch, struct nlattr *opt)
                 q->queue_sample = 0;
                 q->sample_time.tv64 = 0;
                 q->queue_gradiant = 0;
+                scnprintf(q->procname, sizeof(q->procname), "%s%d", procname, queue_id++);
 	}
-        mf_probe_init();
+        mf_probe_init(q->procname);
         
         return 0;
 }
@@ -345,8 +347,7 @@ static int mf_init(struct Qdisc *sch, struct nlattr *opt)
 static void mf_destroy(struct Qdisc *sch)
 {
 	struct mf_sched_data *q = qdisc_priv(sch);
-	qdisc_destroy(q->qdisc);
-        
+        qdisc_destroy(q->qdisc);
         //Used by the hash_for_each()
         int b;
         struct flow *temp;        
@@ -451,9 +452,13 @@ static int __init mf_module_init(void)
 
 static void __exit mf_module_exit(void)
 {
-    if (proc_entry)
-        remove_proc_entry(procname, init_net.proc_net);
-    proc_entry = 0;
+    int i;
+    for(i = 0; i < queue_id; i++)
+    {
+        char proc_name [30];
+        scnprintf(proc_name, sizeof(proc_name), "%s%d", procname, i);
+        remove_proc_entry(proc_name, init_net.proc_net);
+    }
     
     unregister_qdisc(&mf_qdisc_ops);
 }
