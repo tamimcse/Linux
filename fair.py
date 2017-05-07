@@ -35,21 +35,21 @@ h1_inigo = list(csv.reader(open("h1-inigo.data"), delimiter=" "))
 h3_inigo = list(csv.reader(open("h3-inigo.data"), delimiter=" "))
 h5_inigo = list(csv.reader(open("h5-inigo.data"), delimiter=" "))
 
-h1_cdg = list(csv.reader(open("h1-cdg.data"), delimiter=" "))
-h3_cdg = list(csv.reader(open("h3-cdg.data"), delimiter=" "))
-h5_cdg = list(csv.reader(open("h5-cdg.data"), delimiter=" "))
+#h1_cdg = list(csv.reader(open("h1-cdg.data"), delimiter=" "))
+#h3_cdg = list(csv.reader(open("h3-cdg.data"), delimiter=" "))
+#h5_cdg = list(csv.reader(open("h5-cdg.data"), delimiter=" "))
 
 h1_im = list(csv.reader(open("h1-im.data"), delimiter=" "))
 h3_im = list(csv.reader(open("h3-im.data"), delimiter=" "))
 h5_im = list(csv.reader(open("h5-im.data"), delimiter=" "))
 
-h1_xcp = list(csv.reader(open("h1-xcp.data"), delimiter=" "))
-h3_xcp = list(csv.reader(open("h3-xcp.data"), delimiter=" "))
-h5_xcp = list(csv.reader(open("h5-xcp.data"), delimiter=" "))
+#h1_xcp = list(csv.reader(open("h1-xcp.data"), delimiter=" "))
+#h3_xcp = list(csv.reader(open("h3-xcp.data"), delimiter=" "))
+#h5_xcp = list(csv.reader(open("h5-xcp.data"), delimiter=" "))
 
 optimal = 333
 
 printme(h1_inigo, h3_inigo, h5_inigo, optimal, "fairness-inigo.data")
 printme(h1_im, h3_im, h5_im, optimal, "fairness-im.data")
-printme(h1_cdg, h3_cdg, h5_cdg, optimal, "fairness-cdg.data")
-printme(h1_xcp, h3_xcp, h5_xcp, optimal, "fairness-xcp.data")
+#printme(h1_cdg, h3_cdg, h5_cdg, optimal, "fairness-cdg.data")
+#printme(h1_xcp, h3_xcp, h5_xcp, optimal, "fairness-xcp.data")
