@@ -39,6 +39,7 @@ static DEFINE_HASHTABLE(flows, 3);
 
 struct mf_sched_data {
     u32 nFlow;
+    int id;
     char procname[20];
     u32 capacity;
     u32 queue_sample;
@@ -49,11 +50,11 @@ struct mf_sched_data {
     struct Qdisc	*qdisc;
 };
 
-struct {
+struct mf_probe{
         ktime_t		start;
         unsigned long	head, tail;
         struct mf_log *log;
-} mf_probe;
+} probes [3];
 
 struct mf_log {
 	ktime_t tstamp;
@@ -171,14 +172,15 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 static void record_mf(struct Qdisc *sch)
 {
     struct mf_sched_data *q = qdisc_priv(sch);
-    if(mf_probe.start.tv64 == 0)
+    struct mf_probe *mf_probe = &probes[q->id];
+    if(mf_probe->start.tv64 == 0)
     {
-        mf_probe.start = ktime_get();
+        mf_probe->start = ktime_get();
     }
-    struct mf_log *p = mf_probe.log + mf_probe.head;
+    struct mf_log *p = mf_probe->log + mf_probe->head;
     p->tstamp = ktime_get();
     p->backlog = sch->qstats.backlog;
-    mf_probe.head = (mf_probe.head + 1) & (bufsize - 1);
+    mf_probe->head = (mf_probe->head + 1) & (bufsize - 1);    
 }
 
 
@@ -261,25 +263,32 @@ static ssize_t mfprobe_read(struct file *file, char __user *buf,
 			     size_t len, loff_t *ppos)
 {
         int error = 0;
-        size_t cnt = 0;    
-         while(mf_probe.head > 0 && cnt < len)
+        size_t cnt = 0;  
+        
+        //Get proc file name where we are writting
+        unsigned char *fname = file->f_path.dentry->d_iname;
+        int f_index = (int)(*(fname + strlen(fname)-1)- 48);
+        
+        struct mf_probe *mf_probe = &probes[f_index];
+        while(mf_probe->head > 0 && cnt < len)
         {
             char tbuf[256];
             const struct mf_log *p
-                   = mf_probe.log + mf_probe.tail;           
+                   = mf_probe->log + mf_probe->tail;           
             struct timespec64 ts
-                    = ktime_to_timespec64(ktime_sub(p->tstamp, mf_probe.start));
+                    = ktime_to_timespec64(ktime_sub(p->tstamp, mf_probe->start));
             int width = scnprintf(tbuf, sizeof(tbuf),
                             "%lu.%09lu %u\n",
                             (unsigned long)ts.tv_sec,
                             (unsigned long)ts.tv_nsec,
                             p->backlog);                
-            mf_probe.tail = (mf_probe.tail + 1) & (bufsize - 1);
-            mf_probe.head = (mf_probe.head - 1) & (bufsize - 1);
+            mf_probe->tail = (mf_probe->tail + 1) & (bufsize - 1);
+            mf_probe->head = (mf_probe->head - 1) & (bufsize - 1);
             if (copy_to_user(buf + cnt, tbuf, width))
                     return -EFAULT; 
             cnt += width;
-        }
+        }        
+
         return cnt == 0 ? error : cnt;
 }
 
@@ -293,12 +302,13 @@ static void mf_probe_init(struct Qdisc *sch, char procname [])
 {
         struct mf_sched_data *q = qdisc_priv(sch);
         bufsize = roundup_pow_of_two(bufsize);
-	mf_probe.start.tv64 = 0;
-        mf_probe.head = mf_probe.tail = 0;
-        mf_probe.log = kcalloc(bufsize, sizeof(struct mf_log), GFP_KERNEL);            
-        if(!mf_probe.log)
+        struct mf_probe *mf_probe = &probes[q->id];
+	mf_probe->start.tv64 = 0;
+        mf_probe->head = mf_probe->tail = 0;
+        mf_probe->log = kcalloc(bufsize, sizeof(struct mf_log), GFP_KERNEL);            
+        if(!mf_probe->log)
         {
-            kfree(mf_probe.log);
+            kfree(mf_probe->log);
             return ENOMEM;
         }        
         
@@ -322,7 +332,7 @@ static int mf_init(struct Qdisc *sch, struct nlattr *opt)
                 q->queue_sample = 0;
                 q->sample_time.tv64 = 0;
                 q->queue_gradiant = 0;
-                //TODO: should hold 
+                q->id = atomic_read(&queue_id); 
                 scnprintf(q->procname, sizeof(q->procname), "%s%d", procname, atomic_read(&queue_id));
                 atomic_inc(&queue_id);
 	}
