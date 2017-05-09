@@ -22,6 +22,7 @@
 
 static unsigned long bufsize __read_mostly = 64 * 4096;
 static const char procname[] = "mf_probe";
+static const int proc_name_len = 9;
 static atomic_t queue_id = ATOMIC_INIT(0);
 
 int mf = 0;//NC-TCP
@@ -87,35 +88,36 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
         }
         else
         {
+    //        int elapsed_time = (int)ktime_to_ms (ktime_sub(ktime_get(), q->sample_time));
+    //        if(elapsed_time > 20)
+    //        {
+    //            //Don't do it for the very first sample
+    //            if(q->sample_time.tv64 > 0)
+    //            {
+    //                //change of queue per millisecond
+    //                q->queue_gradiant = (int)(sch->qstats.backlog - q->queue_sample) /elapsed_time;
+    //                pr_info("Queue diff: %d Time diff: %d queue_gradiant=%d", 
+    //                        (sch->qstats.backlog - q->queue_sample), 
+    //                        elapsed_time, q->queue_gradiant);
+    //            }
+    //            q->queue_sample = sch->qstats.backlog;
+    //            q->sample_time = ktime_get();
+    //        }
+    //        everything in kernel is interms of bytes. So convert Mininet kbits to bytes
+    //        u32 capacity = (q->capacity * 1024)/8; 
+    //        s64 rate;
+    //        if(q->queue_gradiant > 0)
+    //        {
+    //            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog - 2*elapsed_time*q->queue_gradiant)/q->numFlow : 0;
+    //        }
+    //        else
+    //        {
+    //            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/q->nFlow : 0;        
+    //        }            
             rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/(q->nFlow) : 0;
         }
         
-//        int elapsed_time = (int)ktime_to_ms (ktime_sub(ktime_get(), q->sample_time));
-//        if(elapsed_time > 20)
-//        {
-//            //Don't do it for the very first sample
-//            if(q->sample_time.tv64 > 0)
-//            {
-//                //change of queue per millisecond
-//                q->queue_gradiant = (int)(sch->qstats.backlog - q->queue_sample) /elapsed_time;
-//                pr_info("Queue diff: %d Time diff: %d queue_gradiant=%d", 
-//                        (sch->qstats.backlog - q->queue_sample), 
-//                        elapsed_time, q->queue_gradiant);
-//            }
-//            q->queue_sample = sch->qstats.backlog;
-//            q->sample_time = ktime_get();
-//        }
-//        everything in kernel is interms of bytes. So convert Mininet kbits to bytes
-//        u32 capacity = (q->capacity * 1024)/8; 
-//        s64 rate;
-//        if(q->queue_gradiant > 0)
-//        {
-//            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog - 2*elapsed_time*q->queue_gradiant)/q->numFlow : 0;
-//        }
-//        else
-//        {
-//            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/q->nFlow : 0;        
-//        }
+
             
 
         //convert into bytes back to to KB (as MF TCP option)
@@ -267,7 +269,7 @@ static ssize_t mfprobe_read(struct file *file, char __user *buf,
         
         //Get proc file name where we are writting
         unsigned char *fname = file->f_path.dentry->d_iname;
-        int f_index = (int)(*(fname + strlen(fname)-1)- 48);
+        int f_index = (int)(*(fname + proc_name_len - 1)- 48);
         
         struct mf_probe *mf_probe = &probes[f_index];
         while(mf_probe->head > 0 && cnt < len)
@@ -327,8 +329,8 @@ static int mf_init(struct Qdisc *sch, struct nlattr *opt)
                 sch->limit = limit;
                 q->qdisc = fifo_create_dflt(sch, &bfifo_qdisc_ops, limit);
 		q->qdisc->limit = limit;
-                q->capacity = 1024;
-                q->nFlow = 3; //Make it 0 when flows are apart from each other
+                q->capacity = 1024; //666;
+                q->nFlow = 3; //2; //Make it 0 when flows are apart from each other
                 q->queue_sample = 0;
                 q->sample_time.tv64 = 0;
                 q->queue_gradiant = 0;
