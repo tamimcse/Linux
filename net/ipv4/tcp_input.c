@@ -3565,16 +3565,28 @@ static void tcp_cong_control(struct sock *sk, u32 ack, u32 acked_sacked,
         
         if(likely(sysctl_tcp_mf) && tp->rx_opt.mf_ok)
         {
-            //MF TCP feedback is in KB and everything in kernel is in Byte
-//            int wnd = (((tp->mf_cookie_req->feedback_thput * 1024) * ((tp->srtt_us >> 3) /USEC_PER_SEC)) / tp->mss_cache);
-            
-            //calculated based on tcp_update_pacing_rate()
-            int wnd = ((tp->mf_cookie_req->feedback_thput * 1024) * tcp_min_rtt(tp)) / (tp->mss_cache * ((USEC_PER_SEC/100) << 3));
-            tp->snd_cwnd = wnd;
-            pr_info("Feedback= %d RTT= %d MSS= %d Cwnd= %d on ", 
-                    tp->mf_cookie_req->feedback_thput, tp->srtt_us, tp->mss_cache, tp->snd_cwnd);
-            ACCESS_ONCE(sk->sk_pacing_rate) = tp->mf_cookie_req->feedback_thput * 1024;
-            return;
+            if(likely(sysctl_tcp_xcp == 0))
+            {
+                //MF TCP feedback is in KB and everything in kernel is in Byte
+    //            int wnd = (((tp->mf_cookie_req->feedback_thput * 1024) * ((tp->srtt_us >> 3) /USEC_PER_SEC)) / tp->mss_cache);
+
+                //calculated based on tcp_update_pacing_rate()
+                int wnd = ((tp->mf_cookie_req->feedback_thput * 1024) * tcp_min_rtt(tp)) / (tp->mss_cache * ((USEC_PER_SEC/100) << 3));
+                tp->snd_cwnd = wnd;
+                pr_info("Feedback= %d RTT= %d MSS= %d Cwnd= %d on ", 
+                        tp->mf_cookie_req->feedback_thput, tp->srtt_us, tp->mss_cache, tp->snd_cwnd);
+                ACCESS_ONCE(sk->sk_pacing_rate) = tp->mf_cookie_req->feedback_thput * 1024;
+                return;                
+            }
+            else
+            {
+                //calculated based on tcp_update_pacing_rate()
+                int wnd = ((tp->mf_cookie_req->feedback_thput * 1024) * tp->srtt_us) / (tp->mss_cache * ((USEC_PER_SEC/100) << 3));
+//                int wnd = ((tp->mf_cookie_req->feedback_thput * 1024 * 1024) * (tp->srtt_us >> 3) ) / (tp->mss_cache * USEC_PER_SEC);
+                tp->snd_cwnd = wnd;
+                pr_info("Feedback= %d RTT= %d MSS= %d Cwnd= %d on ", 
+                        tp->mf_cookie_req->feedback_thput, tp->srtt_us, tp->mss_cache, tp->snd_cwnd);                
+            }
         }
 
 	if (icsk->icsk_ca_ops->cong_control) {

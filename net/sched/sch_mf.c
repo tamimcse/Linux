@@ -23,6 +23,7 @@
 static unsigned long bufsize __read_mostly = 64 * 4096;
 static const char procname[] = "mf_probe";
 static const int proc_name_len = 9;
+static const int control_interval = 140;
 static atomic_t queue_id = ATOMIC_INIT(0);
 
 int mf = 0;//NC-TCP
@@ -46,6 +47,10 @@ struct mf_sched_data {
     u32 queue_sample;
     ktime_t sample_time;
     int queue_gradiant;
+    int parsistant_queue;
+    int min_queue; //Minimum queueu during the control interval
+    u64 bytes_processed; //Bytes processed during the control interval 
+    u64 incoming_rate;
 
     struct tcp_mf_cookie mfc;
     struct Qdisc	*qdisc;
@@ -73,6 +78,7 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 	int opsize;
         int opcode;
         s64 rate;
+        s64 delta;
         const struct tcphdr *th;
         struct mf_sched_data *q = qdisc_priv(sch);
         if(q->nFlow == 0)
@@ -80,45 +86,48 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
             pr_err("Some thing is terribly wrong !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
             return;
         }
-        //everything in kernel is interms of bytes. So convert Mininet kbits to bytes
-        u32 capacity = (q->capacity * 1024)/8;
+
         if (likely(mf==0))
         {
-            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/q->nFlow : 0;
+            rate = q->capacity > sch->qstats.backlog? 12*(q->capacity - sch->qstats.backlog)/(q->nFlow*10) : 0;
         }
-        else
-        {
-    //        int elapsed_time = (int)ktime_to_ms (ktime_sub(ktime_get(), q->sample_time));
-    //        if(elapsed_time > 20)
-    //        {
-    //            //Don't do it for the very first sample
-    //            if(q->sample_time.tv64 > 0)
-    //            {
-    //                //change of queue per millisecond
-    //                q->queue_gradiant = (int)(sch->qstats.backlog - q->queue_sample) /elapsed_time;
-    //                pr_info("Queue diff: %d Time diff: %d queue_gradiant=%d", 
-    //                        (sch->qstats.backlog - q->queue_sample), 
-    //                        elapsed_time, q->queue_gradiant);
-    //            }
-    //            q->queue_sample = sch->qstats.backlog;
-    //            q->sample_time = ktime_get();
-    //        }
-    //        everything in kernel is interms of bytes. So convert Mininet kbits to bytes
-    //        u32 capacity = (q->capacity * 1024)/8; 
-    //        s64 rate;
-    //        if(q->queue_gradiant > 0)
-    //        {
-    //            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog - 2*elapsed_time*q->queue_gradiant)/q->numFlow : 0;
-    //        }
-    //        else
-    //        {
-    //            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/q->nFlow : 0;        
-    //        }            
-            rate = capacity > sch->qstats.backlog? (capacity - sch->qstats.backlog)/(q->nFlow) : 0;
-        }
-        
+        else if(mf == 1)
+        {            
+            int elapsed_time = (int)ktime_to_ms (ktime_sub(ktime_get(), q->sample_time));
+            q->min_queue = min(q->min_queue, sch->qstats.backlog);
+            q->bytes_processed += skb->len;
+
+            delta = 4 * 140 * (q->capacity - q->incoming_rate)/10  - 226 * q->parsistant_queue/1000;
+            //changed Bytes to MB
+            delta = delta/(1024*1024);            
+            rate = (q->capacity + delta)/q->nFlow;
+
+            pr_err("XCP Capacity=%lu  BPS=%llu  delata=%llu Parsistent Queue=%d feedback rate=%lld KB packet len=%u", 
+                    q->capacity, q->incoming_rate, delta, q->parsistant_queue, rate, skb->len); 
 
             
+            if(elapsed_time > control_interval)
+            {
+//                //Don't do it for the very first sample
+//                if(q->sample_time.tv64 > 0)
+//                {
+//                    q->parsistant_queue = sch->qstats.backlog;
+////                    change of queue per millisecond
+////                    q->queue_gradiant = (int)(sch->qstats.backlog - q->queue_sample) /elapsed_time;
+////                    pr_info("Queue diff: %d Time diff: %d queue_gradiant=%d", 
+////                            (sch->qstats.backlog - q->queue_sample), 
+////                            elapsed_time, q->queue_gradiant);
+//                }
+                q->sample_time = ktime_get();
+                q->queue_sample = sch->qstats.backlog;                
+                q->parsistant_queue = q->min_queue;
+                q->incoming_rate = q->bytes_processed * 1000 / elapsed_time;
+                //reset min_queue and bytes_proccessed
+                q->min_queue = INT_MAX;
+                q->bytes_processed = 0;
+            }
+
+        }
 
         //convert into bytes back to to KB (as MF TCP option)
         rate = rate/1024;        
@@ -330,10 +339,16 @@ static int mf_init(struct Qdisc *sch, struct nlattr *opt)
                 q->qdisc = fifo_create_dflt(sch, &bfifo_qdisc_ops, limit);
 		q->qdisc->limit = limit;
                 q->capacity = 1024; //666;
+                //everything in kernel is interms of bytes. So convert Mininet kbits to bytes
+                q->capacity = (q->capacity * 1024)/8;
                 q->nFlow = 3; //2; //Make it 0 when flows are apart from each other
                 q->queue_sample = 0;
                 q->sample_time.tv64 = 0;
                 q->queue_gradiant = 0;
+                q->bytes_processed = 0;
+                q->incoming_rate = 0;
+                q->min_queue = INT_MAX;
+                q->parsistant_queue = INT_MAX;
                 q->id = atomic_read(&queue_id); 
                 scnprintf(q->procname, sizeof(q->procname), "%s%d", procname, atomic_read(&queue_id));
                 atomic_inc(&queue_id);
