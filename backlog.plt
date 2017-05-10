@@ -27,8 +27,8 @@ set key inside right bottom
 set output sprintf("fairness.png")
 set xlabel "Time (Seconds)"
 set ylabel "Fairness index"
-#plot "fairness-im.data" using 1:2 title tcp2, "fairness-inigo.data" using 1:2 title tcp1, "fairness-xcp.data" using 1:2 title xcp
-plot "fairness-im.data" using 1:2 title tcp2, "fairness-inigo.data" using 1:2 title tcp1
+plot "fairness-im.data" using 1:2 title tcp2, "fairness-inigo.data" using 1:2 title tcp1, "fairness-xcp.data" using 1:2 title xcp
+#plot "fairness-im.data" using 1:2 title tcp2, "fairness-inigo.data" using 1:2 title tcp1
 
 
 #Plot NC-TCP throughputs
@@ -60,8 +60,8 @@ plot "h1-inigo.data" using 1:($12 * 8 /1024) title "flow 1", "h3-inigo.data" usi
 set output sprintf("backlog.png")
 set xlabel "Time (Seconds)"
 set ylabel "Queuing delay (msec)"
-#plot backlogim using 1:($2*8/(1024*1024)) title tcp2, backloginigo using 1:($2*8/(1024*1024)) title tcp1, backlogxcp using 1:($2*8/(1024*1024)) title xcp
-plot backlogim using 1:($2*8/(1024*1024)) title tcp2, backloginigo using 1:($2*8/(1024*1024)) title tcp1
+plot backlogim using 1:($2*8/(1024*1024)) title tcp2, backloginigo using 1:($2*8/(1024*1024)) title tcp1, backlogxcp using 1:($2*8/(1024*1024)) title xcp
+#plot backlogim using 1:($2*8/(1024*1024)) title tcp2, backloginigo using 1:($2*8/(1024*1024)) title tcp1
 
 set output sprintf("backlog1.png")
 #plot 'backlog1-im.data' using 1:($2*8/(1024*1024)) title tcp2, 'backlog1-inigo.data' using 1:($2*8/(1024*1024)) title tcp1, 'backlog1-xcp.data' using 1:($2*8/(1024*1024)) title xcp
