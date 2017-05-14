@@ -85,10 +85,14 @@ def main(cli=0):
 
     queuing_del = '100ms'
 
-    access_delay_h1 = '1ms'
-    access_delay_h2 = '1ms'
-    access_delay_h3 = '10ms'
-    access_delay_h4 = '10ms'
+    #h1-h2: 2 * (10 + 20 + 10)
+    #h1-h2: 2 * (20 + 20 + 10)
+    #h1-h2: 2 * (30 + 20 + 10)
+
+    access_delay_h1 = '10ms'
+    access_delay_h2 = '10ms'
+    access_delay_h3 = '20ms'
+    access_delay_h4 = '20ms'
     access_delay_h5 = '30ms'
     access_delay_h6 = '30ms'
 
@@ -121,7 +125,7 @@ def main(cli=0):
 	access_del = eval('access_delay_'+host)
 #	access_del = access_delay
 	net[host].cmd( 'tc qdisc add dev {0}-eth0 root handle 1: tbf rate {1} latency {2} burst 1540'.format(host, access_rate, queuing_del))
-	net[host].cmd( 'tc qdisc add dev {0}-eth0 parent 1:1 handle 10: netem delay {1} {2}'.format(host, access_delay, access_delay_var))
+	net[host].cmd( 'tc qdisc add dev {0}-eth0 parent 1:1 handle 10: netem delay {1} {2}'.format(host, access_del, access_delay_var))
 	net[host].cmd( 'tc qdisc add dev {0}-eth0 parent 10:  handle 101: fq'.format(host))
 #	net[host].cmd( 'tc qdisc change dev {0}-eth0 root netem loss {1}'.format(host, access_loss))
 #	net[host].cmd( 'tc -s qdisc show dev {0}-eth0'.format(host))

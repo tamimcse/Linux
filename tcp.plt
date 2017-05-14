@@ -69,5 +69,5 @@ set autoscale y
 set output sprintf("%s-power.png",outPre)
 set xlabel "Time (Seconds)"
 set ylabel "log(throughput/delay)"
-plot imlog using 1:(log10(($12 * 8)/($10/1000))) title tcp2, inigolog using 1:(log10(($12 * 8)/($10/1000))) title tcp1, xcplog using 1:(log10(($12 * 8)/($10/1000))) title xcp
+plot imlog using 1:(log10(($12 * 8)/($2*8/(1024*1024)))) title tcp2, inigolog using 1:(log10(($12 * 8)/($2*8/(1024*1024)))) title tcp1, xcplog using 1:(log10(($12 * 8)/($2*8/(1024*1024)))) title xcp
 
