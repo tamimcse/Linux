@@ -98,7 +98,7 @@ def main(cli=0):
     #mbps = Mega Bytes per sec
     access_rate = '1024kbit' 
 
-    bottleneck_delay = '50ms'
+    bottleneck_delay = '20ms'
     bottleneck_delay_var = '3ms'
     bottleneck_loss = '0%' #'0.1%'
     #mbps = Mega Bytes per sec
@@ -118,8 +118,8 @@ def main(cli=0):
 
     hosts = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']
     for host in hosts:
-#	access_del = eval('access_delay_'+host)
-	access_del = access_delay
+	access_del = eval('access_delay_'+host)
+#	access_del = access_delay
 	net[host].cmd( 'tc qdisc add dev {0}-eth0 root handle 1: tbf rate {1} latency {2} burst 1540'.format(host, access_rate, queuing_del))
 	net[host].cmd( 'tc qdisc add dev {0}-eth0 parent 1:1 handle 10: netem delay {1} {2}'.format(host, access_delay, access_delay_var))
 	net[host].cmd( 'tc qdisc add dev {0}-eth0 parent 10:  handle 101: fq'.format(host))

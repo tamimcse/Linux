@@ -64,10 +64,10 @@ plot imlog using 1:($12 * 8 /1024) title tcp2, inigolog using 1:($12 * 8 /1024) 
 
 
 #Plot log(throughput/delay)
-#set autoscale x
-#set autoscale y
-#set output sprintf("%s-power.png",outPre)
-#set xlabel "Time (Seconds)"
-#set ylabel "log(throughput/delay)"
-#plot tcplog using 1:(log10(($12 * 8)/($10/1000))) title tcp1, imlog using 1:(log10(($12 * 8)/($10/1000))) title tcp2
+set autoscale x
+set autoscale y
+set output sprintf("%s-power.png",outPre)
+set xlabel "Time (Seconds)"
+set ylabel "log(throughput/delay)"
+plot imlog using 1:(log10(($12 * 8)/($10/1000))) title tcp2, inigolog using 1:(log10(($12 * 8)/($10/1000))) title tcp1, xcplog using 1:(log10(($12 * 8)/($10/1000))) title xcp
 
