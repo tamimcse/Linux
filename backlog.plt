@@ -64,9 +64,9 @@ plot backlogim using 1:($2*8/(1024*1024)) title tcp2, backloginigo using 1:($2*8
 #plot backlogim using 1:($2*8/(1024*1024)) title tcp2, backloginigo using 1:($2*8/(1024*1024)) title tcp1
 
 set output sprintf("backlog1.png")
-#plot 'backlog1-im.data' using 1:($2*8/(1024*1024)) title tcp2, 'backlog1-inigo.data' using 1:($2*8/(1024*1024)) title tcp1, 'backlog1-xcp.data' using 1:($2*8/(1024*1024)) title xcp
-plot 'backlog1-im.data' using 1:($2*8/(1024*1024)) title tcp2, 'backlog1-inigo.data' using 1:($2*8/(1024*1024)) title tcp1
+plot 'backlog1-im.data' using 1:($2*8/(1024*1024)) title tcp2, 'backlog1-inigo.data' using 1:($2*8/(1024*1024)) title tcp1, 'backlog1-xcp.data' using 1:($2*8/(1024*1024)) title xcp
+#plot 'backlog1-im.data' using 1:($2*8/(1024*1024)) title tcp2, 'backlog1-inigo.data' using 1:($2*8/(1024*1024)) title tcp1
 
 set output sprintf("backlog2.png")
-#plot 'backlog2-im.data' using 1:($2*8/(1024*1024)) title tcp2, 'backlog2-inigo.data' using 1:($2*8/(1024*1024)) title tcp1, 'backlog2-xcp.data' using 1:($2*8/(1024*1024)) title xcp
-plot 'backlog2-im.data' using 1:($2*8/(1024*1024)) title tcp2, 'backlog2-inigo.data' using 1:($2*8/(1024*1024)) title tcp1
+plot 'backlog2-im.data' using 1:($2*8/(1024*1024)) title tcp2, 'backlog2-inigo.data' using 1:($2*8/(1024*1024)) title tcp1, 'backlog2-xcp.data' using 1:($2*8/(1024*1024)) title xcp
+#plot 'backlog2-im.data' using 1:($2*8/(1024*1024)) title tcp2, 'backlog2-inigo.data' using 1:($2*8/(1024*1024)) title tcp1
