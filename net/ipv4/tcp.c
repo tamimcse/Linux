@@ -279,6 +279,7 @@
 
 #include <linux/uaccess.h>
 #include <asm/ioctls.h>
+#include <asm/unaligned.h>
 #include <net/busy_poll.h>
 
 int sysctl_tcp_min_tso_segs __read_mostly = 2;

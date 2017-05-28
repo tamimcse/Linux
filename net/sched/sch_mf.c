@@ -184,7 +184,7 @@ static void record_mf(struct Qdisc *sch)
 {
     struct mf_sched_data *q = qdisc_priv(sch);
     struct mf_probe *mf_probe = &probes[q->id];
-    if(mf_probe->start.tv64 == 0)
+    if(mf_probe->start == 0)
     {
         mf_probe->start = ktime_get();
     }
@@ -314,7 +314,7 @@ static void mf_probe_init(struct Qdisc *sch, char procname [])
         struct mf_sched_data *q = qdisc_priv(sch);
         bufsize = roundup_pow_of_two(bufsize);
         struct mf_probe *mf_probe = &probes[q->id];
-	mf_probe->start.tv64 = 0;
+	mf_probe->start = 0;
         mf_probe->head = mf_probe->tail = 0;
         mf_probe->log = kcalloc(bufsize, sizeof(struct mf_log), GFP_KERNEL);            
         if(!mf_probe->log)
@@ -343,7 +343,7 @@ static int mf_init(struct Qdisc *sch, struct nlattr *opt)
                 q->capacity = (q->capacity * 1024)/8;
                 q->nFlow = 3; //2; //Make it 0 when flows are apart from each other
                 q->queue_sample = 0;
-                q->sample_time.tv64 = 0;
+                q->sample_time = 0;
                 q->queue_gradiant = 0;
                 q->bytes_processed = 0;
                 q->incoming_rate = 0;
