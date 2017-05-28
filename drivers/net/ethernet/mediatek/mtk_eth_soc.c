@@ -318,6 +318,8 @@ static int mtk_phy_connect(struct net_device *dev)
 	return 0;
 
 err_phy:
+	if (of_phy_is_fixed_link(mac->of_node))
+		of_phy_deregister_fixed_link(mac->of_node);
 	of_node_put(np);
 	dev_err(eth->dev, "%s: invalid phy\n", __func__);
 	return -EINVAL;
@@ -460,8 +462,8 @@ static void mtk_stats_update(struct mtk_eth *eth)
 	}
 }
 
-static struct rtnl_link_stats64 *mtk_get_stats64(struct net_device *dev,
-					struct rtnl_link_stats64 *storage)
+static void mtk_get_stats64(struct net_device *dev,
+			    struct rtnl_link_stats64 *storage)
 {
 	struct mtk_mac *mac = netdev_priv(dev);
 	struct mtk_hw_stats *hw_stats = mac->hw_stats;
@@ -492,8 +494,6 @@ static struct rtnl_link_stats64 *mtk_get_stats64(struct net_device *dev,
 	storage->tx_errors = dev->stats.tx_errors;
 	storage->rx_dropped = dev->stats.rx_dropped;
 	storage->tx_dropped = dev->stats.tx_dropped;
-
-	return storage;
 }
 
 static inline int mtk_max_frag_size(int mtu)
@@ -613,7 +613,7 @@ static int mtk_tx_map(struct sk_buff *skb, struct net_device *dev,
 	struct mtk_mac *mac = netdev_priv(dev);
 	struct mtk_eth *eth = mac->hw;
 	struct mtk_tx_dma *itxd, *txd;
-	struct mtk_tx_buf *tx_buf;
+	struct mtk_tx_buf *itx_buf, *tx_buf;
 	dma_addr_t mapped_addr;
 	unsigned int nr_frags;
 	int i, n_desc = 1;
@@ -627,8 +627,8 @@ static int mtk_tx_map(struct sk_buff *skb, struct net_device *dev,
 	fport = (mac->id + 1) << TX_DMA_FPORT_SHIFT;
 	txd4 |= fport;
 
-	tx_buf = mtk_desc_to_tx_buf(ring, itxd);
-	memset(tx_buf, 0, sizeof(*tx_buf));
+	itx_buf = mtk_desc_to_tx_buf(ring, itxd);
+	memset(itx_buf, 0, sizeof(*itx_buf));
 
 	if (gso)
 		txd4 |= TX_DMA_TSO;
@@ -647,9 +647,11 @@ static int mtk_tx_map(struct sk_buff *skb, struct net_device *dev,
 		return -ENOMEM;
 
 	WRITE_ONCE(itxd->txd1, mapped_addr);
-	tx_buf->flags |= MTK_TX_FLAGS_SINGLE0;
-	dma_unmap_addr_set(tx_buf, dma_addr0, mapped_addr);
-	dma_unmap_len_set(tx_buf, dma_len0, skb_headlen(skb));
+	itx_buf->flags |= MTK_TX_FLAGS_SINGLE0;
+	itx_buf->flags |= (!mac->id) ? MTK_TX_FLAGS_FPORT0 :
+			  MTK_TX_FLAGS_FPORT1;
+	dma_unmap_addr_set(itx_buf, dma_addr0, mapped_addr);
+	dma_unmap_len_set(itx_buf, dma_len0, skb_headlen(skb));
 
 	/* TX SG offload */
 	txd = itxd;
@@ -685,11 +687,13 @@ static int mtk_tx_map(struct sk_buff *skb, struct net_device *dev,
 					       last_frag * TX_DMA_LS0));
 			WRITE_ONCE(txd->txd4, fport);
 
-			tx_buf->skb = (struct sk_buff *)MTK_DMA_DUMMY_DESC;
 			tx_buf = mtk_desc_to_tx_buf(ring, txd);
 			memset(tx_buf, 0, sizeof(*tx_buf));
-
+			tx_buf->skb = (struct sk_buff *)MTK_DMA_DUMMY_DESC;
 			tx_buf->flags |= MTK_TX_FLAGS_PAGE0;
+			tx_buf->flags |= (!mac->id) ? MTK_TX_FLAGS_FPORT0 :
+					 MTK_TX_FLAGS_FPORT1;
+
 			dma_unmap_addr_set(tx_buf, dma_addr0, mapped_addr);
 			dma_unmap_len_set(tx_buf, dma_len0, frag_map_size);
 			frag_size -= frag_map_size;
@@ -698,7 +702,7 @@ static int mtk_tx_map(struct sk_buff *skb, struct net_device *dev,
 	}
 
 	/* store skb to cleanup */
-	tx_buf->skb = skb;
+	itx_buf->skb = skb;
 
 	WRITE_ONCE(itxd->txd4, txd4);
 	WRITE_ONCE(itxd->txd3, (TX_DMA_SWC | TX_DMA_PLEN0(skb_headlen(skb)) |
@@ -1012,17 +1016,16 @@ static int mtk_poll_tx(struct mtk_eth *eth, int budget)
 
 	while ((cpu != dma) && budget) {
 		u32 next_cpu = desc->txd2;
-		int mac;
+		int mac = 0;
 
 		desc = mtk_qdma_phys_to_virt(ring, desc->txd2);
 		if ((desc->txd3 & TX_DMA_OWNER_CPU) == 0)
 			break;
 
-		mac = (desc->txd4 >> TX_DMA_FPORT_SHIFT) &
-		       TX_DMA_FPORT_MASK;
-		mac--;
-
 		tx_buf = mtk_desc_to_tx_buf(ring, desc);
+		if (tx_buf->flags & MTK_TX_FLAGS_FPORT1)
+			mac = 1;
+
 		skb = tx_buf->skb;
 		if (!skb) {
 			condition = 1;
@@ -1923,6 +1926,8 @@ static void mtk_uninit(struct net_device *dev)
 	struct mtk_eth *eth = mac->hw;
 
 	phy_disconnect(dev->phydev);
+	if (of_phy_is_fixed_link(mac->of_node))
+		of_phy_deregister_fixed_link(mac->of_node);
 	mtk_irq_disable(eth, MTK_QDMA_INT_MASK, ~0);
 	mtk_irq_disable(eth, MTK_PDMA_INT_MASK, ~0);
 }
@@ -2513,7 +2518,7 @@ static int mtk_remove(struct platform_device *pdev)
 }
 
 const struct of_device_id of_mtk_match[] = {
-	{ .compatible = "mediatek,mt7623-eth" },
+	{ .compatible = "mediatek,mt2701-eth" },
 	{},
 };
 MODULE_DEVICE_TABLE(of, of_mtk_match);

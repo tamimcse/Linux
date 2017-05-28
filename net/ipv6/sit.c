@@ -31,7 +31,7 @@
 #include <linux/if_arp.h>
 #include <linux/icmp.h>
 #include <linux/slab.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <linux/init.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/if_ether.h>
@@ -76,7 +76,7 @@ static bool check_6rd(struct ip_tunnel *tunnel, const struct in6_addr *v6dst,
 		      __be32 *v4dst);
 static struct rtnl_link_ops sit_link_ops __read_mostly;
 
-static int sit_net_id __read_mostly;
+static unsigned int sit_net_id __read_mostly;
 struct sit_net {
 	struct ip_tunnel __rcu *tunnels_r_l[IP6_SIT_HASH_SIZE];
 	struct ip_tunnel __rcu *tunnels_r[IP6_SIT_HASH_SIZE];
@@ -1380,6 +1380,7 @@ static int ipip6_tunnel_init(struct net_device *dev)
 	err = dst_cache_init(&tunnel->dst_cache, GFP_KERNEL);
 	if (err) {
 		free_percpu(dev->tstats);
+		dev->tstats = NULL;
 		return err;
 	}
 

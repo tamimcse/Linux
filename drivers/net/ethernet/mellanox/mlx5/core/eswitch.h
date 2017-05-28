@@ -36,6 +36,7 @@
 #include <linux/if_ether.h>
 #include <linux/if_link.h>
 #include <net/devlink.h>
+#include <net/ip_tunnels.h>
 #include <linux/mlx5/device.h>
 
 #define MLX5_MAX_UC_PER_VPORT(dev) \
@@ -48,6 +49,11 @@
 #define MLX5_L2_ADDR_HASH(addr) (addr[5])
 
 #define FDB_UPLINK_VPORT 0xffff
+
+#define MLX5_MIN_BW_SHARE 1
+
+#define MLX5_RATE_TO_BW_SHARE(rate, divider, limit) \
+	min_t(u32, max_t(u32, (rate) / (divider), MLX5_MIN_BW_SHARE), limit)
 
 /* L2 -mac address based- hash helpers */
 struct l2addr_node {
@@ -115,6 +121,7 @@ struct mlx5_vport_info {
 	u8                      qos;
 	u64                     node_guid;
 	int                     link_state;
+	u32                     min_rate;
 	u32                     max_rate;
 	bool                    spoofchk;
 	bool                    trusted;
@@ -137,6 +144,7 @@ struct mlx5_vport {
 	struct {
 		bool            enabled;
 		u32             esw_tsar_ix;
+		u32             bw_share;
 	} qos;
 
 	bool                    enabled;
@@ -186,7 +194,7 @@ struct mlx5_eswitch_rep {
 					 struct mlx5_eswitch_rep *rep);
 	u16		       vport;
 	u8		       hw_id[ETH_ALEN];
-	void		      *priv_data;
+	struct net_device      *netdev;
 
 	struct mlx5_flow_handle *vport_rx_rule;
 	struct list_head       vport_sqs_list;
@@ -199,6 +207,9 @@ struct mlx5_esw_offload {
 	struct mlx5_flow_table *ft_offloads;
 	struct mlx5_flow_group *vport_rx_group;
 	struct mlx5_eswitch_rep *vport_reps;
+	DECLARE_HASHTABLE(encap_tbl, 8);
+	u8 inline_mode;
+	u64 num_flows;
 };
 
 struct mlx5_eswitch {
@@ -246,8 +257,8 @@ int mlx5_eswitch_set_vport_spoofchk(struct mlx5_eswitch *esw,
 				    int vport, bool spoofchk);
 int mlx5_eswitch_set_vport_trust(struct mlx5_eswitch *esw,
 				 int vport_num, bool setting);
-int mlx5_eswitch_set_vport_rate(struct mlx5_eswitch *esw,
-				int vport, u32 max_rate);
+int mlx5_eswitch_set_vport_rate(struct mlx5_eswitch *esw, int vport,
+				u32 max_rate, u32 min_rate);
 int mlx5_eswitch_get_vport_config(struct mlx5_eswitch *esw,
 				  int vport, struct ifla_vf_info *ivi);
 int mlx5_eswitch_get_vport_stats(struct mlx5_eswitch *esw,
@@ -261,6 +272,11 @@ struct mlx5_flow_handle *
 mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 				struct mlx5_flow_spec *spec,
 				struct mlx5_esw_flow_attr *attr);
+void
+mlx5_eswitch_del_offloaded_rule(struct mlx5_eswitch *esw,
+				struct mlx5_flow_handle *rule,
+				struct mlx5_esw_flow_attr *attr);
+
 struct mlx5_flow_handle *
 mlx5_eswitch_create_vport_rx_rule(struct mlx5_eswitch *esw, int vport, u32 tirn);
 
@@ -272,6 +288,18 @@ enum {
 #define MLX5_FLOW_CONTEXT_ACTION_VLAN_POP  0x40
 #define MLX5_FLOW_CONTEXT_ACTION_VLAN_PUSH 0x80
 
+struct mlx5_encap_entry {
+	struct hlist_node encap_hlist;
+	struct list_head flows;
+	u32 encap_id;
+	struct neighbour *n;
+	struct ip_tunnel_info tun_info;
+	unsigned char h_dest[ETH_ALEN];	/* destination eth addr	*/
+
+	struct net_device *out_dev;
+	int tunnel_type;
+};
+
 struct mlx5_esw_flow_attr {
 	struct mlx5_eswitch_rep *in_rep;
 	struct mlx5_eswitch_rep *out_rep;
@@ -279,6 +307,7 @@ struct mlx5_esw_flow_attr {
 	int	action;
 	u16	vlan;
 	bool	vlan_handled;
+	struct mlx5_encap_entry *encap;
 };
 
 int mlx5_eswitch_sqs2vport_start(struct mlx5_eswitch *esw,
@@ -289,11 +318,15 @@ void mlx5_eswitch_sqs2vport_stop(struct mlx5_eswitch *esw,
 
 int mlx5_devlink_eswitch_mode_set(struct devlink *devlink, u16 mode);
 int mlx5_devlink_eswitch_mode_get(struct devlink *devlink, u16 *mode);
+int mlx5_devlink_eswitch_inline_mode_set(struct devlink *devlink, u8 mode);
+int mlx5_devlink_eswitch_inline_mode_get(struct devlink *devlink, u8 *mode);
+int mlx5_eswitch_inline_mode_get(struct mlx5_eswitch *esw, int nvfs, u8 *mode);
 void mlx5_eswitch_register_vport_rep(struct mlx5_eswitch *esw,
 				     int vport_index,
 				     struct mlx5_eswitch_rep *rep);
 void mlx5_eswitch_unregister_vport_rep(struct mlx5_eswitch *esw,
 				       int vport_index);
+struct net_device *mlx5_eswitch_get_uplink_netdev(struct mlx5_eswitch *esw);
 
 int mlx5_eswitch_add_vlan_action(struct mlx5_eswitch *esw,
 				 struct mlx5_esw_flow_attr *attr);

@@ -211,12 +211,6 @@ struct drm_exynos_file_private {
 struct exynos_drm_private {
 	struct drm_fb_helper *fb_helper;
 
-	/*
-	 * created crtc object would be contained at this array and
-	 * this array is used to be aware of which crtc did it request vblank.
-	 */
-	struct drm_crtc *crtc[MAX_CRTC];
-
 	struct device *dma_dev;
 	void *mapping;
 
@@ -231,9 +225,9 @@ struct exynos_drm_private {
 static inline struct exynos_drm_crtc *
 exynos_drm_crtc_from_pipe(struct drm_device *dev, int pipe)
 {
-	struct exynos_drm_private *private = dev->dev_private;
+	struct drm_crtc *crtc = drm_crtc_from_index(dev, pipe);
 
-	return to_exynos_crtc(private->crtc[pipe]);
+	return to_exynos_crtc(crtc);
 }
 
 static inline struct device *to_dma_dev(struct drm_device *dev)
@@ -301,6 +295,7 @@ static inline int exynos_dpi_bind(struct drm_device *dev,
 
 int exynos_atomic_commit(struct drm_device *dev, struct drm_atomic_state *state,
 			 bool nonblock);
+int exynos_atomic_check(struct drm_device *dev, struct drm_atomic_state *state);
 
 
 extern struct platform_driver fimd_driver;

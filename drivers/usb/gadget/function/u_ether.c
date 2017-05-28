@@ -215,7 +215,7 @@ rx_submit(struct eth_dev *dev, struct usb_request *req, gfp_t gfp_flags)
 	if (dev->port_usb->is_fixed)
 		size = max_t(size_t, size, dev->port_usb->fixed_out_len);
 
-	skb = alloc_skb(size + NET_IP_ALIGN, gfp_flags);
+	skb = __netdev_alloc_skb(dev->net, size + NET_IP_ALIGN, gfp_flags);
 	if (skb == NULL) {
 		DBG(dev, "no rx skb\n");
 		goto enomem;
@@ -446,16 +446,17 @@ static void tx_complete(struct usb_ep *ep, struct usb_request *req)
 		/* FALLTHROUGH */
 	case -ECONNRESET:		/* unlink */
 	case -ESHUTDOWN:		/* disconnect etc */
+		dev_kfree_skb_any(skb);
 		break;
 	case 0:
 		dev->net->stats.tx_bytes += skb->len;
+		dev_consume_skb_any(skb);
 	}
 	dev->net->stats.tx_packets++;
 
 	spin_lock(&dev->req_lock);
 	list_add(&req->list, &dev->tx_reqs);
 	spin_unlock(&dev->req_lock);
-	dev_kfree_skb_any(skb);
 
 	atomic_dec(&dev->tx_qlen);
 	if (netif_carrier_ok(dev->net))
@@ -578,14 +579,6 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
 		length++;
 
 	req->length = length;
-
-	/* throttle high/super speed IRQ rate back slightly */
-	if (gadget_is_dualspeed(dev->gadget))
-		req->no_interrupt = (((dev->gadget->speed == USB_SPEED_HIGH ||
-				       dev->gadget->speed == USB_SPEED_SUPER)) &&
-					!list_empty(&dev->tx_reqs))
-			? ((atomic_read(&dev->tx_qlen) % dev->qmult) != 0)
-			: 0;
 
 	retval = usb_ep_queue(in, req, GFP_ATOMIC);
 	switch (retval) {
@@ -920,9 +913,16 @@ EXPORT_SYMBOL_GPL(gether_set_dev_addr);
 int gether_get_dev_addr(struct net_device *net, char *dev_addr, int len)
 {
 	struct eth_dev *dev;
+	int ret;
 
 	dev = netdev_priv(net);
-	return get_ether_addr_str(dev->dev_mac, dev_addr, len);
+	ret = get_ether_addr_str(dev->dev_mac, dev_addr, len);
+	if (ret + 1 < len) {
+		dev_addr[ret++] = '\n';
+		dev_addr[ret] = '\0';
+	}
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(gether_get_dev_addr);
 
@@ -942,9 +942,16 @@ EXPORT_SYMBOL_GPL(gether_set_host_addr);
 int gether_get_host_addr(struct net_device *net, char *host_addr, int len)
 {
 	struct eth_dev *dev;
+	int ret;
 
 	dev = netdev_priv(net);
-	return get_ether_addr_str(dev->host_mac, host_addr, len);
+	ret = get_ether_addr_str(dev->host_mac, host_addr, len);
+	if (ret + 1 < len) {
+		host_addr[ret++] = '\n';
+		host_addr[ret] = '\0';
+	}
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(gether_get_host_addr);
 
@@ -991,10 +998,12 @@ EXPORT_SYMBOL_GPL(gether_get_qmult);
 
 int gether_get_ifname(struct net_device *net, char *name, int len)
 {
+	int ret;
+
 	rtnl_lock();
-	strlcpy(name, netdev_name(net), len);
+	ret = snprintf(name, len, "%s\n", netdev_name(net));
 	rtnl_unlock();
-	return strlen(name);
+	return ret < len ? ret : len;
 }
 EXPORT_SYMBOL_GPL(gether_get_ifname);
 

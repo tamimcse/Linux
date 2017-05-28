@@ -48,6 +48,7 @@
 #include <linux/cdev.h>
 #include <linux/vmalloc.h>
 #include <linux/io.h>
+#include <linux/sched/mm.h>
 
 #include <rdma/ib.h>
 
@@ -92,7 +93,7 @@ static unsigned int poll_next(struct file *, struct poll_table_struct *);
 static int user_event_ack(struct hfi1_ctxtdata *, int, unsigned long);
 static int set_ctxt_pkey(struct hfi1_ctxtdata *, unsigned, u16);
 static int manage_rcvq(struct hfi1_ctxtdata *, unsigned, int);
-static int vma_fault(struct vm_area_struct *, struct vm_fault *);
+static int vma_fault(struct vm_fault *);
 static long hfi1_file_ioctl(struct file *fp, unsigned int cmd,
 			    unsigned long arg);
 
@@ -172,6 +173,9 @@ static int hfi1_file_open(struct inode *inode, struct file *fp)
 					       struct hfi1_devdata,
 					       user_cdev);
 
+	if (!atomic_inc_not_zero(&dd->user_refcount))
+		return -ENXIO;
+
 	/* Just take a ref now. Not all opens result in a context assign */
 	kobject_get(&dd->kobj);
 
@@ -182,12 +186,18 @@ static int hfi1_file_open(struct inode *inode, struct file *fp)
 	if (fd) {
 		fd->rec_cpu_num = -1; /* no cpu affinity by default */
 		fd->mm = current->mm;
-		atomic_inc(&fd->mm->mm_count);
+		mmgrab(fd->mm);
+		fp->private_data = fd;
+	} else {
+		fp->private_data = NULL;
+
+		if (atomic_dec_and_test(&dd->user_refcount))
+			complete(&dd->user_comp);
+
+		return -ENOMEM;
 	}
 
-	fp->private_data = fd;
-
-	return fd ? 0 : -ENOMEM;
+	return 0;
 }
 
 static long hfi1_file_ioctl(struct file *fp, unsigned int cmd,
@@ -686,7 +696,7 @@ done:
  * Local (non-chip) user memory is not mapped right away but as it is
  * accessed by the user-level code.
  */
-static int vma_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+static int vma_fault(struct vm_fault *vmf)
 {
 	struct page *page;
 
@@ -798,6 +808,10 @@ static int hfi1_file_close(struct inode *inode, struct file *fp)
 done:
 	mmdrop(fdata->mm);
 	kobject_put(&dd->kobj);
+
+	if (atomic_dec_and_test(&dd->user_refcount))
+		complete(&dd->user_comp);
+
 	kfree(fdata);
 	return 0;
 }

@@ -17,6 +17,8 @@
 #include <linux/slab.h>
 #include <linux/sched.h>
 #include <linux/sched/rt.h>
+#include <linux/sched/task.h>
+#include <uapi/linux/sched/types.h>
 #include <linux/task_work.h>
 
 #include "internals.h"
@@ -353,7 +355,7 @@ static int setup_affinity(struct irq_desc *desc, struct cpumask *mask)
 		return 0;
 
 	/*
-	 * Preserve the managed affinity setting and an userspace affinity
+	 * Preserve the managed affinity setting and a userspace affinity
 	 * setup, but make sure that one of the targets is online.
 	 */
 	if (irqd_affinity_is_managed(&desc->irq_data) ||
@@ -1341,12 +1343,12 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 
 	} else if (new->flags & IRQF_TRIGGER_MASK) {
 		unsigned int nmsk = new->flags & IRQF_TRIGGER_MASK;
-		unsigned int omsk = irq_settings_get_trigger_mask(desc);
+		unsigned int omsk = irqd_get_trigger_type(&desc->irq_data);
 
 		if (nmsk != omsk)
 			/* hope the handler works with current  trigger mode */
 			pr_warn("irq %d uses trigger mode %u; requested %u\n",
-				irq, nmsk, omsk);
+				irq, omsk, nmsk);
 	}
 
 	*old_ptr = new;

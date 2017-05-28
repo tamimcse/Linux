@@ -29,10 +29,6 @@
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU General Public License for more details.
  *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *
  */
 
 #include <asm/unaligned.h>
@@ -118,7 +114,7 @@ static int get_key_haup_common(struct IR_i2c *ir, enum rc_type *protocol,
 			*protocol = RC_TYPE_RC6_MCE;
 			dev &= 0x7f;
 			dprintk(1, "ir hauppauge (rc6-mce): t%d vendor=%d dev=%d code=%d\n",
-						toggle, vendor, dev, code);
+						*ptoggle, vendor, dev, code);
 		} else {
 			*ptoggle = 0;
 			*protocol = RC_TYPE_RC6_6A_32;
@@ -428,7 +424,7 @@ static int ir_probe(struct i2c_client *client, const struct i2c_device_id *id)
 		 * If platform_data doesn't specify rc_dev, initialize it
 		 * internally
 		 */
-		rc = rc_allocate_device();
+		rc = rc_allocate_device(RC_DRIVER_SCANCODE);
 		if (!rc)
 			return -ENOMEM;
 	}

@@ -77,6 +77,7 @@ static const char mlxsw_core_driver_name[] = "mlxsw_core";
 static struct dentry *mlxsw_core_dbg_root;
 
 static struct workqueue_struct *mlxsw_wq;
+static struct workqueue_struct *mlxsw_owq;
 
 struct mlxsw_core_pcpu_stats {
 	u64			trap_rx_packets[MLXSW_TRAP_ID_MAX];
@@ -131,6 +132,7 @@ struct mlxsw_core {
 	} lag;
 	struct mlxsw_res res;
 	struct mlxsw_hwmon *hwmon;
+	struct mlxsw_thermal *thermal;
 	struct mlxsw_core_port ports[MLXSW_PORT_MAX_PORTS];
 	unsigned long driver_priv[0];
 	/* driver_priv has to be always the last item */
@@ -571,32 +573,17 @@ free_skb:
 	dev_kfree_skb(skb);
 }
 
-static const struct mlxsw_rx_listener mlxsw_emad_rx_listener = {
-	.func = mlxsw_emad_rx_listener_func,
-	.local_port = MLXSW_PORT_DONT_CARE,
-	.trap_id = MLXSW_TRAP_ID_ETHEMAD,
-};
-
-static int mlxsw_emad_traps_set(struct mlxsw_core *mlxsw_core)
-{
-	char htgt_pl[MLXSW_REG_HTGT_LEN];
-	char hpkt_pl[MLXSW_REG_HPKT_LEN];
-	int err;
-
-	mlxsw_reg_htgt_pack(htgt_pl, MLXSW_REG_HTGT_TRAP_GROUP_EMAD);
-	err = mlxsw_reg_write(mlxsw_core, MLXSW_REG(htgt), htgt_pl);
-	if (err)
-		return err;
-
-	mlxsw_reg_hpkt_pack(hpkt_pl, MLXSW_REG_HPKT_ACTION_TRAP_TO_CPU,
-			    MLXSW_TRAP_ID_ETHEMAD);
-	return mlxsw_reg_write(mlxsw_core, MLXSW_REG(hpkt), hpkt_pl);
-}
+static const struct mlxsw_listener mlxsw_emad_rx_listener =
+	MLXSW_RXL(mlxsw_emad_rx_listener_func, ETHEMAD, TRAP_TO_CPU, false,
+		  EMAD, DISCARD);
 
 static int mlxsw_emad_init(struct mlxsw_core *mlxsw_core)
 {
 	u64 tid;
 	int err;
+
+	if (!(mlxsw_core->bus->features & MLXSW_BUS_F_TXRX))
+		return 0;
 
 	/* Set the upper 32 bits of the transaction ID field to a random
 	 * number. This allows us to discard EMADs addressed to other
@@ -609,39 +596,33 @@ static int mlxsw_emad_init(struct mlxsw_core *mlxsw_core)
 	INIT_LIST_HEAD(&mlxsw_core->emad.trans_list);
 	spin_lock_init(&mlxsw_core->emad.trans_list_lock);
 
-	err = mlxsw_core_rx_listener_register(mlxsw_core,
-					      &mlxsw_emad_rx_listener,
-					      mlxsw_core);
+	err = mlxsw_core_trap_register(mlxsw_core, &mlxsw_emad_rx_listener,
+				       mlxsw_core);
 	if (err)
 		return err;
 
-	err = mlxsw_emad_traps_set(mlxsw_core);
+	err = mlxsw_core->driver->basic_trap_groups_set(mlxsw_core);
 	if (err)
 		goto err_emad_trap_set;
-
 	mlxsw_core->emad.use_emad = true;
 
 	return 0;
 
 err_emad_trap_set:
-	mlxsw_core_rx_listener_unregister(mlxsw_core,
-					  &mlxsw_emad_rx_listener,
-					  mlxsw_core);
+	mlxsw_core_trap_unregister(mlxsw_core, &mlxsw_emad_rx_listener,
+				   mlxsw_core);
 	return err;
 }
 
 static void mlxsw_emad_fini(struct mlxsw_core *mlxsw_core)
 {
-	char hpkt_pl[MLXSW_REG_HPKT_LEN];
+
+	if (!(mlxsw_core->bus->features & MLXSW_BUS_F_TXRX))
+		return;
 
 	mlxsw_core->emad.use_emad = false;
-	mlxsw_reg_hpkt_pack(hpkt_pl, MLXSW_REG_HPKT_ACTION_DISCARD,
-			    MLXSW_TRAP_ID_ETHEMAD);
-	mlxsw_reg_write(mlxsw_core, MLXSW_REG(hpkt), hpkt_pl);
-
-	mlxsw_core_rx_listener_unregister(mlxsw_core,
-					  &mlxsw_emad_rx_listener,
-					  mlxsw_core);
+	mlxsw_core_trap_unregister(mlxsw_core, &mlxsw_emad_rx_listener,
+				   mlxsw_core);
 }
 
 static struct sk_buff *mlxsw_emad_alloc(const struct mlxsw_core *mlxsw_core,
@@ -1156,9 +1137,16 @@ int mlxsw_core_bus_device_register(const struct mlxsw_bus_info *mlxsw_bus_info,
 	if (err)
 		goto err_hwmon_init;
 
-	err = mlxsw_driver->init(mlxsw_core, mlxsw_bus_info);
+	err = mlxsw_thermal_init(mlxsw_core, mlxsw_bus_info,
+				 &mlxsw_core->thermal);
 	if (err)
-		goto err_driver_init;
+		goto err_thermal_init;
+
+	if (mlxsw_driver->init) {
+		err = mlxsw_driver->init(mlxsw_core, mlxsw_bus_info);
+		if (err)
+			goto err_driver_init;
+	}
 
 	err = mlxsw_core_debugfs_init(mlxsw_core);
 	if (err)
@@ -1167,8 +1155,11 @@ int mlxsw_core_bus_device_register(const struct mlxsw_bus_info *mlxsw_bus_info,
 	return 0;
 
 err_debugfs_init:
-	mlxsw_core->driver->fini(mlxsw_core);
+	if (mlxsw_core->driver->fini)
+		mlxsw_core->driver->fini(mlxsw_core);
 err_driver_init:
+	mlxsw_thermal_fini(mlxsw_core->thermal);
+err_thermal_init:
 err_hwmon_init:
 	devlink_unregister(devlink);
 err_devlink_register:
@@ -1193,11 +1184,13 @@ void mlxsw_core_bus_device_unregister(struct mlxsw_core *mlxsw_core)
 	struct devlink *devlink = priv_to_devlink(mlxsw_core);
 
 	mlxsw_core_debugfs_fini(mlxsw_core);
-	mlxsw_core->driver->fini(mlxsw_core);
+	if (mlxsw_core->driver->fini)
+		mlxsw_core->driver->fini(mlxsw_core);
+	mlxsw_thermal_fini(mlxsw_core->thermal);
 	devlink_unregister(devlink);
 	mlxsw_emad_fini(mlxsw_core);
-	mlxsw_core->bus->fini(mlxsw_core->bus_priv);
 	kfree(mlxsw_core->lag.mapping);
+	mlxsw_core->bus->fini(mlxsw_core->bus_priv);
 	free_percpu(mlxsw_core->pcpu_stats);
 	devlink_free(devlink);
 	mlxsw_core_driver_put(device_kind);
@@ -1373,6 +1366,75 @@ void mlxsw_core_event_listener_unregister(struct mlxsw_core *mlxsw_core,
 	kfree(el_item);
 }
 EXPORT_SYMBOL(mlxsw_core_event_listener_unregister);
+
+static int mlxsw_core_listener_register(struct mlxsw_core *mlxsw_core,
+					const struct mlxsw_listener *listener,
+					void *priv)
+{
+	if (listener->is_event)
+		return mlxsw_core_event_listener_register(mlxsw_core,
+						&listener->u.event_listener,
+						priv);
+	else
+		return mlxsw_core_rx_listener_register(mlxsw_core,
+						&listener->u.rx_listener,
+						priv);
+}
+
+static void mlxsw_core_listener_unregister(struct mlxsw_core *mlxsw_core,
+				      const struct mlxsw_listener *listener,
+				      void *priv)
+{
+	if (listener->is_event)
+		mlxsw_core_event_listener_unregister(mlxsw_core,
+						     &listener->u.event_listener,
+						     priv);
+	else
+		mlxsw_core_rx_listener_unregister(mlxsw_core,
+						  &listener->u.rx_listener,
+						  priv);
+}
+
+int mlxsw_core_trap_register(struct mlxsw_core *mlxsw_core,
+			     const struct mlxsw_listener *listener, void *priv)
+{
+	char hpkt_pl[MLXSW_REG_HPKT_LEN];
+	int err;
+
+	err = mlxsw_core_listener_register(mlxsw_core, listener, priv);
+	if (err)
+		return err;
+
+	mlxsw_reg_hpkt_pack(hpkt_pl, listener->action, listener->trap_id,
+			    listener->trap_group, listener->is_ctrl);
+	err = mlxsw_reg_write(mlxsw_core,  MLXSW_REG(hpkt), hpkt_pl);
+	if (err)
+		goto err_trap_set;
+
+	return 0;
+
+err_trap_set:
+	mlxsw_core_listener_unregister(mlxsw_core, listener, priv);
+	return err;
+}
+EXPORT_SYMBOL(mlxsw_core_trap_register);
+
+void mlxsw_core_trap_unregister(struct mlxsw_core *mlxsw_core,
+				const struct mlxsw_listener *listener,
+				void *priv)
+{
+	char hpkt_pl[MLXSW_REG_HPKT_LEN];
+
+	if (!listener->is_event) {
+		mlxsw_reg_hpkt_pack(hpkt_pl, listener->unreg_action,
+				    listener->trap_id, listener->trap_group,
+				    listener->is_ctrl);
+		mlxsw_reg_write(mlxsw_core, MLXSW_REG(hpkt), hpkt_pl);
+	}
+
+	mlxsw_core_listener_unregister(mlxsw_core, listener, priv);
+}
+EXPORT_SYMBOL(mlxsw_core_trap_unregister);
 
 static u64 mlxsw_core_tid_get(struct mlxsw_core *mlxsw_core)
 {
@@ -1839,6 +1901,18 @@ int mlxsw_core_schedule_dw(struct delayed_work *dwork, unsigned long delay)
 }
 EXPORT_SYMBOL(mlxsw_core_schedule_dw);
 
+bool mlxsw_core_schedule_work(struct work_struct *work)
+{
+	return queue_work(mlxsw_owq, work);
+}
+EXPORT_SYMBOL(mlxsw_core_schedule_work);
+
+void mlxsw_core_flush_owq(void)
+{
+	flush_workqueue(mlxsw_owq);
+}
+EXPORT_SYMBOL(mlxsw_core_flush_owq);
+
 static int __init mlxsw_core_module_init(void)
 {
 	int err;
@@ -1846,6 +1920,12 @@ static int __init mlxsw_core_module_init(void)
 	mlxsw_wq = alloc_workqueue(mlxsw_core_driver_name, WQ_MEM_RECLAIM, 0);
 	if (!mlxsw_wq)
 		return -ENOMEM;
+	mlxsw_owq = alloc_ordered_workqueue("%s_ordered", WQ_MEM_RECLAIM,
+					    mlxsw_core_driver_name);
+	if (!mlxsw_owq) {
+		err = -ENOMEM;
+		goto err_alloc_ordered_workqueue;
+	}
 	mlxsw_core_dbg_root = debugfs_create_dir(mlxsw_core_driver_name, NULL);
 	if (!mlxsw_core_dbg_root) {
 		err = -ENOMEM;
@@ -1854,6 +1934,8 @@ static int __init mlxsw_core_module_init(void)
 	return 0;
 
 err_debugfs_create_dir:
+	destroy_workqueue(mlxsw_owq);
+err_alloc_ordered_workqueue:
 	destroy_workqueue(mlxsw_wq);
 	return err;
 }
@@ -1861,6 +1943,7 @@ err_debugfs_create_dir:
 static void __exit mlxsw_core_module_exit(void)
 {
 	debugfs_remove_recursive(mlxsw_core_dbg_root);
+	destroy_workqueue(mlxsw_owq);
 	destroy_workqueue(mlxsw_wq);
 }
 

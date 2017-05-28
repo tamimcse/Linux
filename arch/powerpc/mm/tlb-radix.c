@@ -50,7 +50,7 @@ static inline void _tlbiel_pid(unsigned long pid, unsigned long ric)
 	for (set = 0; set < POWER9_TLB_SETS_RADIX ; set++) {
 		__tlbiel_pid(pid, set, ric);
 	}
-	return;
+	asm volatile(PPC_INVALIDATE_ERAT "; isync" : : :"memory");
 }
 
 static inline void _tlbie_pid(unsigned long pid, unsigned long ric)
@@ -423,4 +423,22 @@ void radix__flush_tlb_all(void)
 	asm volatile(PPC_TLBIE_5(%0, %4, %3, %2, %1)
 		     : : "r"(rb), "i"(r), "i"(prs), "i"(ric), "r"(0) : "memory");
 	asm volatile("eieio; tlbsync; ptesync": : :"memory");
+}
+
+void radix__flush_tlb_pte_p9_dd1(unsigned long old_pte, struct mm_struct *mm,
+				 unsigned long address)
+{
+	/*
+	 * We track page size in pte only for DD1, So we can
+	 * call this only on DD1.
+	 */
+	if (!cpu_has_feature(CPU_FTR_POWER9_DD1)) {
+		VM_WARN_ON(1);
+		return;
+	}
+
+	if (old_pte & _PAGE_LARGE)
+		radix__flush_tlb_page_psize(mm, address, MMU_PAGE_2M);
+	else
+		radix__flush_tlb_page_psize(mm, address, mmu_virtual_psize);
 }

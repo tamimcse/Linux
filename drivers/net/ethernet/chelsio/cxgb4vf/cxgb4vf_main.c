@@ -70,13 +70,6 @@
 			 NETIF_MSG_TIMER | NETIF_MSG_IFDOWN | NETIF_MSG_IFUP |\
 			 NETIF_MSG_RX_ERR | NETIF_MSG_TX_ERR)
 
-static int dflt_msg_enable = DFLT_MSG_ENABLE;
-
-module_param(dflt_msg_enable, int, 0644);
-MODULE_PARM_DESC(dflt_msg_enable,
-		 "default adapter ethtool message level bitmap, "
-		 "deprecated parameter");
-
 /*
  * The driver uses the best interrupt scheme available on a platform in the
  * order MSI-X then MSI.  This parameter determines which of these schemes the
@@ -165,20 +158,23 @@ void t4vf_os_link_changed(struct adapter *adapter, int pidx, int link_ok)
 		netif_carrier_on(dev);
 
 		switch (pi->link_cfg.speed) {
-		case 40000:
-			s = "40Gbps";
+		case 100:
+			s = "100Mbps";
 			break;
-
+		case 1000:
+			s = "1Gbps";
+			break;
 		case 10000:
 			s = "10Gbps";
 			break;
-
-		case 1000:
-			s = "1000Mbps";
+		case 25000:
+			s = "25Gbps";
 			break;
-
-		case 100:
-			s = "100Mbps";
+		case 40000:
+			s = "40Gbps";
+			break;
+		case 100000:
+			s = "100Gbps";
 			break;
 
 		default:
@@ -2891,7 +2887,7 @@ static int cxgb4vf_pci_probe(struct pci_dev *pdev,
 	 * Initialize adapter level features.
 	 */
 	adapter->name = pci_name(pdev);
-	adapter->msg_enable = dflt_msg_enable;
+	adapter->msg_enable = DFLT_MSG_ENABLE;
 	err = adap_init0(adapter);
 	if (err)
 		goto err_unmap_bar;
@@ -2967,6 +2963,7 @@ static int cxgb4vf_pci_probe(struct pci_dev *pdev,
 
 		netdev->netdev_ops = &cxgb4vf_netdev_ops;
 		netdev->ethtool_ops = &cxgb4vf_ethtool_ops;
+		netdev->dev_port = pi->port_id;
 
 		/*
 		 * Initialize the hardware/software state for the port.

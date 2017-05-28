@@ -594,6 +594,7 @@ static const u16 phy2speed[] = {
 	[PHY_INTERFACE_MODE_RGMII_RXID]	= SPEED_1000,
 	[PHY_INTERFACE_MODE_RGMII_TXID]	= SPEED_1000,
 	[PHY_INTERFACE_MODE_RTBI]		= SPEED_1000,
+	[PHY_INTERFACE_MODE_QSGMII]		= SPEED_1000,
 	[PHY_INTERFACE_MODE_XGMII]		= SPEED_10000
 };
 
@@ -896,6 +897,8 @@ static int mac_probe(struct platform_device *_of_dev)
 		priv->fixed_link->duplex = phy->duplex;
 		priv->fixed_link->pause = phy->pause;
 		priv->fixed_link->asym_pause = phy->asym_pause;
+
+		put_device(&phy->mdio.dev);
 	}
 
 	err = mac_dev->init(mac_dev);

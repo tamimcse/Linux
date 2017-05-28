@@ -41,6 +41,7 @@ static int intel_lpss_pci_probe(struct pci_dev *pdev,
 
 	/* Probably it is enough to set this for iDMA capable devices only */
 	pci_set_master(pdev);
+	pci_try_set_mwi(pdev);
 
 	ret = intel_lpss_probe(&pdev->dev, info);
 	if (ret)
@@ -123,19 +124,6 @@ static const struct intel_lpss_platform_info apl_i2c_info = {
 	.properties = apl_i2c_properties,
 };
 
-static const struct intel_lpss_platform_info kbl_info = {
-	.clk_rate = 120000000,
-};
-
-static const struct intel_lpss_platform_info kbl_uart_info = {
-	.clk_rate = 120000000,
-	.clk_con_id = "baudclk",
-};
-
-static const struct intel_lpss_platform_info kbl_i2c_info = {
-	.clk_rate = 133000000,
-};
-
 static const struct pci_device_id intel_lpss_pci_ids[] = {
 	/* BXT A-Step */
 	{ PCI_VDEVICE(INTEL, 0x0aac), (kernel_ulong_t)&bxt_i2c_info },
@@ -169,7 +157,22 @@ static const struct pci_device_id intel_lpss_pci_ids[] = {
 	{ PCI_VDEVICE(INTEL, 0x1ac4), (kernel_ulong_t)&bxt_info },
 	{ PCI_VDEVICE(INTEL, 0x1ac6), (kernel_ulong_t)&bxt_info },
 	{ PCI_VDEVICE(INTEL, 0x1aee), (kernel_ulong_t)&bxt_uart_info },
-
+	/* GLK */
+	{ PCI_VDEVICE(INTEL, 0x31ac), (kernel_ulong_t)&bxt_i2c_info },
+	{ PCI_VDEVICE(INTEL, 0x31ae), (kernel_ulong_t)&bxt_i2c_info },
+	{ PCI_VDEVICE(INTEL, 0x31b0), (kernel_ulong_t)&bxt_i2c_info },
+	{ PCI_VDEVICE(INTEL, 0x31b2), (kernel_ulong_t)&bxt_i2c_info },
+	{ PCI_VDEVICE(INTEL, 0x31b4), (kernel_ulong_t)&bxt_i2c_info },
+	{ PCI_VDEVICE(INTEL, 0x31b6), (kernel_ulong_t)&bxt_i2c_info },
+	{ PCI_VDEVICE(INTEL, 0x31b8), (kernel_ulong_t)&bxt_i2c_info },
+	{ PCI_VDEVICE(INTEL, 0x31ba), (kernel_ulong_t)&bxt_i2c_info },
+	{ PCI_VDEVICE(INTEL, 0x31bc), (kernel_ulong_t)&bxt_uart_info },
+	{ PCI_VDEVICE(INTEL, 0x31be), (kernel_ulong_t)&bxt_uart_info },
+	{ PCI_VDEVICE(INTEL, 0x31c0), (kernel_ulong_t)&bxt_uart_info },
+	{ PCI_VDEVICE(INTEL, 0x31ee), (kernel_ulong_t)&bxt_uart_info },
+	{ PCI_VDEVICE(INTEL, 0x31c2), (kernel_ulong_t)&bxt_info },
+	{ PCI_VDEVICE(INTEL, 0x31c4), (kernel_ulong_t)&bxt_info },
+	{ PCI_VDEVICE(INTEL, 0x31c6), (kernel_ulong_t)&bxt_info },
 	/* APL */
 	{ PCI_VDEVICE(INTEL, 0x5aac), (kernel_ulong_t)&apl_i2c_info },
 	{ PCI_VDEVICE(INTEL, 0x5aae), (kernel_ulong_t)&apl_i2c_info },
@@ -207,15 +210,15 @@ static const struct pci_device_id intel_lpss_pci_ids[] = {
 	{ PCI_VDEVICE(INTEL, 0xa161), (kernel_ulong_t)&spt_i2c_info },
 	{ PCI_VDEVICE(INTEL, 0xa166), (kernel_ulong_t)&spt_uart_info },
 	/* KBL-H */
-	{ PCI_VDEVICE(INTEL, 0xa2a7), (kernel_ulong_t)&kbl_uart_info },
-	{ PCI_VDEVICE(INTEL, 0xa2a8), (kernel_ulong_t)&kbl_uart_info },
-	{ PCI_VDEVICE(INTEL, 0xa2a9), (kernel_ulong_t)&kbl_info },
-	{ PCI_VDEVICE(INTEL, 0xa2aa), (kernel_ulong_t)&kbl_info },
-	{ PCI_VDEVICE(INTEL, 0xa2e0), (kernel_ulong_t)&kbl_i2c_info },
-	{ PCI_VDEVICE(INTEL, 0xa2e1), (kernel_ulong_t)&kbl_i2c_info },
-	{ PCI_VDEVICE(INTEL, 0xa2e2), (kernel_ulong_t)&kbl_i2c_info },
-	{ PCI_VDEVICE(INTEL, 0xa2e3), (kernel_ulong_t)&kbl_i2c_info },
-	{ PCI_VDEVICE(INTEL, 0xa2e6), (kernel_ulong_t)&kbl_uart_info },
+	{ PCI_VDEVICE(INTEL, 0xa2a7), (kernel_ulong_t)&spt_uart_info },
+	{ PCI_VDEVICE(INTEL, 0xa2a8), (kernel_ulong_t)&spt_uart_info },
+	{ PCI_VDEVICE(INTEL, 0xa2a9), (kernel_ulong_t)&spt_info },
+	{ PCI_VDEVICE(INTEL, 0xa2aa), (kernel_ulong_t)&spt_info },
+	{ PCI_VDEVICE(INTEL, 0xa2e0), (kernel_ulong_t)&spt_i2c_info },
+	{ PCI_VDEVICE(INTEL, 0xa2e1), (kernel_ulong_t)&spt_i2c_info },
+	{ PCI_VDEVICE(INTEL, 0xa2e2), (kernel_ulong_t)&spt_i2c_info },
+	{ PCI_VDEVICE(INTEL, 0xa2e3), (kernel_ulong_t)&spt_i2c_info },
+	{ PCI_VDEVICE(INTEL, 0xa2e6), (kernel_ulong_t)&spt_uart_info },
 	{ }
 };
 MODULE_DEVICE_TABLE(pci, intel_lpss_pci_ids);

@@ -30,10 +30,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include <linux/module.h>
@@ -1901,19 +1897,30 @@ static long s2255_vendor_req(struct s2255_dev *dev, unsigned char Request,
 			     s32 TransferBufferLength, int bOut)
 {
 	int r;
+	unsigned char *buf;
+
+	buf = kmalloc(TransferBufferLength, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
 	if (!bOut) {
 		r = usb_control_msg(dev->udev, usb_rcvctrlpipe(dev->udev, 0),
 				    Request,
 				    USB_TYPE_VENDOR | USB_RECIP_DEVICE |
 				    USB_DIR_IN,
-				    Value, Index, TransferBuffer,
+				    Value, Index, buf,
 				    TransferBufferLength, HZ * 5);
+
+		if (r >= 0)
+			memcpy(TransferBuffer, buf, TransferBufferLength);
 	} else {
+		memcpy(buf, TransferBuffer, TransferBufferLength);
 		r = usb_control_msg(dev->udev, usb_sndctrlpipe(dev->udev, 0),
 				    Request, USB_TYPE_VENDOR | USB_RECIP_DEVICE,
-				    Value, Index, TransferBuffer,
+				    Value, Index, buf,
 				    TransferBufferLength, HZ * 5);
 	}
+	kfree(buf);
 	return r;
 }
 

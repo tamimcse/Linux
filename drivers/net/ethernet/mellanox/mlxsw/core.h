@@ -90,6 +90,50 @@ struct mlxsw_event_listener {
 	enum mlxsw_event_trap_id trap_id;
 };
 
+struct mlxsw_listener {
+	u16 trap_id;
+	union {
+		struct mlxsw_rx_listener rx_listener;
+		struct mlxsw_event_listener event_listener;
+	} u;
+	enum mlxsw_reg_hpkt_action action;
+	enum mlxsw_reg_hpkt_action unreg_action;
+	u8 trap_group;
+	bool is_ctrl; /* should go via control buffer or not */
+	bool is_event;
+};
+
+#define MLXSW_RXL(_func, _trap_id, _action, _is_ctrl, _trap_group,	\
+		  _unreg_action)					\
+	{								\
+		.trap_id = MLXSW_TRAP_ID_##_trap_id,			\
+		.u.rx_listener =					\
+		{							\
+			.func = _func,					\
+			.local_port = MLXSW_PORT_DONT_CARE,		\
+			.trap_id = MLXSW_TRAP_ID_##_trap_id,		\
+		},							\
+		.action = MLXSW_REG_HPKT_ACTION_##_action,		\
+		.unreg_action = MLXSW_REG_HPKT_ACTION_##_unreg_action,	\
+		.trap_group = MLXSW_REG_HTGT_TRAP_GROUP_##_trap_group,	\
+		.is_ctrl = _is_ctrl,					\
+		.is_event = false,					\
+	}
+
+#define MLXSW_EVENTL(_func, _trap_id, _trap_group)			\
+	{								\
+		.trap_id = MLXSW_TRAP_ID_##_trap_id,			\
+		.u.event_listener =					\
+		{							\
+			.func = _func,					\
+			.trap_id = MLXSW_TRAP_ID_##_trap_id,		\
+		},							\
+		.action = MLXSW_REG_HPKT_ACTION_TRAP_TO_CPU,		\
+		.trap_group = MLXSW_REG_HTGT_TRAP_GROUP_##_trap_group,	\
+		.is_ctrl = false,					\
+		.is_event = true,					\
+	}
+
 int mlxsw_core_rx_listener_register(struct mlxsw_core *mlxsw_core,
 				    const struct mlxsw_rx_listener *rxl,
 				    void *priv);
@@ -103,6 +147,13 @@ int mlxsw_core_event_listener_register(struct mlxsw_core *mlxsw_core,
 void mlxsw_core_event_listener_unregister(struct mlxsw_core *mlxsw_core,
 					  const struct mlxsw_event_listener *el,
 					  void *priv);
+
+int mlxsw_core_trap_register(struct mlxsw_core *mlxsw_core,
+			     const struct mlxsw_listener *listener,
+			     void *priv);
+void mlxsw_core_trap_unregister(struct mlxsw_core *mlxsw_core,
+				const struct mlxsw_listener *listener,
+				void *priv);
 
 typedef void mlxsw_reg_trans_cb_t(struct mlxsw_core *mlxsw_core, char *payload,
 				  size_t payload_len, unsigned long cb_priv);
@@ -156,6 +207,8 @@ enum devlink_port_type mlxsw_core_port_type_get(struct mlxsw_core *mlxsw_core,
 						u8 local_port);
 
 int mlxsw_core_schedule_dw(struct delayed_work *dwork, unsigned long delay);
+bool mlxsw_core_schedule_work(struct work_struct *work);
+void mlxsw_core_flush_owq(void);
 
 #define MLXSW_CONFIG_PROFILE_SWID_COUNT 8
 
@@ -214,6 +267,7 @@ struct mlxsw_driver {
 	int (*init)(struct mlxsw_core *mlxsw_core,
 		    const struct mlxsw_bus_info *mlxsw_bus_info);
 	void (*fini)(struct mlxsw_core *mlxsw_core);
+	int (*basic_trap_groups_set)(struct mlxsw_core *mlxsw_core);
 	int (*port_type_set)(struct mlxsw_core *mlxsw_core, u8 local_port,
 			     enum devlink_port_type new_type);
 	int (*port_split)(struct mlxsw_core *mlxsw_core, u8 local_port,
@@ -268,6 +322,8 @@ u64 mlxsw_core_res_get(struct mlxsw_core *mlxsw_core,
 #define MLXSW_CORE_RES_GET(res, short_res_id)			\
 	mlxsw_core_res_get(res, MLXSW_RES_ID_##short_res_id)
 
+#define MLXSW_BUS_F_TXRX	BIT(0)
+
 struct mlxsw_bus {
 	const char *kind;
 	int (*init)(void *bus_priv, struct mlxsw_core *mlxsw_core,
@@ -283,6 +339,7 @@ struct mlxsw_bus {
 			char *in_mbox, size_t in_mbox_size,
 			char *out_mbox, size_t out_mbox_size,
 			u8 *p_status);
+	u8 features;
 };
 
 struct mlxsw_bus_info {
@@ -314,6 +371,30 @@ static inline int mlxsw_hwmon_init(struct mlxsw_core *mlxsw_core,
 				   struct mlxsw_hwmon **p_hwmon)
 {
 	return 0;
+}
+
+#endif
+
+struct mlxsw_thermal;
+
+#ifdef CONFIG_MLXSW_CORE_THERMAL
+
+int mlxsw_thermal_init(struct mlxsw_core *mlxsw_core,
+		       const struct mlxsw_bus_info *mlxsw_bus_info,
+		       struct mlxsw_thermal **p_thermal);
+void mlxsw_thermal_fini(struct mlxsw_thermal *thermal);
+
+#else
+
+static inline int mlxsw_thermal_init(struct mlxsw_core *mlxsw_core,
+				     const struct mlxsw_bus_info *mlxsw_bus_info,
+				     struct mlxsw_thermal **p_thermal)
+{
+	return 0;
+}
+
+static inline void mlxsw_thermal_fini(struct mlxsw_thermal *thermal)
+{
 }
 
 #endif

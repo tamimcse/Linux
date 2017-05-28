@@ -12,10 +12,6 @@
   FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
   more details.
 
-  You should have received a copy of the GNU General Public License along with
-  this program; if not, write to the Free Software Foundation, Inc.,
-  51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
-
   The full GNU General Public License is included in this distribution in
   the file called "COPYING".
 
@@ -65,7 +61,7 @@ static const struct stmmac_stats stmmac_gstrings_stats[] = {
 	STMMAC_STAT(overflow_error),
 	STMMAC_STAT(ipc_csum_error),
 	STMMAC_STAT(rx_collision),
-	STMMAC_STAT(rx_crc),
+	STMMAC_STAT(rx_crc_errors),
 	STMMAC_STAT(dribbling_bit),
 	STMMAC_STAT(rx_length),
 	STMMAC_STAT(rx_mii),
@@ -115,14 +111,17 @@ static const struct stmmac_stats stmmac_gstrings_stats[] = {
 	STMMAC_STAT(ip_csum_bypassed),
 	STMMAC_STAT(ipv4_pkt_rcvd),
 	STMMAC_STAT(ipv6_pkt_rcvd),
-	STMMAC_STAT(rx_msg_type_ext_no_ptp),
-	STMMAC_STAT(rx_msg_type_sync),
-	STMMAC_STAT(rx_msg_type_follow_up),
-	STMMAC_STAT(rx_msg_type_delay_req),
-	STMMAC_STAT(rx_msg_type_delay_resp),
-	STMMAC_STAT(rx_msg_type_pdelay_req),
-	STMMAC_STAT(rx_msg_type_pdelay_resp),
-	STMMAC_STAT(rx_msg_type_pdelay_follow_up),
+	STMMAC_STAT(no_ptp_rx_msg_type_ext),
+	STMMAC_STAT(ptp_rx_msg_type_sync),
+	STMMAC_STAT(ptp_rx_msg_type_follow_up),
+	STMMAC_STAT(ptp_rx_msg_type_delay_req),
+	STMMAC_STAT(ptp_rx_msg_type_delay_resp),
+	STMMAC_STAT(ptp_rx_msg_type_pdelay_req),
+	STMMAC_STAT(ptp_rx_msg_type_pdelay_resp),
+	STMMAC_STAT(ptp_rx_msg_type_pdelay_follow_up),
+	STMMAC_STAT(ptp_rx_msg_type_announce),
+	STMMAC_STAT(ptp_rx_msg_type_management),
+	STMMAC_STAT(ptp_rx_msg_pkt_reserved_type),
 	STMMAC_STAT(ptp_frame_type),
 	STMMAC_STAT(ptp_ver),
 	STMMAC_STAT(timestamp_dropped),
@@ -260,7 +259,7 @@ static void stmmac_ethtool_getdrvinfo(struct net_device *dev,
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
 
-	if (priv->plat->has_gmac)
+	if (priv->plat->has_gmac || priv->plat->has_gmac4)
 		strlcpy(info->driver, GMAC_ETHTOOL_NAME, sizeof(info->driver));
 	else
 		strlcpy(info->driver, MAC100_ETHTOOL_NAME,
@@ -403,9 +402,7 @@ stmmac_ethtool_set_link_ksettings(struct net_device *dev,
 		return 0;
 	}
 
-	spin_lock(&priv->lock);
 	rc = phy_ethtool_ksettings_set(phy, cmd);
-	spin_unlock(&priv->lock);
 
 	return rc;
 }
@@ -438,32 +435,14 @@ static int stmmac_ethtool_get_regs_len(struct net_device *dev)
 static void stmmac_ethtool_gregs(struct net_device *dev,
 			  struct ethtool_regs *regs, void *space)
 {
-	int i;
 	u32 *reg_space = (u32 *) space;
 
 	struct stmmac_priv *priv = netdev_priv(dev);
 
 	memset(reg_space, 0x0, REG_SPACE_SIZE);
 
-	if (!priv->plat->has_gmac) {
-		/* MAC registers */
-		for (i = 0; i < 12; i++)
-			reg_space[i] = readl(priv->ioaddr + (i * 4));
-		/* DMA registers */
-		for (i = 0; i < 9; i++)
-			reg_space[i + 12] =
-			    readl(priv->ioaddr + (DMA_BUS_MODE + (i * 4)));
-		reg_space[22] = readl(priv->ioaddr + DMA_CUR_TX_BUF_ADDR);
-		reg_space[23] = readl(priv->ioaddr + DMA_CUR_RX_BUF_ADDR);
-	} else {
-		/* MAC registers */
-		for (i = 0; i < 55; i++)
-			reg_space[i] = readl(priv->ioaddr + (i * 4));
-		/* DMA registers */
-		for (i = 0; i < 22; i++)
-			reg_space[i + 55] =
-			    readl(priv->ioaddr + (DMA_BUS_MODE + (i * 4)));
-	}
+	priv->hw->mac->dump_regs(priv->hw, reg_space);
+	priv->hw->dma->dump_regs(priv->ioaddr, reg_space);
 }
 
 static void
@@ -711,7 +690,7 @@ static int stmmac_ethtool_op_set_eee(struct net_device *dev,
 
 static u32 stmmac_usec2riwt(u32 usec, struct stmmac_priv *priv)
 {
-	unsigned long clk = clk_get_rate(priv->stmmac_clk);
+	unsigned long clk = clk_get_rate(priv->plat->stmmac_clk);
 
 	if (!clk)
 		return 0;
@@ -721,7 +700,7 @@ static u32 stmmac_usec2riwt(u32 usec, struct stmmac_priv *priv)
 
 static u32 stmmac_riwt2usec(u32 riwt, struct stmmac_priv *priv)
 {
-	unsigned long clk = clk_get_rate(priv->stmmac_clk);
+	unsigned long clk = clk_get_rate(priv->plat->stmmac_clk);
 
 	if (!clk)
 		return 0;
@@ -870,6 +849,7 @@ static const struct ethtool_ops stmmac_ethtool_ops = {
 	.get_regs = stmmac_ethtool_gregs,
 	.get_regs_len = stmmac_ethtool_get_regs_len,
 	.get_link = ethtool_op_get_link,
+	.nway_reset = phy_ethtool_nway_reset,
 	.get_pauseparam = stmmac_get_pauseparam,
 	.set_pauseparam = stmmac_set_pauseparam,
 	.get_ethtool_stats = stmmac_get_ethtool_stats,

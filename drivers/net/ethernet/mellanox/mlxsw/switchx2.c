@@ -45,7 +45,6 @@
 #include <linux/skbuff.h>
 #include <linux/if_vlan.h>
 #include <net/switchdev.h>
-#include <generated/utsrelease.h>
 
 #include "pci.h"
 #include "core.h"
@@ -346,6 +345,7 @@ static netdev_tx_t mlxsw_sx_port_xmit(struct sk_buff *skb,
 			dev_kfree_skb_any(skb_orig);
 			return NETDEV_TX_OK;
 		}
+		dev_consume_skb_any(skb_orig);
 	}
 	mlxsw_sx_txhdr_construct(skb, &tx_info);
 	/* TX header is consumed by HW on the way so we shouldn't count its
@@ -382,7 +382,7 @@ static int mlxsw_sx_port_change_mtu(struct net_device *dev, int mtu)
 	return 0;
 }
 
-static struct rtnl_link_stats64 *
+static void
 mlxsw_sx_port_get_stats64(struct net_device *dev,
 			  struct rtnl_link_stats64 *stats)
 {
@@ -411,7 +411,6 @@ mlxsw_sx_port_get_stats64(struct net_device *dev,
 		tx_dropped	+= p->tx_dropped;
 	}
 	stats->tx_dropped	= tx_dropped;
-	return stats;
 }
 
 static int mlxsw_sx_port_get_phys_port_name(struct net_device *dev, char *name,
@@ -734,7 +733,7 @@ static u32 mlxsw_sx_from_ptys_advert_link(u32 ptys_eth_proto)
 }
 
 static void mlxsw_sx_from_ptys_speed_duplex(bool carrier_ok, u32 ptys_eth_proto,
-					    struct ethtool_cmd *cmd)
+					    struct ethtool_link_ksettings *cmd)
 {
 	u32 speed = SPEED_UNKNOWN;
 	u8 duplex = DUPLEX_UNKNOWN;
@@ -751,8 +750,8 @@ static void mlxsw_sx_from_ptys_speed_duplex(bool carrier_ok, u32 ptys_eth_proto,
 		}
 	}
 out:
-	ethtool_cmd_speed_set(cmd, speed);
-	cmd->duplex = duplex;
+	cmd->base.speed = speed;
+	cmd->base.duplex = duplex;
 }
 
 static u8 mlxsw_sx_port_connector_port(u32 ptys_eth_proto)
@@ -777,8 +776,9 @@ static u8 mlxsw_sx_port_connector_port(u32 ptys_eth_proto)
 	return PORT_OTHER;
 }
 
-static int mlxsw_sx_port_get_settings(struct net_device *dev,
-				      struct ethtool_cmd *cmd)
+static int
+mlxsw_sx_port_get_link_ksettings(struct net_device *dev,
+				 struct ethtool_link_ksettings *cmd)
 {
 	struct mlxsw_sx_port *mlxsw_sx_port = netdev_priv(dev);
 	struct mlxsw_sx *mlxsw_sx = mlxsw_sx_port->mlxsw_sx;
@@ -786,6 +786,7 @@ static int mlxsw_sx_port_get_settings(struct net_device *dev,
 	u32 eth_proto_cap;
 	u32 eth_proto_admin;
 	u32 eth_proto_oper;
+	u32 supported, advertising, lp_advertising;
 	int err;
 
 	mlxsw_reg_ptys_eth_pack(ptys_pl, mlxsw_sx_port->local_port, 0);
@@ -797,18 +798,24 @@ static int mlxsw_sx_port_get_settings(struct net_device *dev,
 	mlxsw_reg_ptys_eth_unpack(ptys_pl, &eth_proto_cap,
 				  &eth_proto_admin, &eth_proto_oper);
 
-	cmd->supported = mlxsw_sx_from_ptys_supported_port(eth_proto_cap) |
+	supported = mlxsw_sx_from_ptys_supported_port(eth_proto_cap) |
 			 mlxsw_sx_from_ptys_supported_link(eth_proto_cap) |
 			 SUPPORTED_Pause | SUPPORTED_Asym_Pause;
-	cmd->advertising = mlxsw_sx_from_ptys_advert_link(eth_proto_admin);
+	advertising = mlxsw_sx_from_ptys_advert_link(eth_proto_admin);
 	mlxsw_sx_from_ptys_speed_duplex(netif_carrier_ok(dev),
 					eth_proto_oper, cmd);
 
 	eth_proto_oper = eth_proto_oper ? eth_proto_oper : eth_proto_cap;
-	cmd->port = mlxsw_sx_port_connector_port(eth_proto_oper);
-	cmd->lp_advertising = mlxsw_sx_from_ptys_advert_link(eth_proto_oper);
+	cmd->base.port = mlxsw_sx_port_connector_port(eth_proto_oper);
+	lp_advertising = mlxsw_sx_from_ptys_advert_link(eth_proto_oper);
 
-	cmd->transceiver = XCVR_INTERNAL;
+	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.supported,
+						supported);
+	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.advertising,
+						advertising);
+	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.lp_advertising,
+						lp_advertising);
+
 	return 0;
 }
 
@@ -848,8 +855,9 @@ static u32 mlxsw_sx_to_ptys_upper_speed(u32 upper_speed)
 	return ptys_proto;
 }
 
-static int mlxsw_sx_port_set_settings(struct net_device *dev,
-				      struct ethtool_cmd *cmd)
+static int
+mlxsw_sx_port_set_link_ksettings(struct net_device *dev,
+				 const struct ethtool_link_ksettings *cmd)
 {
 	struct mlxsw_sx_port *mlxsw_sx_port = netdev_priv(dev);
 	struct mlxsw_sx *mlxsw_sx = mlxsw_sx_port->mlxsw_sx;
@@ -858,13 +866,17 @@ static int mlxsw_sx_port_set_settings(struct net_device *dev,
 	u32 eth_proto_new;
 	u32 eth_proto_cap;
 	u32 eth_proto_admin;
+	u32 advertising;
 	bool is_up;
 	int err;
 
-	speed = ethtool_cmd_speed(cmd);
+	speed = cmd->base.speed;
 
-	eth_proto_new = cmd->autoneg == AUTONEG_ENABLE ?
-		mlxsw_sx_to_ptys_advert_link(cmd->advertising) :
+	ethtool_convert_link_mode_to_legacy_u32(&advertising,
+						cmd->link_modes.advertising);
+
+	eth_proto_new = cmd->base.autoneg == AUTONEG_ENABLE ?
+		mlxsw_sx_to_ptys_advert_link(advertising) :
 		mlxsw_sx_to_ptys_speed(speed);
 
 	mlxsw_reg_ptys_eth_pack(ptys_pl, mlxsw_sx_port->local_port, 0);
@@ -921,8 +933,8 @@ static const struct ethtool_ops mlxsw_sx_port_ethtool_ops = {
 	.get_strings		= mlxsw_sx_port_get_strings,
 	.get_ethtool_stats	= mlxsw_sx_port_get_stats,
 	.get_sset_count		= mlxsw_sx_port_get_sset_count,
-	.get_settings		= mlxsw_sx_port_get_settings,
-	.set_settings		= mlxsw_sx_port_set_settings,
+	.get_link_ksettings	= mlxsw_sx_port_get_link_ksettings,
+	.set_link_ksettings	= mlxsw_sx_port_set_link_ksettings,
 };
 
 static int mlxsw_sx_port_attr_get(struct net_device *dev,
@@ -1397,52 +1409,6 @@ static void mlxsw_sx_pude_event_func(const struct mlxsw_reg_info *reg,
 		mlxsw_sx_pude_ib_event_func(mlxsw_sx_port, status);
 }
 
-static struct mlxsw_event_listener mlxsw_sx_pude_event = {
-	.func = mlxsw_sx_pude_event_func,
-	.trap_id = MLXSW_TRAP_ID_PUDE,
-};
-
-static int mlxsw_sx_event_register(struct mlxsw_sx *mlxsw_sx,
-				   enum mlxsw_event_trap_id trap_id)
-{
-	struct mlxsw_event_listener *el;
-	char hpkt_pl[MLXSW_REG_HPKT_LEN];
-	int err;
-
-	switch (trap_id) {
-	case MLXSW_TRAP_ID_PUDE:
-		el = &mlxsw_sx_pude_event;
-		break;
-	}
-	err = mlxsw_core_event_listener_register(mlxsw_sx->core, el, mlxsw_sx);
-	if (err)
-		return err;
-
-	mlxsw_reg_hpkt_pack(hpkt_pl, MLXSW_REG_HPKT_ACTION_FORWARD, trap_id);
-	err = mlxsw_reg_write(mlxsw_sx->core, MLXSW_REG(hpkt), hpkt_pl);
-	if (err)
-		goto err_event_trap_set;
-
-	return 0;
-
-err_event_trap_set:
-	mlxsw_core_event_listener_unregister(mlxsw_sx->core, el, mlxsw_sx);
-	return err;
-}
-
-static void mlxsw_sx_event_unregister(struct mlxsw_sx *mlxsw_sx,
-				      enum mlxsw_event_trap_id trap_id)
-{
-	struct mlxsw_event_listener *el;
-
-	switch (trap_id) {
-	case MLXSW_TRAP_ID_PUDE:
-		el = &mlxsw_sx_pude_event;
-		break;
-	}
-	mlxsw_core_event_listener_unregister(mlxsw_sx->core, el, mlxsw_sx);
-}
-
 static void mlxsw_sx_rx_listener_func(struct sk_buff *skb, u8 local_port,
 				      void *priv)
 {
@@ -1495,142 +1461,83 @@ err_port_module_info_get:
 	return err;
 }
 
-static const struct mlxsw_rx_listener mlxsw_sx_rx_listener[] = {
-	{
-		.func = mlxsw_sx_rx_listener_func,
-		.local_port = MLXSW_PORT_DONT_CARE,
-		.trap_id = MLXSW_TRAP_ID_FDB_MC,
-	},
-	/* Traps for specific L2 packet types, not trapped as FDB MC */
-	{
-		.func = mlxsw_sx_rx_listener_func,
-		.local_port = MLXSW_PORT_DONT_CARE,
-		.trap_id = MLXSW_TRAP_ID_STP,
-	},
-	{
-		.func = mlxsw_sx_rx_listener_func,
-		.local_port = MLXSW_PORT_DONT_CARE,
-		.trap_id = MLXSW_TRAP_ID_LACP,
-	},
-	{
-		.func = mlxsw_sx_rx_listener_func,
-		.local_port = MLXSW_PORT_DONT_CARE,
-		.trap_id = MLXSW_TRAP_ID_EAPOL,
-	},
-	{
-		.func = mlxsw_sx_rx_listener_func,
-		.local_port = MLXSW_PORT_DONT_CARE,
-		.trap_id = MLXSW_TRAP_ID_LLDP,
-	},
-	{
-		.func = mlxsw_sx_rx_listener_func,
-		.local_port = MLXSW_PORT_DONT_CARE,
-		.trap_id = MLXSW_TRAP_ID_MMRP,
-	},
-	{
-		.func = mlxsw_sx_rx_listener_func,
-		.local_port = MLXSW_PORT_DONT_CARE,
-		.trap_id = MLXSW_TRAP_ID_MVRP,
-	},
-	{
-		.func = mlxsw_sx_rx_listener_func,
-		.local_port = MLXSW_PORT_DONT_CARE,
-		.trap_id = MLXSW_TRAP_ID_RPVST,
-	},
-	{
-		.func = mlxsw_sx_rx_listener_func,
-		.local_port = MLXSW_PORT_DONT_CARE,
-		.trap_id = MLXSW_TRAP_ID_DHCP,
-	},
-	{
-		.func = mlxsw_sx_rx_listener_func,
-		.local_port = MLXSW_PORT_DONT_CARE,
-		.trap_id = MLXSW_TRAP_ID_IGMP_QUERY,
-	},
-	{
-		.func = mlxsw_sx_rx_listener_func,
-		.local_port = MLXSW_PORT_DONT_CARE,
-		.trap_id = MLXSW_TRAP_ID_IGMP_V1_REPORT,
-	},
-	{
-		.func = mlxsw_sx_rx_listener_func,
-		.local_port = MLXSW_PORT_DONT_CARE,
-		.trap_id = MLXSW_TRAP_ID_IGMP_V2_REPORT,
-	},
-	{
-		.func = mlxsw_sx_rx_listener_func,
-		.local_port = MLXSW_PORT_DONT_CARE,
-		.trap_id = MLXSW_TRAP_ID_IGMP_V2_LEAVE,
-	},
-	{
-		.func = mlxsw_sx_rx_listener_func,
-		.local_port = MLXSW_PORT_DONT_CARE,
-		.trap_id = MLXSW_TRAP_ID_IGMP_V3_REPORT,
-	},
+#define MLXSW_SX_RXL(_trap_id) \
+	MLXSW_RXL(mlxsw_sx_rx_listener_func, _trap_id, TRAP_TO_CPU,	\
+		  false, SX2_RX, FORWARD)
+
+static const struct mlxsw_listener mlxsw_sx_listener[] = {
+	MLXSW_EVENTL(mlxsw_sx_pude_event_func, PUDE, EMAD),
+	MLXSW_SX_RXL(FDB_MC),
+	MLXSW_SX_RXL(STP),
+	MLXSW_SX_RXL(LACP),
+	MLXSW_SX_RXL(EAPOL),
+	MLXSW_SX_RXL(LLDP),
+	MLXSW_SX_RXL(MMRP),
+	MLXSW_SX_RXL(MVRP),
+	MLXSW_SX_RXL(RPVST),
+	MLXSW_SX_RXL(DHCP),
+	MLXSW_SX_RXL(IGMP_QUERY),
+	MLXSW_SX_RXL(IGMP_V1_REPORT),
+	MLXSW_SX_RXL(IGMP_V2_REPORT),
+	MLXSW_SX_RXL(IGMP_V2_LEAVE),
+	MLXSW_SX_RXL(IGMP_V3_REPORT),
 };
 
 static int mlxsw_sx_traps_init(struct mlxsw_sx *mlxsw_sx)
 {
 	char htgt_pl[MLXSW_REG_HTGT_LEN];
-	char hpkt_pl[MLXSW_REG_HPKT_LEN];
 	int i;
 	int err;
 
-	mlxsw_reg_htgt_pack(htgt_pl, MLXSW_REG_HTGT_TRAP_GROUP_RX);
+	mlxsw_reg_htgt_pack(htgt_pl, MLXSW_REG_HTGT_TRAP_GROUP_SX2_RX,
+			    MLXSW_REG_HTGT_INVALID_POLICER,
+			    MLXSW_REG_HTGT_DEFAULT_PRIORITY,
+			    MLXSW_REG_HTGT_DEFAULT_TC);
+	mlxsw_reg_htgt_local_path_rdq_set(htgt_pl,
+					  MLXSW_REG_HTGT_LOCAL_PATH_RDQ_SX2_RX);
+
 	err = mlxsw_reg_write(mlxsw_sx->core, MLXSW_REG(htgt), htgt_pl);
 	if (err)
 		return err;
 
-	mlxsw_reg_htgt_pack(htgt_pl, MLXSW_REG_HTGT_TRAP_GROUP_CTRL);
+	mlxsw_reg_htgt_pack(htgt_pl, MLXSW_REG_HTGT_TRAP_GROUP_SX2_CTRL,
+			    MLXSW_REG_HTGT_INVALID_POLICER,
+			    MLXSW_REG_HTGT_DEFAULT_PRIORITY,
+			    MLXSW_REG_HTGT_DEFAULT_TC);
+	mlxsw_reg_htgt_local_path_rdq_set(htgt_pl,
+					MLXSW_REG_HTGT_LOCAL_PATH_RDQ_SX2_CTRL);
+
 	err = mlxsw_reg_write(mlxsw_sx->core, MLXSW_REG(htgt), htgt_pl);
 	if (err)
 		return err;
 
-	for (i = 0; i < ARRAY_SIZE(mlxsw_sx_rx_listener); i++) {
-		err = mlxsw_core_rx_listener_register(mlxsw_sx->core,
-						      &mlxsw_sx_rx_listener[i],
-						      mlxsw_sx);
+	for (i = 0; i < ARRAY_SIZE(mlxsw_sx_listener); i++) {
+		err = mlxsw_core_trap_register(mlxsw_sx->core,
+					       &mlxsw_sx_listener[i],
+					       mlxsw_sx);
 		if (err)
-			goto err_rx_listener_register;
+			goto err_listener_register;
 
-		mlxsw_reg_hpkt_pack(hpkt_pl, MLXSW_REG_HPKT_ACTION_TRAP_TO_CPU,
-				    mlxsw_sx_rx_listener[i].trap_id);
-		err = mlxsw_reg_write(mlxsw_sx->core, MLXSW_REG(hpkt), hpkt_pl);
-		if (err)
-			goto err_rx_trap_set;
 	}
 	return 0;
 
-err_rx_trap_set:
-	mlxsw_core_rx_listener_unregister(mlxsw_sx->core,
-					  &mlxsw_sx_rx_listener[i],
-					  mlxsw_sx);
-err_rx_listener_register:
+err_listener_register:
 	for (i--; i >= 0; i--) {
-		mlxsw_reg_hpkt_pack(hpkt_pl, MLXSW_REG_HPKT_ACTION_FORWARD,
-				    mlxsw_sx_rx_listener[i].trap_id);
-		mlxsw_reg_write(mlxsw_sx->core, MLXSW_REG(hpkt), hpkt_pl);
-
-		mlxsw_core_rx_listener_unregister(mlxsw_sx->core,
-						  &mlxsw_sx_rx_listener[i],
-						  mlxsw_sx);
+		mlxsw_core_trap_unregister(mlxsw_sx->core,
+					   &mlxsw_sx_listener[i],
+					   mlxsw_sx);
 	}
 	return err;
 }
 
 static void mlxsw_sx_traps_fini(struct mlxsw_sx *mlxsw_sx)
 {
-	char hpkt_pl[MLXSW_REG_HPKT_LEN];
 	int i;
 
-	for (i = 0; i < ARRAY_SIZE(mlxsw_sx_rx_listener); i++) {
-		mlxsw_reg_hpkt_pack(hpkt_pl, MLXSW_REG_HPKT_ACTION_FORWARD,
-				    mlxsw_sx_rx_listener[i].trap_id);
-		mlxsw_reg_write(mlxsw_sx->core, MLXSW_REG(hpkt), hpkt_pl);
-
-		mlxsw_core_rx_listener_unregister(mlxsw_sx->core,
-						  &mlxsw_sx_rx_listener[i],
-						  mlxsw_sx);
+	for (i = 0; i < ARRAY_SIZE(mlxsw_sx_listener); i++) {
+		mlxsw_core_trap_unregister(mlxsw_sx->core,
+					   &mlxsw_sx_listener[i],
+					   mlxsw_sx);
 	}
 }
 
@@ -1702,6 +1609,20 @@ static int mlxsw_sx_flood_init(struct mlxsw_sx *mlxsw_sx)
 	return mlxsw_reg_write(mlxsw_sx->core, MLXSW_REG(sgcr), sgcr_pl);
 }
 
+static int mlxsw_sx_basic_trap_groups_set(struct mlxsw_core *mlxsw_core)
+{
+	char htgt_pl[MLXSW_REG_HTGT_LEN];
+
+	mlxsw_reg_htgt_pack(htgt_pl, MLXSW_REG_HTGT_TRAP_GROUP_EMAD,
+			    MLXSW_REG_HTGT_INVALID_POLICER,
+			    MLXSW_REG_HTGT_DEFAULT_PRIORITY,
+			    MLXSW_REG_HTGT_DEFAULT_TC);
+	mlxsw_reg_htgt_swid_set(htgt_pl, MLXSW_PORT_SWID_ALL_SWIDS);
+	mlxsw_reg_htgt_local_path_rdq_set(htgt_pl,
+					MLXSW_REG_HTGT_LOCAL_PATH_RDQ_SX2_EMAD);
+	return mlxsw_reg_write(mlxsw_core, MLXSW_REG(htgt), htgt_pl);
+}
+
 static int mlxsw_sx_init(struct mlxsw_core *mlxsw_core,
 			 const struct mlxsw_bus_info *mlxsw_bus_info)
 {
@@ -1723,16 +1644,10 @@ static int mlxsw_sx_init(struct mlxsw_core *mlxsw_core,
 		return err;
 	}
 
-	err = mlxsw_sx_event_register(mlxsw_sx, MLXSW_TRAP_ID_PUDE);
-	if (err) {
-		dev_err(mlxsw_sx->bus_info->dev, "Failed to register for PUDE events\n");
-		goto err_event_register;
-	}
-
 	err = mlxsw_sx_traps_init(mlxsw_sx);
 	if (err) {
-		dev_err(mlxsw_sx->bus_info->dev, "Failed to set traps for RX\n");
-		goto err_rx_listener_register;
+		dev_err(mlxsw_sx->bus_info->dev, "Failed to set traps\n");
+		goto err_listener_register;
 	}
 
 	err = mlxsw_sx_flood_init(mlxsw_sx);
@@ -1745,9 +1660,7 @@ static int mlxsw_sx_init(struct mlxsw_core *mlxsw_core,
 
 err_flood_init:
 	mlxsw_sx_traps_fini(mlxsw_sx);
-err_rx_listener_register:
-	mlxsw_sx_event_unregister(mlxsw_sx, MLXSW_TRAP_ID_PUDE);
-err_event_register:
+err_listener_register:
 	mlxsw_sx_ports_remove(mlxsw_sx);
 	return err;
 }
@@ -1757,7 +1670,6 @@ static void mlxsw_sx_fini(struct mlxsw_core *mlxsw_core)
 	struct mlxsw_sx *mlxsw_sx = mlxsw_core_driver_priv(mlxsw_core);
 
 	mlxsw_sx_traps_fini(mlxsw_sx);
-	mlxsw_sx_event_unregister(mlxsw_sx, MLXSW_TRAP_ID_PUDE);
 	mlxsw_sx_ports_remove(mlxsw_sx);
 }
 
@@ -1801,6 +1713,7 @@ static struct mlxsw_driver mlxsw_sx_driver = {
 	.priv_size		= sizeof(struct mlxsw_sx),
 	.init			= mlxsw_sx_init,
 	.fini			= mlxsw_sx_fini,
+	.basic_trap_groups_set	= mlxsw_sx_basic_trap_groups_set,
 	.txhdr_construct	= mlxsw_sx_txhdr_construct,
 	.txhdr_len		= MLXSW_TXHDR_LEN,
 	.profile		= &mlxsw_sx_config_profile,

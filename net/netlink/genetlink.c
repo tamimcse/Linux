@@ -362,8 +362,10 @@ int genl_register_family(struct genl_family *family)
 
 	family->id = idr_alloc(&genl_fam_idr, family,
 			       start, end + 1, GFP_KERNEL);
-	if (!family->id)
+	if (family->id < 0) {
+		err = family->id;
 		goto errout_locked;
+	}
 
 	err = genl_validate_assign_mc_groups(family);
 	if (err)
@@ -381,6 +383,7 @@ int genl_register_family(struct genl_family *family)
 
 errout_remove:
 	idr_remove(&genl_fam_idr, family->id);
+	kfree(family->attrbuf);
 errout_locked:
 	genl_unlock_all();
 	return err;
@@ -780,8 +783,10 @@ static int ctrl_dumpfamily(struct sk_buff *skb, struct netlink_callback *cb)
 
 		if (ctrl_fill_info(rt, NETLINK_CB(cb->skb).portid,
 				   cb->nlh->nlmsg_seq, NLM_F_MULTI,
-				   skb, CTRL_CMD_NEWFAMILY) < 0)
+				   skb, CTRL_CMD_NEWFAMILY) < 0) {
+			n--;
 			break;
+		}
 	}
 
 	cb->args[0] = n;

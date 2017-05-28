@@ -33,7 +33,7 @@ struct lwtunnel_state {
 };
 
 struct lwtunnel_encap_ops {
-	int (*build_state)(struct net_device *dev, struct nlattr *encap,
+	int (*build_state)(struct nlattr *encap,
 			   unsigned int family, const void *cfg,
 			   struct lwtunnel_state **ts);
 	void (*destroy_state)(struct lwtunnel_state *lws);
@@ -44,6 +44,8 @@ struct lwtunnel_encap_ops {
 	int (*get_encap_size)(struct lwtunnel_state *lwtstate);
 	int (*cmp_encap)(struct lwtunnel_state *a, struct lwtunnel_state *b);
 	int (*xmit)(struct sk_buff *skb);
+
+	struct module *owner;
 };
 
 #ifdef CONFIG_LWTUNNEL
@@ -94,7 +96,8 @@ static inline bool lwtunnel_xmit_redirect(struct lwtunnel_state *lwtstate)
 static inline unsigned int lwtunnel_headroom(struct lwtunnel_state *lwtstate,
 					     unsigned int mtu)
 {
-	if (lwtunnel_xmit_redirect(lwtstate) && lwtstate->headroom < mtu)
+	if ((lwtunnel_xmit_redirect(lwtstate) ||
+	     lwtunnel_output_redirect(lwtstate)) && lwtstate->headroom < mtu)
 		return lwtstate->headroom;
 
 	return 0;
@@ -104,7 +107,9 @@ int lwtunnel_encap_add_ops(const struct lwtunnel_encap_ops *op,
 			   unsigned int num);
 int lwtunnel_encap_del_ops(const struct lwtunnel_encap_ops *op,
 			   unsigned int num);
-int lwtunnel_build_state(struct net_device *dev, u16 encap_type,
+int lwtunnel_valid_encap_type(u16 encap_type);
+int lwtunnel_valid_encap_type_attr(struct nlattr *attr, int len);
+int lwtunnel_build_state(u16 encap_type,
 			 struct nlattr *encap,
 			 unsigned int family, const void *cfg,
 			 struct lwtunnel_state **lws);
@@ -167,7 +172,19 @@ static inline int lwtunnel_encap_del_ops(const struct lwtunnel_encap_ops *op,
 	return -EOPNOTSUPP;
 }
 
-static inline int lwtunnel_build_state(struct net_device *dev, u16 encap_type,
+static inline int lwtunnel_valid_encap_type(u16 encap_type)
+{
+	return -EOPNOTSUPP;
+}
+static inline int lwtunnel_valid_encap_type_attr(struct nlattr *attr, int len)
+{
+	/* return 0 since we are not walking attr looking for
+	 * RTA_ENCAP_TYPE attribute on nexthops.
+	 */
+	return 0;
+}
+
+static inline int lwtunnel_build_state(u16 encap_type,
 				       struct nlattr *encap,
 				       unsigned int family, const void *cfg,
 				       struct lwtunnel_state **lws)

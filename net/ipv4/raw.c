@@ -41,7 +41,7 @@
 #include <linux/atomic.h>
 #include <asm/byteorder.h>
 #include <asm/current.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <asm/ioctls.h>
 #include <linux/stddef.h>
 #include <linux/slab.h>
@@ -383,6 +383,9 @@ static int raw_send_hdrinc(struct sock *sk, struct flowi4 *fl4,
 
 	sock_tx_timestamp(sk, sockc->tsflags, &skb_shinfo(skb)->tx_flags);
 
+	if (flags & MSG_CONFIRM)
+		skb_set_dst_pending_confirm(skb, 1);
+
 	skb->transport_header = skb->network_header;
 	err = -EFAULT;
 	if (memcpy_from_msg(iph, msg, length))
@@ -606,7 +609,7 @@ static int raw_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 			   inet->hdrincl ? IPPROTO_RAW : sk->sk_protocol,
 			   inet_sk_flowi_flags(sk) |
 			    (inet->hdrincl ? FLOWI_FLAG_KNOWN_NH : 0),
-			   daddr, saddr, 0, 0);
+			   daddr, saddr, 0, 0, sk->sk_uid);
 
 	if (!inet->hdrincl) {
 		rfv.msg = msg;
@@ -666,7 +669,8 @@ out:
 	return len;
 
 do_confirm:
-	dst_confirm(&rt->dst);
+	if (msg->msg_flags & MSG_PROBE)
+		dst_confirm_neigh(&rt->dst, &fl4.daddr);
 	if (!(msg->msg_flags & MSG_PROBE) || len)
 		goto back_from_confirm;
 	err = 0;
@@ -678,7 +682,9 @@ static void raw_close(struct sock *sk, long timeout)
 	/*
 	 * Raw sockets may have direct kernel references. Kill them.
 	 */
+	rtnl_lock();
 	ip_ra_control(sk, 0, NULL);
+	rtnl_unlock();
 
 	sk_common_release(sk);
 }
@@ -695,12 +701,20 @@ static int raw_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 {
 	struct inet_sock *inet = inet_sk(sk);
 	struct sockaddr_in *addr = (struct sockaddr_in *) uaddr;
+	u32 tb_id = RT_TABLE_LOCAL;
 	int ret = -EINVAL;
 	int chk_addr_ret;
 
 	if (sk->sk_state != TCP_CLOSE || addr_len < sizeof(struct sockaddr_in))
 		goto out;
-	chk_addr_ret = inet_addr_type(sock_net(sk), addr->sin_addr.s_addr);
+
+	if (sk->sk_bound_dev_if)
+		tb_id = l3mdev_fib_table_by_index(sock_net(sk),
+						 sk->sk_bound_dev_if) ? : tb_id;
+
+	chk_addr_ret = inet_addr_type_table(sock_net(sk), addr->sin_addr.s_addr,
+					    tb_id);
+
 	ret = -EADDRNOTAVAIL;
 	if (addr->sin_addr.s_addr && chk_addr_ret != RTN_LOCAL &&
 	    chk_addr_ret != RTN_MULTICAST && chk_addr_ret != RTN_BROADCAST)
@@ -920,7 +934,7 @@ int raw_abort(struct sock *sk, int err)
 
 	sk->sk_err = err;
 	sk->sk_error_report(sk);
-	udp_disconnect(sk, 0);
+	__udp_disconnect(sk, 0);
 
 	release_sock(sk);
 

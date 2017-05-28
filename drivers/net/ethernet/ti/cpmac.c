@@ -1112,6 +1112,7 @@ static int cpmac_probe(struct platform_device *pdev)
 	if (!dev)
 		return -ENOMEM;
 
+	SET_NETDEV_DEV(dev, &pdev->dev);
 	platform_set_drvdata(pdev, dev);
 	priv = netdev_priv(dev);
 
@@ -1209,7 +1210,7 @@ int cpmac_init(void)
 		goto fail_alloc;
 	}
 
-#warning FIXME: unhardcode gpio&reset bits
+	/* FIXME: unhardcode gpio&reset bits */
 	ar7_gpio_disable(26);
 	ar7_gpio_disable(27);
 	ar7_device_reset(AR7_RESET_BIT_CPMAC_LO);

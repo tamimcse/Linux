@@ -44,7 +44,7 @@
 #include <linux/vmalloc.h>
 #include <asm/pgtable.h>
 #include <asm/irq.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #include "fs_enet.h"
 
@@ -301,7 +301,7 @@ static int fs_enet_napi(struct napi_struct *napi, int budget)
 
 	if (received < budget && tx_left) {
 		/* done */
-		napi_complete(napi);
+		napi_complete_done(napi, received);
 		(*fep->ops->napi_enable)(dev);
 
 		return received;
@@ -807,11 +807,6 @@ static void fs_get_regs(struct net_device *dev, struct ethtool_regs *regs,
 		regs->version = 0;
 }
 
-static int fs_nway_reset(struct net_device *dev)
-{
-	return 0;
-}
-
 static u32 fs_get_msglevel(struct net_device *dev)
 {
 	struct fs_enet_private *fep = netdev_priv(dev);
@@ -865,7 +860,7 @@ static int fs_set_tunable(struct net_device *dev,
 static const struct ethtool_ops fs_ethtool_ops = {
 	.get_drvinfo = fs_get_drvinfo,
 	.get_regs_len = fs_get_regs_len,
-	.nway_reset = fs_nway_reset,
+	.nway_reset = phy_ethtool_nway_reset,
 	.get_link = ethtool_op_get_link,
 	.get_msglevel = fs_get_msglevel,
 	.set_msglevel = fs_set_msglevel,
@@ -969,11 +964,10 @@ static int fs_enet_probe(struct platform_device *ofdev)
 	 */
 	clk = devm_clk_get(&ofdev->dev, "per");
 	if (!IS_ERR(clk)) {
-		err = clk_prepare_enable(clk);
-		if (err) {
-			ret = err;
-			goto out_free_fpi;
-		}
+		ret = clk_prepare_enable(clk);
+		if (ret)
+			goto out_deregister_fixed_link;
+
 		fpi->clk_per = clk;
 	}
 
@@ -1050,9 +1044,12 @@ out_cleanup_data:
 out_free_dev:
 	free_netdev(ndev);
 out_put:
-	of_node_put(fpi->phy_node);
 	if (fpi->clk_per)
 		clk_disable_unprepare(fpi->clk_per);
+out_deregister_fixed_link:
+	of_node_put(fpi->phy_node);
+	if (of_phy_is_fixed_link(ofdev->dev.of_node))
+		of_phy_deregister_fixed_link(ofdev->dev.of_node);
 out_free_fpi:
 	kfree(fpi);
 	return ret;
@@ -1071,6 +1068,8 @@ static int fs_enet_remove(struct platform_device *ofdev)
 	of_node_put(fep->fpi->phy_node);
 	if (fep->fpi->clk_per)
 		clk_disable_unprepare(fep->fpi->clk_per);
+	if (of_phy_is_fixed_link(ofdev->dev.of_node))
+		of_phy_deregister_fixed_link(ofdev->dev.of_node);
 	free_netdev(ndev);
 	return 0;
 }

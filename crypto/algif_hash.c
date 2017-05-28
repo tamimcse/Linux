@@ -214,35 +214,39 @@ static int hash_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
 
 	ahash_request_set_crypt(&ctx->req, NULL, ctx->result, 0);
 
-	if (ctx->more) {
+	if (!result && !ctx->more) {
+		err = af_alg_wait_for_completion(
+				crypto_ahash_init(&ctx->req),
+				&ctx->completion);
+		if (err)
+			goto unlock;
+	}
+
+	if (!result || ctx->more) {
 		ctx->more = 0;
 		err = af_alg_wait_for_completion(crypto_ahash_final(&ctx->req),
 						 &ctx->completion);
 		if (err)
 			goto unlock;
-	} else if (!result) {
-		err = af_alg_wait_for_completion(
-				crypto_ahash_digest(&ctx->req),
-				&ctx->completion);
 	}
 
 	err = memcpy_to_msg(msg, ctx->result, len);
 
-	hash_free_result(sk, ctx);
-
 unlock:
+	hash_free_result(sk, ctx);
 	release_sock(sk);
 
 	return err ?: len;
 }
 
-static int hash_accept(struct socket *sock, struct socket *newsock, int flags)
+static int hash_accept(struct socket *sock, struct socket *newsock, int flags,
+		       bool kern)
 {
 	struct sock *sk = sock->sk;
 	struct alg_sock *ask = alg_sk(sk);
 	struct hash_ctx *ctx = ask->private;
 	struct ahash_request *req = &ctx->req;
-	char state[crypto_ahash_statesize(crypto_ahash_reqtfm(req))];
+	char state[crypto_ahash_statesize(crypto_ahash_reqtfm(req)) ? : 1];
 	struct sock *sk2;
 	struct alg_sock *ask2;
 	struct hash_ctx *ctx2;
@@ -257,7 +261,7 @@ static int hash_accept(struct socket *sock, struct socket *newsock, int flags)
 	if (err)
 		return err;
 
-	err = af_alg_accept(ask->parent, newsock);
+	err = af_alg_accept(ask->parent, newsock, kern);
 	if (err)
 		return err;
 
@@ -375,7 +379,7 @@ static int hash_recvmsg_nokey(struct socket *sock, struct msghdr *msg,
 }
 
 static int hash_accept_nokey(struct socket *sock, struct socket *newsock,
-			     int flags)
+			     int flags, bool kern)
 {
 	int err;
 
@@ -383,7 +387,7 @@ static int hash_accept_nokey(struct socket *sock, struct socket *newsock,
 	if (err)
 		return err;
 
-	return hash_accept(sock, newsock, flags);
+	return hash_accept(sock, newsock, flags, kern);
 }
 
 static struct proto_ops algif_hash_ops_nokey = {

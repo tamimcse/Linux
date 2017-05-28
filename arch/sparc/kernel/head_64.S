@@ -96,6 +96,7 @@ sparc64_boot:
 	andn	%g1, PSTATE_AM, %g1
 	wrpr	%g1, 0x0, %pstate
 	ba,a,pt	%xcc, 1f
+	 nop
 
 	.globl	prom_finddev_name, prom_chosen_path, prom_root_node
 	.globl	prom_getprop_name, prom_mmu_name, prom_peer_name
@@ -613,6 +614,7 @@ niagara_tlb_fixup:
 	 nop
 
 	ba,a,pt	%xcc, 80f
+	 nop
 niagara4_patch:
 	call	niagara4_patch_copyops
 	 nop
@@ -622,6 +624,7 @@ niagara4_patch:
 	 nop
 
 	ba,a,pt	%xcc, 80f
+	 nop
 
 niagara2_patch:
 	call	niagara2_patch_copyops
@@ -632,6 +635,7 @@ niagara2_patch:
 	 nop
 
 	ba,a,pt	%xcc, 80f
+	 nop
 
 niagara_patch:
 	call	niagara_patch_copyops
@@ -926,47 +930,10 @@ tlb_type:	.word	0	/* Must NOT end up in BSS */
 EXPORT_SYMBOL(tlb_type)
 	.section	".fixup",#alloc,#execinstr
 
-	.globl	__ret_efault, __retl_efault, __ret_one, __retl_one
-ENTRY(__ret_efault)
-	ret
-	 restore %g0, -EFAULT, %o0
-ENDPROC(__ret_efault)
-EXPORT_SYMBOL(__ret_efault)
-
 ENTRY(__retl_efault)
 	retl
 	 mov	-EFAULT, %o0
 ENDPROC(__retl_efault)
-
-ENTRY(__retl_one)
-	retl
-	 mov	1, %o0
-ENDPROC(__retl_one)
-
-ENTRY(__retl_one_fp)
-	VISExitHalf
-	retl
-	 mov	1, %o0
-ENDPROC(__retl_one_fp)
-
-ENTRY(__ret_one_asi)
-	wr	%g0, ASI_AIUS, %asi
-	ret
-	 restore %g0, 1, %o0
-ENDPROC(__ret_one_asi)
-
-ENTRY(__retl_one_asi)
-	wr	%g0, ASI_AIUS, %asi
-	retl
-	 mov	1, %o0
-ENDPROC(__retl_one_asi)
-
-ENTRY(__retl_one_asi_fp)
-	wr	%g0, ASI_AIUS, %asi
-	VISExitHalf
-	retl
-	 mov	1, %o0
-ENDPROC(__retl_one_asi_fp)
 
 ENTRY(__retl_o1)
 	retl
