@@ -159,20 +159,24 @@ nfp_net_bpf_offload_prepare(struct nfp_net *nn,
 		return ret;
 	act = ret;
 
+        //Read the MTU size of the BPF program
 	max_mtu = nn_readb(nn, NFP_NET_CFG_BPF_INL_MTU) * 64 - 32;
 	if (max_mtu < nn->netdev->mtu) {
 		nn_info(nn, "BPF offload not supported with MTU larger than HW packet split boundary\n");
 		return -ENOTSUPP;
 	}
 
+        //Read the offset where the BPF program will be loaded
 	start_off = nn_readw(nn, NFP_NET_CFG_BPF_START);
+        //Read to offset where BPF program will jump to exit
 	done_off = nn_readw(nn, NFP_NET_CFG_BPF_DONE);
-
+        //Allocate memory for the DMA
 	*code = dma_zalloc_coherent(&nn->pdev->dev, code_sz, dma_addr,
 				    GFP_KERNEL);
 	if (!*code)
 		return -ENOMEM;
 
+        //Compile the BPF program to NFP assembly program
 	ret = nfp_bpf_jit(cls_bpf->prog, *code, act, start_off, done_off,
 			  max_instr, res);
 	if (ret)
@@ -199,7 +203,9 @@ nfp_net_bpf_load_and_start(struct nfp_net *nn, u32 tc_flags,
 	if (dense_mode)
 		bpf_addr |= NFP_NET_CFG_BPF_CFG_8CTX;
 
+        //Write the size of the BPF assembly program
 	nn_writew(nn, NFP_NET_CFG_BPF_SIZE, n_instr);
+        //Write the memory location of the BPF assembly program 
 	nn_writeq(nn, NFP_NET_CFG_BPF_ADDR, bpf_addr);
 
 	/* Load up the JITed code */
@@ -244,6 +250,7 @@ int nfp_net_bpf_offload(struct nfp_net *nn, struct tc_cls_bpf_offload *cls_bpf)
 	void *code;
 	int err;
 
+        //Get the maximum size of the BPF program
 	max_instr = nn_readw(nn, NFP_NET_CFG_BPF_MAX_LEN);
 
 	switch (cls_bpf->command) {
