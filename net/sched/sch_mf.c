@@ -135,49 +135,59 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
         
 	th = tcp_hdr(skb);
 	int length = (th->doff * 4) - sizeof(struct tcphdr);        
-
+        //Jump to the beginning of the TCP option
 	ptr = (unsigned char *)(th + 1);
+        //Jump to beginning of the MF optionm
+        ptr += 16;
+        feedback = ptr + 2;
+//        pr_info("feedback= %d, rate= %lld", *feedback, rate);
+        if(*feedback > rate)
+            *feedback = rate;
+        mfc->req_thput = *ptr;
+        mfc->cur_thput = *(ptr + 1);
+        mfc->feedback_thput = *(ptr + 2);
+        mfc->prop_delay_est = *(ptr + 3);        
         
-	while (length > 0) {
-		opcode = *ptr++;
-
-		switch (opcode) {
-		case TCPOPT_EOL:
-			return;
-		case TCPOPT_NOP:	/* Ref: RFC 793 section 3.1 */
-			length--;
-			continue;
-		default:
-			opsize = *ptr++;
-			if (opsize < 2) /* "silly options" */
-				return;
-			if (opsize > length)
-				return;	/* don't parse partial options */
-			switch (opcode) {
-                        
-//                        case TCPOPT_TIMESTAMP:
-//                            if (opsize == TCPOLEN_TIMESTAMP) {    
-//                                tsval = get_unaligned_be32(ptr);
-//                                pr_info("Time stamp: %u !!!!!!!!!!!!!!!!!!!!", tsval);
-//                            }
-//                            break;
-			case TCPOPT_MF:
-				if (opsize == TCPOLEN_MF) {    
-                                        feedback = ptr + 2;
-//                                        pr_info("feedback= %d, rate= %lld", *feedback, rate);
-                                        if(*feedback > rate)
-                                            *feedback = rate;
-					mfc->req_thput = *ptr;
-                                        mfc->cur_thput = *(ptr + 1);
-                                        mfc->feedback_thput = *(ptr + 2);
-                                        mfc->prop_delay_est = *(ptr + 3); 
-				}
-				return;                                        
-			}
-			ptr += opsize-2;
-			length -= opsize;
-		}
-	}
+//	while (length > 0) {
+//		opcode = *ptr++;
+//
+//		switch (opcode) {
+//		case TCPOPT_EOL:
+//			return;
+//		case TCPOPT_NOP:	/* Ref: RFC 793 section 3.1 */
+//			length--;
+//			continue;
+//		default:
+//			opsize = *ptr++;
+//			if (opsize < 2) /* "silly options" */
+//				return;
+//			if (opsize > length)
+//				return;	/* don't parse partial options */
+//			switch (opcode) {   
+//                        
+////                        case TCPOPT_TIMESTAMP:
+////                            if (opsize == TCPOLEN_TIMESTAMP) {    
+////                                tsval = get_unaligned_be32(ptr);
+////                                pr_info("Time stamp: %u !!!!!!!!!!!!!!!!!!!!", tsval);
+////                            }
+////                            break;
+//			case TCPOPT_MF:
+//				if (opsize == TCPOLEN_MF) {    
+//                                        feedback = ptr + 2;
+////                                        pr_info("feedback= %d, rate= %lld", *feedback, rate);
+//                                        if(*feedback > rate)
+//                                            *feedback = rate;
+//					mfc->req_thput = *ptr;
+//                                        mfc->cur_thput = *(ptr + 1);
+//                                        mfc->feedback_thput = *(ptr + 2);
+//                                        mfc->prop_delay_est = *(ptr + 3); 
+//				}
+//				return;                                        
+//			}
+//			ptr += opsize-2;
+//			length -= opsize;
+//		}
+//	}
 }
 
 static void record_mf(struct Qdisc *sch)
