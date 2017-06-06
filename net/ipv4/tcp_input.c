@@ -4109,7 +4109,7 @@ void tcp_parse_options(const struct sk_buff *skb,
                                             seg_type = "DATA";
                                         else
                                             seg_type = "ACK";
-                                pr_err("Receiving MF TCP in %s segment on [%d.%d.%d.%d] : req_thput:%d curr: %d feedback_thput:%d", 
+                                pr_err("Receiving MF TCP in %s segment on [%d.%d.%d.%d] : req_thput:%d curr_thput: %d feedback_thput:%d", 
                                         seg_type, ip_hdr(skb)->daddr & 255, (ip_hdr(skb)->daddr >> 8U) & 255,
                                         (ip_hdr(skb)->daddr >> 16U) & 255, (ip_hdr(skb)->daddr >> 24U) & 255,                                        
                                         (int)opt_rx->req_thput, (int)opt_rx->cur_thput, (int)opt_rx->feedback_thput);                                

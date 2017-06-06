@@ -69,10 +69,10 @@ struct mf_log {
 
 
 
-static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
-		       struct tcp_mf_cookie *mfc)
+static void mf_apply(struct Qdisc *sch, struct sk_buff *skb)
 {
         unsigned char *ptr;
+        struct tcp_mf_cookie mfc;
 //        u32 tsval;
         u8 *feedback;
 	int opsize;
@@ -102,8 +102,8 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
             delta = delta/(1024*1024);            
             rate = (q->capacity + delta)/q->nFlow;
 
-            pr_err("XCP Capacity=%lu  BPS=%llu  delata=%llu Parsistent Queue=%d feedback rate=%lld KB packet len=%u", 
-                    q->capacity, q->incoming_rate, delta, q->parsistant_queue, rate, skb->len); 
+//            pr_err("XCP Capacity=%lu  BPS=%llu  delata=%llu Parsistent Queue=%d feedback rate=%lld KB packet len=%u", 
+//                    q->capacity, q->incoming_rate, delta, q->parsistant_queue, rate, skb->len); 
 
             
             if(elapsed_time > control_interval)
@@ -129,24 +129,30 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb,
 
         }
 
-        //convert into bytes back to to KB (as MF TCP option)
-        rate = rate/1024;        
-        pr_info("backlog=%u KB, queue_gradiant=%d KB rate=%lld KB", sch->qstats.backlog/1000, q->queue_gradiant/1000, rate);        
-        
-	th = tcp_hdr(skb);
-	int length = (th->doff * 4) - sizeof(struct tcphdr);        
-        //Jump to the beginning of the TCP option
-	ptr = (unsigned char *)(th + 1);
-        //Jump to beginning of the MF optionm
-        ptr += 16;
-        feedback = ptr + 2;
-//        pr_info("feedback= %d, rate= %lld", *feedback, rate);
-        if(*feedback > rate)
-            *feedback = rate;
-        mfc->req_thput = *ptr;
-        mfc->cur_thput = *(ptr + 1);
-        mfc->feedback_thput = *(ptr + 2);
-        mfc->prop_delay_est = *(ptr + 3);        
+        if(likely(mf == 0 || mf == 1))
+        {
+            //convert into bytes back to to KB (as MF TCP option)
+            rate = rate/1024;        
+//            pr_info("backlog=%u KB, queue_gradiant=%d KB rate=%lld KB", sch->qstats.backlog/1000, q->queue_gradiant/1000, rate);        
+
+            th = tcp_hdr(skb);
+            int length = (th->doff * 4) - sizeof(struct tcphdr);        
+            //Jump to the beginning of the TCP option
+            ptr = (unsigned char *)(th + 1);
+            //Jump to beginning of the MF optionm
+            ptr += 16;
+            feedback = ptr + 2;
+    //        pr_info("feedback= %d, rate= %lld", *feedback, rate);
+            if(*feedback > rate)
+                *feedback = rate;
+//            mfc.req_thput = *ptr;
+//            mfc.cur_thput = *(ptr + 1);
+//            mfc.feedback_thput = *(ptr + 2);
+//            mfc.prop_delay_est = *(ptr + 3);                    
+//            if(mfc.feedback_thput > 0 || mfc.req_thput > 0 )
+//                pr_err("IN SCH MF: req_thput:%d feedback_thput:%d curr_thput: %d prop_delay:%d", 
+//                    (int)mfc.req_thput, (int)mfc.feedback_thput, (int)mfc.cur_thput, (int)mfc.prop_delay_est);                                    
+        }           
         
 //	while (length > 0) {
 //		opcode = *ptr++;
@@ -258,7 +264,6 @@ static inline struct sk_buff *mf_dequeue(struct Qdisc *sch)
 {
         struct tcphdr *tcph;
         struct mf_sched_data *q = qdisc_priv(sch);
-	struct tcp_mf_cookie mfc;
         struct sk_buff *skb = qdisc_dequeue_peeked(q->qdisc);
         if(skb)
         {
@@ -269,11 +274,7 @@ static inline struct sk_buff *mf_dequeue(struct Qdisc *sch)
             tcph = tcp_hdr(skb);
             if(tcph)
             {
-                memset(&mfc, 0, sizeof(struct tcp_mf_cookie));
-                mf_apply(sch, skb, &mfc);
-                if(mfc.feedback_thput > 0 || mfc.req_thput > 0 )
-                    pr_err("IN SCH MF: req_thput:%d feedback_thput:%d curr_thput: %d prop_delay:%d", 
-                        (int)mfc.req_thput, (int)mfc.feedback_thput, (int)mfc.cur_thput, (int)mfc.prop_delay_est);                        
+                mf_apply(sch, skb);
             }
             return skb;            
         }
