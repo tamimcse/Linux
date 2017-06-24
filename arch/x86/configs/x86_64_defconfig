@@ -679,16 +679,17 @@ CONFIG_SND_PCMCIA=y
 #CONFIG_SND_DESIGNWARE_I2S=m
 
 
-#Needed for tc cls_bpf
+#Needed for tc bpf classifier and action
 CONFIG_NET_CLS=y
 CONFIG_NET_CLS_ACT=y
-CONFIG_NET_ACT_BPF=y
 CONFIG_NET_EGRESS=y
 CONFIG_NET_INGRESS=y
 #enable sch_clsact
 CONFIG_NET_SCH_INGRESS=m
-#Enable cls_bpf
+#bpf classifier
 CONFIG_NET_CLS_BPF=m
+#bpf action
+CONFIG_NET_ACT_BPF=y
 #Transmit Packet Steering
 #CONFIG_XPS=y
 #PF_PACKET socket
