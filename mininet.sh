@@ -19,7 +19,7 @@ sudo cat /proc/net/tcpprobe > trace.data &
 TCPCAP=$! &&
 echo $TCPCAP &&
 sudo chmod a+rwx -R *.data &&
-sudo python router.py; 
+sudo python router_bpf.py; 
 if [ $is_mf -eq '1' ] && [ $is_xcp -eq '0' ]
 then
     sudo cat trace.data | grep -a '172.16.101.1:8554 172.16' > h1-im.data &&
