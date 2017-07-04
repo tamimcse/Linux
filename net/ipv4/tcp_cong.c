@@ -18,7 +18,10 @@
 
 static DEFINE_SPINLOCK(tcp_cong_list_lock);
 static LIST_HEAD(tcp_cong_list);
+
+#if IS_ENABLED(CONFIG_TCP_MF)
 struct tcp_rate_subcriber *subcriber;
+#endif
 
 /* Simple linear search, don't expect many entries! */
 static struct tcp_congestion_ops *tcp_ca_find(const char *name)
@@ -116,7 +119,7 @@ void tcp_unregister_congestion_control(struct tcp_congestion_ops *ca)
 }
 EXPORT_SYMBOL_GPL(tcp_unregister_congestion_control);
 
-
+#if IS_ENABLED(CONFIG_TCP_MF)
 /*
  * Attach a new rate subscriber
  */
@@ -137,6 +140,7 @@ int tcp_unregister_rate_subscriber(void)
     return 0;
 }
 EXPORT_SYMBOL_GPL(tcp_unregister_rate_subscriber);
+#endif
 
 u32 tcp_ca_get_key_by_name(const char *name, bool *ecn_ca)
 {
@@ -401,8 +405,10 @@ u32 tcp_slow_start(struct tcp_sock *tp, u32 acked)
 
 	acked -= cwnd - tp->snd_cwnd;
 	tp->snd_cwnd = min(cwnd, tp->snd_cwnd_clamp);
+#if IS_ENABLED(CONFIG_TCP_MF)
         if(subcriber)
             subcriber->update_rate(tp->snd_cwnd);
+#endif
 
 	return acked;
 }
@@ -427,8 +433,10 @@ void tcp_cong_avoid_ai(struct tcp_sock *tp, u32 w, u32 acked)
 		tp->snd_cwnd += delta;
 	}
 	tp->snd_cwnd = min(tp->snd_cwnd, tp->snd_cwnd_clamp);
+#if IS_ENABLED(CONFIG_TCP_MF)        
         if(subcriber)
             subcriber->update_rate(tp->snd_cwnd);
+#endif        
 }
 EXPORT_SYMBOL_GPL(tcp_cong_avoid_ai);
 
@@ -454,8 +462,10 @@ void tcp_reno_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	}
 	/* In dangerous area, increase slowly. */
 	tcp_cong_avoid_ai(tp, tp->snd_cwnd, acked);
+#if IS_ENABLED(CONFIG_TCP_MF)        
         if(subcriber)
             subcriber->update_rate(tp->snd_cwnd);
+#endif        
 }
 EXPORT_SYMBOL_GPL(tcp_reno_cong_avoid);
 
@@ -463,8 +473,10 @@ EXPORT_SYMBOL_GPL(tcp_reno_cong_avoid);
 u32 tcp_reno_ssthresh(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
+#if IS_ENABLED(CONFIG_TCP_MF)        
         if(subcriber)
             subcriber->update_rate(tp->snd_cwnd);
+#endif        
 	return max(tp->snd_cwnd >> 1U, 2U);
 }
 EXPORT_SYMBOL_GPL(tcp_reno_ssthresh);

@@ -971,13 +971,13 @@ struct tcp_rate_subcriber {
 	char 		name[TCP_CA_NAME_MAX];
 	struct module 	*owner;
 };
+
+int tcp_register_rate_subscriber(struct tcp_rate_subcriber *subscriber);
+int tcp_unregister_rate_subscriber(void);
 #endif
 
 int tcp_register_congestion_control(struct tcp_congestion_ops *type);
 void tcp_unregister_congestion_control(struct tcp_congestion_ops *type);
-
-int tcp_register_rate_subscriber(struct tcp_rate_subcriber *subscriber);
-int tcp_unregister_rate_subscriber(void);
 
 void tcp_assign_congestion_control(struct sock *sk);
 void tcp_init_congestion_control(struct sock *sk);
