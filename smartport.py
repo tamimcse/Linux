@@ -41,6 +41,8 @@ def main(cli=0):
     net = Mininet( topo=topo, controller = None )
     net.start()
 
+    net['h2'].cmd( 'tc qdisc add dev h2-eth0 root handle 1: mf')
+
     hosts = [net['h1'], net['h2']]
         
 
