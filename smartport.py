@@ -77,7 +77,7 @@ def main(cli=0):
     hosts = [net['h1'], net['h2']]
         
 
-    net.iperf(hosts, seconds=30, l4Type='UDP', udpBw='2000M')
+    net.iperf(hosts, seconds=30, l4Type='TCP', udpBw='10M')
     CLI( net )
     net.stop()
 
