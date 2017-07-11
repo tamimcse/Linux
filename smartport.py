@@ -28,34 +28,12 @@ from mininet.cli import CLI
 import sys
 import time
 
-class LinuxRouter( Node ):
-    "A Node with IP forwarding enabled."
-
-    def config( self, **params ):
-        super( LinuxRouter, self).config( **params )
-        # Enable forwarding on the router
-        self.cmd( 'sysctl net.ipv4.ip_forward=1' )
-
-    def terminate( self ):
-        self.cmd( 'sysctl net.ipv4.ip_forward=0' )
-        super( LinuxRouter, self ).terminate()
-
 
 class NetworkTopo( Topo ):
-    "A LinuxRouter connecting three IP subnets"
-
     def build( self, **_opts ):	
         h1 = self.addHost( 'h1', ip='172.16.101.1/24', defaultRoute='via 172.16.101.2' )
-        h2 = self.addHost( 'h2', ip='172.16.102.1/24', defaultRoute='via 172.16.102.2' )
-
-
-        r1 = self.addNode( 'r1', cls=LinuxRouter, ip='172.16.101.2/24' )
-
-        self.addLink( h1, r1, intfName2='r1-eth1', params2={ 'ip' : '172.16.101.2/24' })
-        self.addLink( h2, r1, intfName2='r1-eth2', params2={ 'ip' : '172.16.102.2/24' })
-#       Don't move the line. It doesn't work for some reason
-#        self.addLink( r1, r2, intfName1='r1-eth1', params1={ 'ip' : '172.16.10.2/24' }, intfName2='r2-eth1', params2={ 'ip' : '172.16.10.3/24' })
-
+        h2 = self.addHost( 'h2', ip='172.16.101.2/24', defaultRoute='via 172.16.101.1' )
+	self.addLink(h1, h2)
 
 def main(cli=0):
     "Test linux router"
@@ -63,21 +41,10 @@ def main(cli=0):
     net = Mininet( topo=topo, controller = None )
     net.start()
 
-    info( '*** Configuring routers:\n' )
-#    net[ 'r1' ].cmd( 'ip neigh add 172.16.10.3 lladdr 2e:a9:cf:14:b4:6a dev r1-eth1' )
-    net[ 'r1' ].cmd( 'ip route add 172.16.102/24 nexthop via 172.16.102.2' )
-
-    info( '*** Routing Table on Router:\n' )
-    info( net[ 'r1' ].cmd( 'route' ) )
-
-
-
-    #net.pingAll()
-
     hosts = [net['h1'], net['h2']]
         
 
-    net.iperf(hosts, seconds=30, l4Type='TCP', udpBw='10M')
+    net.iperf(hosts, seconds=30, l4Type='TCP', udpBw='1000M')
     CLI( net )
     net.stop()
 
