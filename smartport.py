@@ -20,10 +20,10 @@ already built into Linux.
 
 from mininet.topo import Topo
 from mininet.net import Mininet
-from mininet.node import Node
 from mininet.link import TCLink
-from mininet.node import CPULimitedHost
+from mininet.node import Node, CPULimitedHost
 from mininet.log import setLogLevel, info
+from mininet.util import custom, waitListening
 from mininet.cli import CLI
 import sys
 import time
@@ -38,15 +38,14 @@ class NetworkTopo( Topo ):
 def main(cli=0):
     "Test linux router"
     topo = NetworkTopo()
-    net = Mininet( topo=topo, controller = None )
+
+    host = custom( CPULimitedHost, cpu=0.5)
+    net = Mininet( topo=topo, host=host, controller = None )
     net.start()
-
     net['h2'].cmd( 'tc qdisc add dev h2-eth0 root handle 1: mf')
-
-    hosts = [net['h1'], net['h2']]
-        
-
+    hosts = [net['h1'], net['h2']]        
     net.iperf(hosts, seconds=30, l4Type='TCP', udpBw='1000M')
+
     CLI( net )
     net.stop()
 
