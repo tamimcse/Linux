@@ -43,8 +43,11 @@ def main(cli=0):
     net = Mininet( topo=topo, host=host, controller = None )
     net.start()
     net['h2'].cmd( 'tc qdisc add dev h2-eth0 root handle 1: mf')
-    hosts = [net['h1'], net['h2']]        
-    net.iperf(hosts, seconds=30, l4Type='TCP', udpBw='1000M')
+ #   net['h2'].cmd('iperf -s -p 45678 &')
+#    net['h1'].cmd('iperf -c 172.16.101.2 -p 45678 -t 30')
+
+#    hosts = [net['h1'], net['h2']]        
+#    net.iperf(hosts, seconds=30, l4Type='TCP', udpBw='1000M')
 
     CLI( net )
     net.stop()
