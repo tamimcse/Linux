@@ -389,7 +389,7 @@ CONFIG_PCI_IOV=y
 #enable RTL8111/8168/8411 PCI Express Gigabit Ethernet Interface
 CONFIG_R8169=m
 
-#Mellanox Ethernet card
+#Mellanox NIC and Switch. Requisite modules such as I2C, PCI, IOMMU, HWMON enabled by default
 CONFIG_NET_VENDOR_MELLANOX=y
 CONFIG_MLXSW_PCI=m
 CONFIG_MLXSW_CORE=m
