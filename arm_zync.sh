@@ -24,7 +24,7 @@ make ARCH=arm CROSS_COMPILE=arm-linux-gnueabi-  UIMAGE_LOADADDR=0x8000 uImage -j
 
 
 #Rocker switchdev
-./configure --target-list=x86_64-softmmu --extra-cflags=-DDEBUG_ROCKER  --disable-werror --enable-spice
+./configure --target-list=x86_64-softmmu --extra-cflags=-DDEBUG_ROCKER  --disable-werror
 make -j8
 sudo x86_64-softmmu/qemu-system-x86_64 ­-device rocker,name=sw1,len-ports=4,ports[0]=dev1,ports[1]=dev2,ports[2]=dev3,ports[3]=dev4
 sudo x86_64-softmmu/qemu-system-x86_64 -m 2048 -enable-kvm -drive if=virtio,file=test.qcow2,cache=none -device rocker,name=sw1,len-ports=8 -cdrom ubuntu-16.04.2-desktop-amd64.iso
@@ -35,7 +35,7 @@ sudo x86_64-softmmu/qemu-system-x86_64 -m 2048 -enable-kvm  -kernel /boot/vmlinu
 ./qemu-img create -f raw ubuntu.img 16G
 sudo x86_64-softmmu/qemu-system-x86_64 -m 2048  -enable-kvm -hda ubuntu.img -cdrom ubuntu-16.04.2-desktop-amd64.iso -boot d
 sudo x86_64-softmmu/qemu-system-x86_64 -m 2048  -enable-kvm -hda ubuntu.img -device rocker,name=sw1,len-ports=4
-sudo x86_64-softmmu/qemu-system-x86_64 -m 2048  -enable-kvm -hda ubuntu.img -device rocker,name=sw1,len-ports=4 -vga qxl -spice port=5930,disable-ticketing -device virtio-serial-pci -device virtserialport,chardev=spicechannel0,name=com.redhat.spice.0 -chardev spicevmc,id=spicechannel0,name=vdagent
+
 
 
 sudo ip addr add 10.0.1.1 dev eth1
