@@ -37,12 +37,48 @@ sudo x86_64-softmmu/qemu-system-x86_64 -m 2048  -enable-kvm -hda ubuntu.img -cdr
 sudo x86_64-softmmu/qemu-system-x86_64 -m 2048  -enable-kvm -hda ubuntu.img -device rocker,name=sw1,len-ports=4
 
 
+lscpi
+ifconfig
+ip link show | grep switch
+watch -d -n 1 sensors
 
-sudo ip addr add 10.0.1.1 dev eth1
+sudo ip address add 1.1.1.2/24 dev eth1
+sudo ip link set dev eth1 up
+#sudo ip address flush dev eth1
+
 sudo ip addr add 10.0.2.1 dev eth2
 sudo ip addr add 10.0.3.1 dev eth3
 sudo ip addr add 10.0.4.1 dev eth4
 
 ethtool-i eth1
+tcpdump -ei eth1
+
+#Create bridge
+ip link add name br0 type bridge
+ip link set dev br0 type bridge vlan_filtering 1
+#ip link set dev br0 type bridge ageing_time 1000
+
+#to make bridge functinal
+ip link set dev br0 up
+
+#add a netdev to the bridge (enslaving)
+ip link set dev eth1 master br0
+ip link set dev eth2 master br0
+ip link set dev eth1 up
+ip link set dev eth2 up
+
+#To unslave netdev from bridge
+#ip link set dev DEV nomaster
+
+bridge vlan show
+ip -d link show dev br0
+#To delete bridge 
+ip link del dev br0
+
+#To show the bridge forwarding table
+bridge fdb show br br0
+watch -d -n 1 bridge fdb show br br0
+
+
 
 
