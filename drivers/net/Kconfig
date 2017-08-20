@@ -328,6 +328,11 @@ config VETH
 	  When one end receives the packet it appears on its pair and vice
 	  versa.
 
+config ROCKER_DEV
+	tristate "Virtual Rocker device"
+	---help---
+	  This device is a virtual switch
+
 config VIRTIO_NET
 	tristate "Virtio network driver"
 	depends on VIRTIO

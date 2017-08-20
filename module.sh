@@ -1,4 +1,4 @@
-mod=sch_mf
+mod=rocker_dev
 echo $mod 
 for pid in $(sudo lsof | grep $mod | awk '{print $2}') ; do sudo kill $pid ; done &&
 sudo modprobe -r $mod &&
