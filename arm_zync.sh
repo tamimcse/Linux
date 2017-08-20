@@ -81,4 +81,25 @@ watch -d -n 1 bridge fdb show br br0
 
 
 
+Create veth
+------------------------------------------------------
+# ip link add type veth
+# ip link show
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT 
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP mode DEFAULT qlen 1000
+    link/ether 52:54:00:5a:d2:86 brd ff:ff:ff:ff:ff:ff
+3: eth1: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN mode DEFAULT qlen 1000
+    link/ether 52:54:00:d7:26:a6 brd ff:ff:ff:ff:ff:ff
+23: veth0: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN mode DEFAULT qlen 1000
+    link/ether ee:c0:0e:d6:ae:09 brd ff:ff:ff:ff:ff:ff
+24: veth1: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN mode DEFAULT qlen 1000
+    link/ether 4e:e8:84:bd:01:f0 brd ff:ff:ff:ff:ff:ff
+# ip addr add 10.0.0.1/24 dev veth0
+# ip link set veth0 up
+# ip link set veth1 up
+# force sending packets out veth0
+# ping 10.0.0.1
+
+
 
