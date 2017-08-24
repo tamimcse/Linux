@@ -39,7 +39,8 @@ struct rocker {
 
         /* front-panel ports */
         struct net_device *fp_port[ROCKER_FP_PORTS_MAX];
-
+        uint32_t n_ports;
+        
         /* register backings */
         uint32_t test_reg;
         uint64_t test_reg64;
@@ -68,7 +69,7 @@ struct rocker {
 
 	atomic64_t		dropped;
 	unsigned		requested_headroom;
-};
+} *rocker;
 
 /*
  * ethtool interface
@@ -203,8 +204,8 @@ static struct rtnl_link_ops rocker_link_ops;
 static int rocker_newlink(struct net *src_net, struct net_device *dev1,
 			 struct nlattr *tb[], struct nlattr *data[])
 {
-    pr_info("In rocker_newlink !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    int i;
+    pr_info("In rocker_newlink !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");   
+    rocker = kzalloc(sizeof(*rocker), GFP_KERNEL);
     
     struct net_device *dev;
 
@@ -212,11 +213,16 @@ static int rocker_newlink(struct net *src_net, struct net_device *dev1,
     read_lock(&dev_base_lock);
     dev = first_net_device(src_net);
     while (dev) {
-        printk(KERN_INFO "found [%s]\n", dev->name);
+        rocker->fp_port[rocker->n_ports++]=dev;
         dev = next_net_device(dev);
     }      
     read_unlock(&dev_base_lock);
     
+    int i;
+    for(i = 0; i < rocker->n_ports; i++)
+    {
+        printk(KERN_INFO "found [%s]\n", rocker->fp_port[i]->name);    
+    }    
     //Get namespace
     
     
