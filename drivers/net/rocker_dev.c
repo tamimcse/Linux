@@ -200,11 +200,22 @@ static int rocker_validate(struct nlattr *tb[], struct nlattr *data[])
 
 static struct rtnl_link_ops rocker_link_ops;
 
-static int rocker_newlink(struct net *src_net, struct net_device *dev,
+static int rocker_newlink(struct net *src_net, struct net_device *dev1,
 			 struct nlattr *tb[], struct nlattr *data[])
 {
     pr_info("In rocker_newlink !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     int i;
+    
+    struct net_device *dev;
+
+    //Get all the netdev from namespace
+    read_lock(&dev_base_lock);
+    dev = first_net_device(src_net);
+    while (dev) {
+        printk(KERN_INFO "found [%s]\n", dev->name);
+        dev = next_net_device(dev);
+    }      
+    read_unlock(&dev_base_lock);
     
     //Get namespace
     
