@@ -67,6 +67,9 @@ ip link set dev eth2 master br0
 ip link set dev eth1 up
 ip link set dev eth2 up
 
+#To show all the bridges 
+brctl show
+
 #To unslave netdev from bridge
 #ip link set dev DEV nomaster
 
