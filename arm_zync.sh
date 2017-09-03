@@ -105,4 +105,8 @@ Create veth
 # ping 10.0.0.1
 
 
+Create rocker (based on veth)
+-----------------------------------------------------------------
+sudo ip link add type rocker
+
 
