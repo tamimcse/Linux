@@ -22,6 +22,7 @@
 #include <net/xfrm.h>
 #include <linux/veth.h>
 #include <linux/module.h>
+#include <linux/if_macvlan.h>
 
 #define DRV_NAME	"rocker"
 #define DRV_VERSION	"1.0"
@@ -330,6 +331,81 @@ out:
 	rcu_read_unlock();
 }
 
+static rx_handler_result_t macvlan_handle_frame(struct sk_buff **pskb)
+{
+	struct macvlan_port *port;
+	struct sk_buff *skb = *pskb;
+	const struct ethhdr *eth = eth_hdr(skb);
+	const struct macvlan_dev *vlan;
+	const struct macvlan_dev *src;
+	struct net_device *dev;
+	unsigned int len = 0;
+	int ret;
+	rx_handler_result_t handle_res;
+        
+        pr_info("Received packet !!!");
+
+//	port = macvlan_port_get_rcu(skb->dev);
+//	if (is_multicast_ether_addr(eth->h_dest)) {
+//		unsigned int hash;
+//
+//		skb = ip_check_defrag(dev_net(skb->dev), skb, IP_DEFRAG_MACVLAN);
+//		if (!skb)
+//			return RX_HANDLER_CONSUMED;
+//		*pskb = skb;
+//		eth = eth_hdr(skb);
+//		macvlan_forward_source(skb, port, eth->h_source);
+//		src = macvlan_hash_lookup(port, eth->h_source);
+//		if (src && src->mode != MACVLAN_MODE_VEPA &&
+//		    src->mode != MACVLAN_MODE_BRIDGE) {
+//			/* forward to original port. */
+//			vlan = src;
+//			ret = macvlan_broadcast_one(skb, vlan, eth, 0) ?:
+//			      netif_rx(skb);
+//			handle_res = RX_HANDLER_CONSUMED;
+//			goto out;
+//		}
+//
+//		hash = mc_hash(NULL, eth->h_dest);
+//		if (test_bit(hash, port->mc_filter))
+//			macvlan_broadcast_enqueue(port, src, skb);
+//
+//		return RX_HANDLER_PASS;
+//	}
+//
+//	macvlan_forward_source(skb, port, eth->h_source);
+//	if (port->passthru)
+//		vlan = list_first_or_null_rcu(&port->vlans,
+//					      struct macvlan_dev, list);
+//	else
+//		vlan = macvlan_hash_lookup(port, eth->h_dest);
+//	if (vlan == NULL)
+//		return RX_HANDLER_PASS;
+//
+//	dev = vlan->dev;
+//	if (unlikely(!(dev->flags & IFF_UP))) {
+//		kfree_skb(skb);
+//		return RX_HANDLER_CONSUMED;
+//	}
+//	len = skb->len + ETH_HLEN;
+//	skb = skb_share_check(skb, GFP_ATOMIC);
+//	if (!skb) {
+//		ret = NET_RX_DROP;
+//		handle_res = RX_HANDLER_CONSUMED;
+//		goto out;
+//	}
+//
+//	*pskb = skb;
+//	skb->dev = dev;
+//	skb->pkt_type = PACKET_HOST;
+//
+//	ret = NET_RX_SUCCESS;
+//	handle_res = RX_HANDLER_ANOTHER;
+//out:
+//	macvlan_count_rx(vlan, len, ret == NET_RX_SUCCESS, false);
+	return handle_res;
+}
+
 static const struct net_device_ops veth_netdev_ops = {
 	.ndo_init            = veth_dev_init,
 	.ndo_open            = veth_open,
@@ -404,6 +480,7 @@ static int veth_newlink(struct net *src_net, struct net_device *rocker_dev,
 			 struct nlattr *tb[], struct nlattr *data[])
 {
 	int err;
+        struct macvlan_port *port;
 	struct net_device *peer;
 	struct veth_priv *priv;
 	char ifname[IFNAMSIZ];
@@ -424,6 +501,11 @@ static int veth_newlink(struct net *src_net, struct net_device *rocker_dev,
             priv = netdev_priv(dev);
             rocker->fp_port_peer[rocker->n_ports] = priv->peer;
             rocker->n_ports++;        
+            err = netdev_rx_handler_register(dev, macvlan_handle_frame, port);
+            if (err)
+            {
+                pr_err("Couldn't register netdev_rx_handler_register !!!!!");
+            }                    
             dev = next_net_device(dev);
         }      
         read_unlock(&dev_base_lock);
@@ -432,7 +514,9 @@ static int veth_newlink(struct net *src_net, struct net_device *rocker_dev,
         for(i = 0; i < rocker->n_ports; i++)
         {
             printk(KERN_INFO "found [%s] Peer: [%s]\n", rocker->fp_port[i]->name, rocker->fp_port_peer[i]->name);    
-        }        
+        }    
+        
+
 
         
 //	/*
