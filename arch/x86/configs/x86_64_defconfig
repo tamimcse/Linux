@@ -319,7 +319,7 @@ CONFIG_TCP_INIGO=y
 
 #Veth, Network namespace, and NetEm setup (Needed for Mininet)
 CONFIG_VETH=m
-CONFIG_NETNS=y
+CONFIG_NET_NS=y
 
 #Packet scheduling
 CONFIG_NET_SCH_NETEM=m
