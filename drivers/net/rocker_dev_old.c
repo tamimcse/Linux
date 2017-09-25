@@ -1,5 +1,7 @@
 /*
- *  drivers/net/veth.c
+ *  
+#include "linux/container.h"
+#include "net/switchdev.h"drivers/net/veth.c
  *
  *  Copyright (C) 2007 OpenVZ http://openvz.org, SWsoft Inc
  *
@@ -16,12 +18,15 @@
 
 #include <net/rtnetlink.h>
 #include <net/dst.h>
+#include <net/switchdev.h>
 #include <net/xfrm.h>
 #include <linux/veth.h>
 #include <linux/module.h>
+#include <linux/if_macvlan.h>
 
-#define DRV_NAME	"veth"
+#define DRV_NAME	"rocker"
 #define DRV_VERSION	"1.0"
+#define ROCKER_FP_PORTS_MAX 62
 
 struct pcpu_vstats {
 	u64			packets;
@@ -31,6 +36,10 @@ struct pcpu_vstats {
 
 struct veth_priv {
 	struct net_device __rcu	*peer;
+        /* front-panel ports */
+        struct net_device *fp_port[ROCKER_FP_PORTS_MAX];
+        struct net_device *fp_port_peer[ROCKER_FP_PORTS_MAX];
+        int n_ports;
 	atomic64_t		dropped;
 	unsigned		requested_headroom;
 };
@@ -101,6 +110,46 @@ static const struct ethtool_ops veth_ethtool_ops = {
 	.get_strings		= veth_get_strings,
 	.get_sset_count		= veth_get_sset_count,
 	.get_ethtool_stats	= veth_get_ethtool_stats,
+};
+
+int rocker_switchdev_port_attr_get(struct net_device *dev, struct switchdev_attr *attr)
+{
+    return 0;
+}
+
+int rocker_switchdev_port_attr_set(struct net_device *dev, const struct switchdev_attr *attr,
+                                   struct switchdev_trans *trans)
+{
+    return 0;    
+}
+
+int rocker_switchdev_port_obj_add(struct net_device *dev,
+                                  const struct switchdev_obj *obj,
+                                  struct switchdev_trans *trans)
+{
+    return 0;    
+}
+
+int rocker_switchdev_port_obj_del(struct net_device *dev,
+                                  const struct switchdev_obj *obj)
+{
+    return 0;    
+}
+
+int rocker_switchdev_port_obj_dump(struct net_device *dev,
+                                   struct switchdev_obj *obj,
+                                   switchdev_obj_dump_cb_t *cb)
+{
+    return 0;    
+}
+
+
+static const struct switchdev_ops rocker_switchdev_ops = {
+	.switchdev_port_attr_get = rocker_switchdev_port_attr_get,
+	.switchdev_port_attr_set = rocker_switchdev_port_attr_set,
+	.switchdev_port_obj_add  = rocker_switchdev_port_obj_add,
+	.switchdev_port_obj_del	= rocker_switchdev_port_obj_del,
+	.switchdev_port_obj_dump = rocker_switchdev_port_obj_dump
 };
 
 static netdev_tx_t veth_xmit(struct sk_buff *skb, struct net_device *dev)
@@ -282,6 +331,81 @@ out:
 	rcu_read_unlock();
 }
 
+static rx_handler_result_t macvlan_handle_frame(struct sk_buff **pskb)
+{
+	struct macvlan_port *port;
+	struct sk_buff *skb = *pskb;
+	const struct ethhdr *eth = eth_hdr(skb);
+	const struct macvlan_dev *vlan;
+	const struct macvlan_dev *src;
+	struct net_device *dev;
+	unsigned int len = 0;
+	int ret;
+	rx_handler_result_t handle_res;
+        
+        pr_info("Received packet !!!");
+
+//	port = macvlan_port_get_rcu(skb->dev);
+//	if (is_multicast_ether_addr(eth->h_dest)) {
+//		unsigned int hash;
+//
+//		skb = ip_check_defrag(dev_net(skb->dev), skb, IP_DEFRAG_MACVLAN);
+//		if (!skb)
+//			return RX_HANDLER_CONSUMED;
+//		*pskb = skb;
+//		eth = eth_hdr(skb);
+//		macvlan_forward_source(skb, port, eth->h_source);
+//		src = macvlan_hash_lookup(port, eth->h_source);
+//		if (src && src->mode != MACVLAN_MODE_VEPA &&
+//		    src->mode != MACVLAN_MODE_BRIDGE) {
+//			/* forward to original port. */
+//			vlan = src;
+//			ret = macvlan_broadcast_one(skb, vlan, eth, 0) ?:
+//			      netif_rx(skb);
+//			handle_res = RX_HANDLER_CONSUMED;
+//			goto out;
+//		}
+//
+//		hash = mc_hash(NULL, eth->h_dest);
+//		if (test_bit(hash, port->mc_filter))
+//			macvlan_broadcast_enqueue(port, src, skb);
+//
+//		return RX_HANDLER_PASS;
+//	}
+//
+//	macvlan_forward_source(skb, port, eth->h_source);
+//	if (port->passthru)
+//		vlan = list_first_or_null_rcu(&port->vlans,
+//					      struct macvlan_dev, list);
+//	else
+//		vlan = macvlan_hash_lookup(port, eth->h_dest);
+//	if (vlan == NULL)
+//		return RX_HANDLER_PASS;
+//
+//	dev = vlan->dev;
+//	if (unlikely(!(dev->flags & IFF_UP))) {
+//		kfree_skb(skb);
+//		return RX_HANDLER_CONSUMED;
+//	}
+//	len = skb->len + ETH_HLEN;
+//	skb = skb_share_check(skb, GFP_ATOMIC);
+//	if (!skb) {
+//		ret = NET_RX_DROP;
+//		handle_res = RX_HANDLER_CONSUMED;
+//		goto out;
+//	}
+//
+//	*pskb = skb;
+//	skb->dev = dev;
+//	skb->pkt_type = PACKET_HOST;
+//
+//	ret = NET_RX_SUCCESS;
+//	handle_res = RX_HANDLER_ANOTHER;
+//out:
+//	macvlan_count_rx(vlan, len, ret == NET_RX_SUCCESS, false);
+	return handle_res;
+}
+
 static const struct net_device_ops veth_netdev_ops = {
 	.ndo_init            = veth_dev_init,
 	.ndo_open            = veth_open,
@@ -315,6 +439,7 @@ static void veth_setup(struct net_device *dev)
 
 	dev->netdev_ops = &veth_netdev_ops;
 	dev->ethtool_ops = &veth_ethtool_ops;
+        dev->switchdev_ops = &rocker_switchdev_ops;
 	dev->features |= NETIF_F_LLTX;
 	dev->features |= VETH_FEATURES;
 	dev->vlan_features = dev->features &
@@ -327,7 +452,7 @@ static void veth_setup(struct net_device *dev)
 
 	dev->hw_features = VETH_FEATURES;
 	dev->hw_enc_features = VETH_FEATURES;
-	dev->mpls_features = NETIF_F_HW_CSUM | NETIF_F_GSO_SOFTWARE;
+	dev->mpls_features = NETIF_F_HW_CSUM | NETIF_F_GSO_SOFTWARE;        
 }
 
 /*
@@ -351,119 +476,150 @@ static int veth_validate(struct nlattr *tb[], struct nlattr *data[])
 
 static struct rtnl_link_ops veth_link_ops;
 
-static int veth_newlink(struct net *src_net, struct net_device *dev,
+static int veth_newlink(struct net *src_net, struct net_device *rocker_dev,
 			 struct nlattr *tb[], struct nlattr *data[])
 {
 	int err;
+        struct macvlan_port *port;
 	struct net_device *peer;
 	struct veth_priv *priv;
 	char ifname[IFNAMSIZ];
 	struct nlattr *peer_tb[IFLA_MAX + 1], **tbp;
 	unsigned char name_assign_type;
 	struct ifinfomsg *ifmp;
-	struct net *net;
+	struct net *net;                
 
-	/*
-	 * create and register peer first
-	 */
-	if (data != NULL && data[VETH_INFO_PEER] != NULL) {
-		struct nlattr *nla_peer;
+        struct veth_priv *rocker = netdev_priv(rocker_dev);
 
-		nla_peer = data[VETH_INFO_PEER];
-		ifmp = nla_data(nla_peer);
-		err = rtnl_nla_parse_ifla(peer_tb,
-					  nla_data(nla_peer) + sizeof(struct ifinfomsg),
-					  nla_len(nla_peer) - sizeof(struct ifinfomsg));
-		if (err < 0)
-			return err;
+        struct net_device *dev;
 
-		err = veth_validate(peer_tb, NULL);
-		if (err < 0)
-			return err;
+        //Get all the netdev from namespace
+        read_lock(&dev_base_lock);
+        dev = first_net_device(src_net);
+        while (dev) {
+            rocker->fp_port[rocker->n_ports]=dev;
+            priv = netdev_priv(dev);
+            rocker->fp_port_peer[rocker->n_ports] = priv->peer;
+            rocker->n_ports++;        
+            err = netdev_rx_handler_register(dev, macvlan_handle_frame, port);
+            if (err)
+            {
+                pr_err("Couldn't register netdev_rx_handler_register !!!!!");
+            }                    
+            dev = next_net_device(dev);
+        }      
+        read_unlock(&dev_base_lock);
 
-		tbp = peer_tb;
-	} else {
-		ifmp = NULL;
-		tbp = tb;
-	}
+        int i;
+        for(i = 0; i < rocker->n_ports; i++)
+        {
+            printk(KERN_INFO "found [%s] Peer: [%s]\n", rocker->fp_port[i]->name, rocker->fp_port_peer[i]->name);    
+        }    
+        
 
-	if (tbp[IFLA_IFNAME]) {
-		nla_strlcpy(ifname, tbp[IFLA_IFNAME], IFNAMSIZ);
-		name_assign_type = NET_NAME_USER;
-	} else {
-		snprintf(ifname, IFNAMSIZ, DRV_NAME "%%d");
-		name_assign_type = NET_NAME_ENUM;
-	}
 
-	net = rtnl_link_get_net(src_net, tbp);
-	if (IS_ERR(net))
-		return PTR_ERR(net);
-
-	peer = rtnl_create_link(net, ifname, name_assign_type,
-				&veth_link_ops, tbp);
-	if (IS_ERR(peer)) {
-		put_net(net);
-		return PTR_ERR(peer);
-	}
-
-	if (tbp[IFLA_ADDRESS] == NULL)
-		eth_hw_addr_random(peer);
-
-	if (ifmp && (dev->ifindex != 0))
-		peer->ifindex = ifmp->ifi_index;
-
-	err = register_netdevice(peer);
-	put_net(net);
-	net = NULL;
-	if (err < 0)
-		goto err_register_peer;
-
-	netif_carrier_off(peer);
-
-	err = rtnl_configure_link(peer, ifmp);
-	if (err < 0)
-		goto err_configure_peer;
-
-	/*
-	 * register dev last
-	 *
-	 * note, that since we've registered new device the dev's name
-	 * should be re-allocated
-	 */
-
-	if (tb[IFLA_ADDRESS] == NULL)
-		eth_hw_addr_random(dev);
-
-	if (tb[IFLA_IFNAME])
-		nla_strlcpy(dev->name, tb[IFLA_IFNAME], IFNAMSIZ);
-	else
-		snprintf(dev->name, IFNAMSIZ, DRV_NAME "%%d");
-
-	err = register_netdevice(dev);
-	if (err < 0)
-		goto err_register_dev;
-
-	netif_carrier_off(dev);
-
-	/*
-	 * tie the deviced together
-	 */
-
-	priv = netdev_priv(dev);
-	rcu_assign_pointer(priv->peer, peer);
-
-	priv = netdev_priv(peer);
-	rcu_assign_pointer(priv->peer, dev);
-	return 0;
-
-err_register_dev:
-	/* nothing to do */
-err_configure_peer:
-	unregister_netdevice(peer);
-	return err;
-
-err_register_peer:
-	free_netdev(peer);
+        
+//	/*
+//	 * create and register peer first
+//	 */
+//	if (data != NULL && data[VETH_INFO_PEER] != NULL) {
+//		struct nlattr *nla_peer;
+//
+//		nla_peer = data[VETH_INFO_PEER];
+//		ifmp = nla_data(nla_peer);
+//		err = rtnl_nla_parse_ifla(peer_tb,
+//					  nla_data(nla_peer) + sizeof(struct ifinfomsg),
+//					  nla_len(nla_peer) - sizeof(struct ifinfomsg));
+//		if (err < 0)
+//			return err;
+//
+//		err = veth_validate(peer_tb, NULL);
+//		if (err < 0)
+//			return err;
+//
+//		tbp = peer_tb;
+//	} else {
+//		ifmp = NULL;
+//		tbp = tb;
+//	}
+//
+//	if (tbp[IFLA_IFNAME]) {
+//		nla_strlcpy(ifname, tbp[IFLA_IFNAME], IFNAMSIZ);
+//		name_assign_type = NET_NAME_USER;
+//	} else {
+//		snprintf(ifname, IFNAMSIZ, DRV_NAME "%%d");
+//		name_assign_type = NET_NAME_ENUM;
+//	}
+//
+//	net = rtnl_link_get_net(src_net, tbp);
+//	if (IS_ERR(net))
+//		return PTR_ERR(net);
+//
+//	peer = rtnl_create_link(net, ifname, name_assign_type,
+//				&veth_link_ops, tbp);
+//	if (IS_ERR(peer)) {
+//		put_net(net);
+//		return PTR_ERR(peer);
+//	}
+//
+//	if (tbp[IFLA_ADDRESS] == NULL)
+//		eth_hw_addr_random(peer);
+//
+//	if (ifmp && (dev->ifindex != 0))
+//		peer->ifindex = ifmp->ifi_index;
+//
+//	err = register_netdevice(peer);
+//	put_net(net);
+//	net = NULL;
+//	if (err < 0)
+//		goto err_register_peer;
+//
+//	netif_carrier_off(peer);
+//
+//	err = rtnl_configure_link(peer, ifmp);
+//	if (err < 0)
+//		goto err_configure_peer;
+//
+//	/*
+//	 * register dev last
+//	 *
+//	 * note, that since we've registered new device the dev's name
+//	 * should be re-allocated
+//	 */
+//
+//	if (tb[IFLA_ADDRESS] == NULL)
+//		eth_hw_addr_random(dev);
+//
+//	if (tb[IFLA_IFNAME])
+//		nla_strlcpy(dev->name, tb[IFLA_IFNAME], IFNAMSIZ);
+//	else
+//		snprintf(dev->name, IFNAMSIZ, DRV_NAME "%%d");
+//
+//	err = register_netdevice(dev);
+//	if (err < 0)
+//		goto err_register_dev;
+//
+//	netif_carrier_off(dev);
+//
+//	/*
+//	 * tie the deviced together
+//	 */
+//
+//	priv = netdev_priv(dev);
+//	rcu_assign_pointer(priv->peer, peer);
+//
+//	priv = netdev_priv(peer);
+//	rcu_assign_pointer(priv->peer, dev);
+//	return 0;
+//
+//err_register_dev:
+//	/* nothing to do */
+//err_configure_peer:
+//	unregister_netdevice(peer);
+//	return err;
+//
+//err_register_peer:
+//	free_netdev(peer);
 	return err;
 }
 
