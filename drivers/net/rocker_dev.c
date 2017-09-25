@@ -1,5 +1,6 @@
 /*
- *  drivers/net/veth.c
+ *  
+#include "drivers/pci/pci.h"drivers/net/veth.c
  *
  *  Copyright (C) 2007 OpenVZ http://openvz.org, SWsoft Inc
  *
@@ -19,8 +20,9 @@
 #include <net/xfrm.h>
 #include <linux/veth.h>
 #include <linux/module.h>
+#include <linux/pci.h>
 
-#define DRV_NAME	"veth"
+#define DRV_NAME	"rocker"
 #define DRV_VERSION	"1.0"
 
 struct pcpu_vstats {
@@ -33,6 +35,7 @@ struct veth_priv {
 	struct net_device __rcu	*peer;
 	atomic64_t		dropped;
 	unsigned		requested_headroom;
+        struct pci_dev *pci_device;
 };
 
 /*
@@ -351,6 +354,178 @@ static int veth_validate(struct nlattr *tb[], struct nlattr *data[])
 
 static struct rtnl_link_ops veth_link_ops;
 
+static void release_pcibus_dev(struct device *dev)
+{
+//	struct pci_bus *pci_bus = to_pci_bus(dev);
+//
+//	put_device(pci_bus->bridge);
+//	pci_bus_remove_resources(pci_bus);
+//	pci_release_bus_of_node(pci_bus);
+//	kfree(pci_bus);
+}
+
+static ssize_t pci_dev_show_local_cpu(struct device *dev, bool list,
+				      struct device_attribute *attr, char *buf)
+{
+	const struct cpumask *mask;
+
+#ifdef CONFIG_NUMA
+	mask = (dev_to_node(dev) == -1) ? cpu_online_mask :
+					  cpumask_of_node(dev_to_node(dev));
+#else
+	mask = cpumask_of_pcibus(to_pci_dev(dev)->bus);
+#endif
+	return cpumap_print_to_pagebuf(list, buf, mask);
+}
+
+static ssize_t local_cpus_show(struct device *dev,
+			       struct device_attribute *attr, char *buf)
+{
+	return pci_dev_show_local_cpu(dev, false, attr, buf);
+}
+static DEVICE_ATTR_RO(local_cpus);
+
+static ssize_t local_cpulist_show(struct device *dev,
+				  struct device_attribute *attr, char *buf)
+{
+	return pci_dev_show_local_cpu(dev, true, attr, buf);
+}
+static DEVICE_ATTR_RO(local_cpulist);
+
+/*
+ * PCI Bus Class Devices
+ */
+static ssize_t cpuaffinity_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	const struct cpumask *cpumask = cpumask_of_pcibus(to_pci_bus(dev));
+
+	return cpumap_print_to_pagebuf(false, buf, cpumask);
+}
+static DEVICE_ATTR_RO(cpuaffinity);
+
+static ssize_t cpulistaffinity_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	const struct cpumask *cpumask = cpumask_of_pcibus(to_pci_bus(dev));
+
+	return cpumap_print_to_pagebuf(true, buf, cpumask);
+}
+static DEVICE_ATTR_RO(cpulistaffinity);
+
+/* show resources */
+static ssize_t resource_show(struct device *dev, struct device_attribute *attr,
+			     char *buf)
+{
+	struct pci_dev *pci_dev = to_pci_dev(dev);
+	char *str = buf;
+	int i;
+	int max;
+	resource_size_t start, end;
+
+	if (pci_dev->subordinate)
+		max = DEVICE_COUNT_RESOURCE;
+	else
+		max = PCI_BRIDGE_RESOURCES;
+
+	for (i = 0; i < max; i++) {
+		struct resource *res =  &pci_dev->resource[i];
+		pci_resource_to_user(pci_dev, i, res, &start, &end);
+		str += sprintf(str, "0x%016llx 0x%016llx 0x%016llx\n",
+			       (unsigned long long)start,
+			       (unsigned long long)end,
+			       (unsigned long long)res->flags);
+	}
+	return (str - buf);
+}
+static DEVICE_ATTR_RO(resource);
+
+
+static struct attribute *pcibus_attrs[] = {
+	&dev_attr_cpuaffinity.attr,
+	&dev_attr_cpulistaffinity.attr,
+	NULL,
+};
+
+
+static const struct attribute_group pcibus_group = {
+	.attrs = pcibus_attrs,
+};
+
+
+const struct attribute_group *pcibus_groups[] = {
+	&pcibus_group,
+	NULL,
+};
+
+static struct class pcibus_class = {
+	.name		= "virtual_pci_bus",
+	.dev_release	= &release_pcibus_dev,
+	.dev_groups	= pcibus_groups,
+};
+
+static struct pci_bus *pci_alloc_bus(struct pci_bus *parent)
+{
+	struct pci_bus *b;
+
+	b = kzalloc(sizeof(*b), GFP_KERNEL);
+	if (!b)
+		return NULL;
+
+	INIT_LIST_HEAD(&b->node);
+	INIT_LIST_HEAD(&b->children);
+	INIT_LIST_HEAD(&b->devices);
+	INIT_LIST_HEAD(&b->slots);
+	INIT_LIST_HEAD(&b->resources);
+	b->max_bus_speed = PCI_SPEED_UNKNOWN;
+	b->cur_bus_speed = PCI_SPEED_UNKNOWN;
+#ifdef CONFIG_PCI_DOMAINS_GENERIC
+	if (parent)
+		b->domain_nr = parent->domain_nr;
+#endif
+	return b;
+}
+
+static struct pci_dev* create_virtual_pci_dev(void)
+{
+    int err;
+    struct pci_dev *dev;
+    char *name;
+    struct pci_bus *bus = pci_alloc_bus(NULL);
+    if(!bus)
+        return NULL;
+    
+    bus->number = 110;
+    dev_set_name(&bus->dev, "virtual_pci_bus");
+    name = dev_name(&bus->dev);
+    
+//    bus->dev.class = &pcibus_class;
+//    class_register(&pcibus_class);
+    err = device_register(&bus->dev);
+    if (err)
+        return NULL;
+    
+    dev = pci_alloc_dev(bus);
+    if (!dev)
+            return NULL;
+        
+    dev->devfn = PCI_DEVFN(0x1f, 2);
+    dev->vendor = 8;
+    dev->device = 9;
+
+    
+    
+    pci_set_of_node(dev);
+
+//    if (pci_setup_device(dev)) {
+//            pci_bus_put(dev->bus);
+//            kfree(dev);
+//            return NULL;
+//    }
+    
+    return dev;
+}
+
 static int veth_newlink(struct net *src_net, struct net_device *dev,
 			 struct nlattr *tb[], struct nlattr *data[])
 {
@@ -363,6 +538,15 @@ static int veth_newlink(struct net *src_net, struct net_device *dev,
 	struct ifinfomsg *ifmp;
 	struct net *net;
 
+        struct pci_dev *pcidev = create_virtual_pci_dev();
+        priv = netdev_priv(dev);
+        if(pcidev != 0)
+            priv->pci_device = pcidev;
+        
+//        pci_device_add(pcidev, &pci_bus_type);
+        
+        pr_err("Here 1 aam !!!!!!!!!!!!!!!!");
+        
 	/*
 	 * create and register peer first
 	 */
