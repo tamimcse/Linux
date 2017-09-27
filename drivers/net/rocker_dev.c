@@ -486,6 +486,12 @@ static struct pci_bus *pci_alloc_bus(struct pci_bus *parent)
 	return b;
 }
 
+struct pci_sysdata sd = {
+        .domain = 2,
+        .node = 2,
+//        .companion = root->device
+};
+
 static struct pci_dev* create_virtual_pci_dev(void)
 {
     int err;
@@ -496,7 +502,11 @@ static struct pci_dev* create_virtual_pci_dev(void)
         return NULL;
     
     bus->number = 110;
+    bus->parent = NULL; //For virtual bus
     dev_set_name(&bus->dev, "virtual_pci_bus");
+    bus->sysdata = kzalloc(sizeof(sd), GFP_KERNEL);
+    memcpy(bus->sysdata, &sd, sizeof(sd));    
+    
     name = dev_name(&bus->dev);
     
 //    bus->dev.class = &pcibus_class;
@@ -512,10 +522,12 @@ static struct pci_dev* create_virtual_pci_dev(void)
     dev->devfn = PCI_DEVFN(0x1f, 2);
     dev->vendor = 8;
     dev->device = 9;
-
-    
     
     pci_set_of_node(dev);
+    
+//    pci_device_add(dev, bus);
+    
+    device_register(&dev->dev);
 
 //    if (pci_setup_device(dev)) {
 //            pci_bus_put(dev->bus);
@@ -537,15 +549,11 @@ static int veth_newlink(struct net *src_net, struct net_device *dev,
 	unsigned char name_assign_type;
 	struct ifinfomsg *ifmp;
 	struct net *net;
-
         struct pci_dev *pcidev = create_virtual_pci_dev();
+        pr_info("Virtual PCI Device has been created !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
         priv = netdev_priv(dev);
         if(pcidev != 0)
             priv->pci_device = pcidev;
-        
-//        pci_device_add(pcidev, &pci_bus_type);
-        
-        pr_err("Here 1 aam !!!!!!!!!!!!!!!!");
         
 	/*
 	 * create and register peer first
