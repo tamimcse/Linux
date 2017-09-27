@@ -492,6 +492,38 @@ struct pci_sysdata sd = {
 //        .companion = root->device
 };
 
+static void pci_dma_configure(struct pci_dev *dev)
+{
+//	struct device *bridge = pci_get_host_bridge_device(dev);
+
+//	if (IS_ENABLED(CONFIG_OF) &&
+//		bridge->parent && bridge->parent->of_node) {
+//			of_dma_configure(&dev->dev, bridge->parent->of_node);
+//	} else if (has_acpi_companion(bridge)) {
+//		struct acpi_device *adev = to_acpi_device_node(bridge->fwnode);
+//		enum dev_dma_attr attr = acpi_get_dma_attr(adev);
+//
+//		if (attr == DEV_DMA_NOT_SUPPORTED)
+//			dev_warn(&dev->dev, "DMA not supported.\n");
+//		else
+//			acpi_dma_configure(&dev->dev, attr);
+//	}
+
+//	pci_put_host_bridge_device(bridge);
+}
+
+void pci_device_add(struct pci_dev *dev, struct pci_bus *bus)
+{
+    dev->pcie_mpss = 16;       
+    set_dev_node(&dev->dev, pcibus_to_node(bus));    
+    dev->dev.dma_mask = &dev->dma_mask;
+    dev->dev.dma_parms = &dev->dma_parms;
+    dev->dev.coherent_dma_mask = 0xffffffffull;    
+    pci_dma_configure(dev);
+    pci_set_dma_max_seg_size(dev, 65536);
+    pci_set_dma_seg_boundary(dev, 0xffffffff);
+}
+
 static struct pci_dev* create_virtual_pci_dev(void)
 {
     int err;
@@ -525,9 +557,9 @@ static struct pci_dev* create_virtual_pci_dev(void)
     
     pci_set_of_node(dev);
     
-//    pci_device_add(dev, bus);
-    
     device_register(&dev->dev);
+    
+    pci_device_add(dev, bus);    
 
 //    if (pci_setup_device(dev)) {
 //            pci_bus_put(dev->bus);
