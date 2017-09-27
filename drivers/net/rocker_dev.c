@@ -522,6 +522,8 @@ void pci_device_add(struct pci_dev *dev, struct pci_bus *bus)
     pci_dma_configure(dev);
     pci_set_dma_max_seg_size(dev, 65536);
     pci_set_dma_seg_boundary(dev, 0xffffffff);
+    /* Clear the state_saved flag. */
+    dev->state_saved = false;    
 }
 
 static struct pci_dev* create_virtual_pci_dev(void)
