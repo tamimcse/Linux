@@ -512,8 +512,59 @@ static void pci_dma_configure(struct pci_dev *dev)
 //	pci_put_host_bridge_device(bridge);
 }
 
+static void pci_set_msi_domain(struct pci_dev *dev)
+{
+//	struct irq_domain *d;
+//
+//	/*
+//	 * If the platform or firmware interfaces cannot supply a
+//	 * device-specific MSI domain, then inherit the default domain
+//	 * from the host bridge itself.
+//	 */
+//	d = pci_dev_msi_domain(dev);
+//	if (!d)
+//		d = dev_get_msi_domain(&dev->bus->dev);
+//
+//	dev_set_msi_domain(&dev->dev, d);
+}
+
+int pcibios_add_device(struct pci_dev *dev)
+{
+//	struct setup_data *data;
+//	struct pci_setup_rom *rom;
+//	u64 pa_data;
+//
+//	pa_data = boot_params.hdr.setup_data;
+//	while (pa_data) {
+//		data = ioremap(pa_data, sizeof(*rom));
+//		if (!data)
+//			return -ENOMEM;
+//
+//		if (data->type == SETUP_PCI) {
+//			rom = (struct pci_setup_rom *)data;
+//
+//			if ((pci_domain_nr(dev->bus) == rom->segment) &&
+//			    (dev->bus->number == rom->bus) &&
+//			    (PCI_SLOT(dev->devfn) == rom->device) &&
+//			    (PCI_FUNC(dev->devfn) == rom->function) &&
+//			    (dev->vendor == rom->vendor) &&
+//			    (dev->device == rom->devid)) {
+//				dev->rom = pa_data +
+//				      offsetof(struct pci_setup_rom, romdata);
+//				dev->romlen = rom->pcilen;
+//			}
+//		}
+//		pa_data = data->next;
+//		iounmap(data);
+//	}
+//	set_dma_domain_ops(dev);
+//	set_dev_domain_options(dev);
+	return 0;
+}
+
 void pci_device_add(struct pci_dev *dev, struct pci_bus *bus)
 {
+    int ret;
     dev->pcie_mpss = 16;       
     set_dev_node(&dev->dev, pcibus_to_node(bus));    
     dev->dev.dma_mask = &dev->dma_mask;
@@ -523,7 +574,19 @@ void pci_device_add(struct pci_dev *dev, struct pci_bus *bus)
     pci_set_dma_max_seg_size(dev, 65536);
     pci_set_dma_seg_boundary(dev, 0xffffffff);
     /* Clear the state_saved flag. */
-    dev->state_saved = false;    
+    dev->state_saved = false; 
+    
+    list_add_tail(&dev->bus_list, &bus->devices);
+    
+    ret = pcibios_add_device(dev);
+    WARN_ON(ret < 0);
+
+    /* Setup MSI irq domain */
+    pci_set_msi_domain(dev);
+
+    /* Notifier could use PCI capabilities */
+    dev->match_driver = false;
+    ret = device_add(&dev->dev);    
 }
 
 static struct pci_dev* create_virtual_pci_dev(void)
