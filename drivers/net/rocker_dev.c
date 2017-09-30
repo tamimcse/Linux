@@ -21,6 +21,8 @@
 #include <linux/veth.h>
 #include <linux/module.h>
 #include <linux/pci.h>
+#include <linux/acpi.h>
+#include <acpi/acpi_bus.h>
 
 #define DRV_NAME	"rocker"
 #define DRV_VERSION	"1.0"
@@ -494,8 +496,10 @@ struct pci_sysdata sd = {
 
 static void pci_dma_configure(struct pci_dev *dev)
 {
+    enum dev_dma_attr attr = DEV_DMA_COHERENT;
+    acpi_dma_configure(&dev->dev, attr);
 //	struct device *bridge = pci_get_host_bridge_device(dev);
-
+//
 //	if (IS_ENABLED(CONFIG_OF) &&
 //		bridge->parent && bridge->parent->of_node) {
 //			of_dma_configure(&dev->dev, bridge->parent->of_node);
@@ -508,7 +512,7 @@ static void pci_dma_configure(struct pci_dev *dev)
 //		else
 //			acpi_dma_configure(&dev->dev, attr);
 //	}
-
+//
 //	pci_put_host_bridge_device(bridge);
 }
 
