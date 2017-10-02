@@ -602,7 +602,9 @@ static struct pci_dev* create_virtual_pci_dev(void)
     if(!bus)
         return NULL;
     
-    bus->number = 110;
+    //Use default domain 0000
+    //Bus # 0,8,9,10 has been occupied in my PC 
+    bus->number = 11;
     bus->parent = NULL; //For virtual bus
     dev_set_name(&bus->dev, "virtual_pci_bus");
     bus->sysdata = kzalloc(sizeof(sd), GFP_KERNEL);
@@ -619,14 +621,20 @@ static struct pci_dev* create_virtual_pci_dev(void)
     dev = pci_alloc_dev(bus);
     if (!dev)
             return NULL;
-        
-    dev->devfn = PCI_DEVFN(0x1f, 2);
+    
+    //slot=0, function=0    
+    dev->devfn = PCI_DEVFN(0, 0);
+    
     dev->vendor = 8;
     dev->device = 9;
-    
+    dev_set_name(&dev->dev, "rockerdev");
     pci_set_of_node(dev);
-    
-    device_register(&dev->dev);
+    err = device_register(&dev->dev);
+    if(err)
+        return NULL;
+    else
+        pr_info("Virtual PCI Device has been registered !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+        
     
     pci_device_add(dev, bus);    
 
