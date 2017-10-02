@@ -625,8 +625,8 @@ static struct pci_dev* create_virtual_pci_dev(void)
     //slot=0, function=0    
     dev->devfn = PCI_DEVFN(0, 0);
     
-    dev->vendor = 8;
-    dev->device = 9;
+    dev->vendor = 0x10EC;//PCI vendor ID of RTL
+    dev->device = 0x8168;//PCI device ID of RTL NIC
     dev_set_name(&dev->dev, "rockerdev");
     pci_set_of_node(dev);
     pci_device_add(dev, bus);
