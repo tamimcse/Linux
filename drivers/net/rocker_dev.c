@@ -590,7 +590,7 @@ void pci_device_add(struct pci_dev *dev, struct pci_bus *bus)
 
     /* Notifier could use PCI capabilities */
     dev->match_driver = false;
-    ret = device_add(&dev->dev);    
+//    ret = device_add(&dev->dev);    
 }
 
 static struct pci_dev* create_virtual_pci_dev(void)
@@ -629,6 +629,7 @@ static struct pci_dev* create_virtual_pci_dev(void)
     dev->device = 9;
     dev_set_name(&dev->dev, "rockerdev");
     pci_set_of_node(dev);
+    pci_device_add(dev, bus);
     err = device_register(&dev->dev);
     if(err)
         return NULL;
@@ -636,7 +637,7 @@ static struct pci_dev* create_virtual_pci_dev(void)
         pr_info("Virtual PCI Device has been registered !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
         
     
-    pci_device_add(dev, bus);    
+        
 
 //    if (pci_setup_device(dev)) {
 //            pci_bus_put(dev->bus);
