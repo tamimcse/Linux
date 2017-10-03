@@ -489,7 +489,7 @@ static struct pci_bus *pci_alloc_bus(struct pci_bus *parent)
 }
 
 struct pci_sysdata sd = {
-        .domain = 2,
+        .domain = 0,
         .node = 2,
 //        .companion = root->device
 };
@@ -593,6 +593,156 @@ void pci_device_add(struct pci_dev *dev, struct pci_bus *bus)
 //    ret = device_add(&dev->dev);    
 }
 
+int pci_setup_device(struct pci_dev *dev)
+{
+	u32 class;
+	u16 cmd;
+	u8 hdr_type;
+	int pos = 0;
+	struct pci_bus_region region;
+	struct resource *res;
+        
+        hdr_type = PCI_HEADER_TYPE_NORMAL;
+	dev->sysdata = dev->bus->sysdata;
+	dev->dev.parent = dev->bus->bridge;
+	dev->dev.bus = &pci_bus_type;
+	dev->hdr_type = hdr_type & 0x7f;
+	dev->multifunction = !!(hdr_type & 0x80);
+	dev->error_state = pci_channel_io_normal;
+//	set_pcie_port_type(dev);
+//
+//	pci_dev_assign_slot(dev);
+	/* Assume 32-bit PCI; let 64-bit PCI cards (which are far rarer)
+	   set this higher, assuming the system even supports it.  */
+	dev->dma_mask = 0xffffffff;
+
+	dev_set_name(&dev->dev, "%04x:%02x:%02x.%d", pci_domain_nr(dev->bus),
+		     dev->bus->number, PCI_SLOT(dev->devfn),
+		     PCI_FUNC(dev->devfn));
+
+        
+	class = PCI_CLASS_NETWORK_ETHERNET;
+	dev->revision = class & 0xff;
+	dev->class = class >> 8;		    /* upper 3 bytes */
+
+	dev_printk(KERN_DEBUG, &dev->dev, "[%04x:%04x] type %02x class %#08x\n",
+		   dev->vendor, dev->device, dev->hdr_type, dev->class);
+
+	/* need to have dev->class ready */
+	dev->cfg_size = PCI_CFG_SPACE_EXP_SIZE;
+
+	/* "Unknown power state" */
+	dev->current_state = PCI_UNKNOWN;
+//
+//	/* Early fixups, before probing the BARs */
+//	pci_fixup_device(pci_fixup_early, dev);
+//	/* device class may be changed after fixup */
+//	class = dev->class >> 8;
+//
+//	if (dev->non_compliant_bars) {
+//		pci_read_config_word(dev, PCI_COMMAND, &cmd);
+//		if (cmd & (PCI_COMMAND_IO | PCI_COMMAND_MEMORY)) {
+//			dev_info(&dev->dev, "device has non-compliant BARs; disabling IO/MEM decoding\n");
+//			cmd &= ~PCI_COMMAND_IO;
+//			cmd &= ~PCI_COMMAND_MEMORY;
+//			pci_write_config_word(dev, PCI_COMMAND, cmd);
+//		}
+//	}
+//
+//	switch (dev->hdr_type) {		    /* header type */
+//	case PCI_HEADER_TYPE_NORMAL:		    /* standard header */
+//		if (class == PCI_CLASS_BRIDGE_PCI)
+//			goto bad;
+//		pci_read_irq(dev);
+//		pci_read_bases(dev, 6, PCI_ROM_ADDRESS);
+//		pci_read_config_word(dev, PCI_SUBSYSTEM_VENDOR_ID, &dev->subsystem_vendor);
+//		pci_read_config_word(dev, PCI_SUBSYSTEM_ID, &dev->subsystem_device);
+//
+//		/*
+//		 * Do the ugly legacy mode stuff here rather than broken chip
+//		 * quirk code. Legacy mode ATA controllers have fixed
+//		 * addresses. These are not always echoed in BAR0-3, and
+//		 * BAR0-3 in a few cases contain junk!
+//		 */
+//		if (class == PCI_CLASS_STORAGE_IDE) {
+//			u8 progif;
+//			pci_read_config_byte(dev, PCI_CLASS_PROG, &progif);
+//			if ((progif & 1) == 0) {
+//				region.start = 0x1F0;
+//				region.end = 0x1F7;
+//				res = &dev->resource[0];
+//				res->flags = LEGACY_IO_RESOURCE;
+//				pcibios_bus_to_resource(dev->bus, res, &region);
+//				dev_info(&dev->dev, "legacy IDE quirk: reg 0x10: %pR\n",
+//					 res);
+//				region.start = 0x3F6;
+//				region.end = 0x3F6;
+//				res = &dev->resource[1];
+//				res->flags = LEGACY_IO_RESOURCE;
+//				pcibios_bus_to_resource(dev->bus, res, &region);
+//				dev_info(&dev->dev, "legacy IDE quirk: reg 0x14: %pR\n",
+//					 res);
+//			}
+//			if ((progif & 4) == 0) {
+//				region.start = 0x170;
+//				region.end = 0x177;
+//				res = &dev->resource[2];
+//				res->flags = LEGACY_IO_RESOURCE;
+//				pcibios_bus_to_resource(dev->bus, res, &region);
+//				dev_info(&dev->dev, "legacy IDE quirk: reg 0x18: %pR\n",
+//					 res);
+//				region.start = 0x376;
+//				region.end = 0x376;
+//				res = &dev->resource[3];
+//				res->flags = LEGACY_IO_RESOURCE;
+//				pcibios_bus_to_resource(dev->bus, res, &region);
+//				dev_info(&dev->dev, "legacy IDE quirk: reg 0x1c: %pR\n",
+//					 res);
+//			}
+//		}
+//		break;
+//
+//	case PCI_HEADER_TYPE_BRIDGE:		    /* bridge header */
+//		if (class != PCI_CLASS_BRIDGE_PCI)
+//			goto bad;
+//		/* The PCI-to-PCI bridge spec requires that subtractive
+//		   decoding (i.e. transparent) bridge must have programming
+//		   interface code of 0x01. */
+//		pci_read_irq(dev);
+//		dev->transparent = ((dev->class & 0xff) == 1);
+//		pci_read_bases(dev, 2, PCI_ROM_ADDRESS1);
+//		set_pcie_hotplug_bridge(dev);
+//		pos = pci_find_capability(dev, PCI_CAP_ID_SSVID);
+//		if (pos) {
+//			pci_read_config_word(dev, pos + PCI_SSVID_VENDOR_ID, &dev->subsystem_vendor);
+//			pci_read_config_word(dev, pos + PCI_SSVID_DEVICE_ID, &dev->subsystem_device);
+//		}
+//		break;
+//
+//	case PCI_HEADER_TYPE_CARDBUS:		    /* CardBus bridge header */
+//		if (class != PCI_CLASS_BRIDGE_CARDBUS)
+//			goto bad;
+//		pci_read_irq(dev);
+//		pci_read_bases(dev, 1, 0);
+//		pci_read_config_word(dev, PCI_CB_SUBSYSTEM_VENDOR_ID, &dev->subsystem_vendor);
+//		pci_read_config_word(dev, PCI_CB_SUBSYSTEM_ID, &dev->subsystem_device);
+//		break;
+//
+//	default:				    /* unknown header */
+//		dev_err(&dev->dev, "unknown header type %02x, ignoring device\n",
+//			dev->hdr_type);
+//		return -EIO;
+//
+//	bad:
+//		dev_err(&dev->dev, "ignoring class %#08x (doesn't match header type %02x)\n",
+//			dev->class, dev->hdr_type);
+//		dev->class = PCI_CLASS_NOT_DEFINED << 8;
+//	}
+
+	/* We found a fine healthy device, go go go... */
+	return 0;
+}
+
 static struct pci_dev* create_virtual_pci_dev(void)
 {
     int err;
@@ -630,21 +780,19 @@ static struct pci_dev* create_virtual_pci_dev(void)
     dev_set_name(&dev->dev, "rockerdev");
     pci_set_of_node(dev);
     pci_device_add(dev, bus);
+
+    if (pci_setup_device(dev)) {
+            pci_bus_put(dev->bus);
+            kfree(dev);
+            return NULL;
+    }
+
     err = device_register(&dev->dev);
     if(err)
         return NULL;
     else
         pr_info("Virtual PCI Device has been registered !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-        
-    
-        
 
-//    if (pci_setup_device(dev)) {
-//            pci_bus_put(dev->bus);
-//            kfree(dev);
-//            return NULL;
-//    }
-    
     return dev;
 }
 
