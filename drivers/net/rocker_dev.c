@@ -593,6 +593,48 @@ void pci_device_add(struct pci_dev *dev, struct pci_bus *bus)
 //    ret = device_add(&dev->dev);    
 }
 
+void set_pcie_port_type(struct pci_dev *pdev)
+{
+	int pos;
+	u16 reg16;
+	int type;
+	struct pci_dev *parent;
+
+//	pos = pci_find_capability(pdev, PCI_CAP_ID_EXP);
+//	if (!pos)
+//		return;
+        pdev->pcie_cap = PCI_CAP_ID_EXP;
+//	pci_read_config_word(pdev, pos + PCI_EXP_FLAGS, &reg16);
+//	pdev->pcie_flags_reg = reg16;
+        pdev->pcie_flags_reg = PCI_EXP_FLAGS_TYPE;
+//	pci_read_config_word(pdev, pos + PCI_EXP_DEVCAP, &reg16);
+//	pdev->pcie_mpss = reg16 & PCI_EXP_DEVCAP_PAYLOAD;
+        pdev->pcie_mpss = 4096 & PCI_EXP_DEVCAP_PAYLOAD;
+
+//	/*
+//	 * A Root Port or a PCI-to-PCIe bridge is always the upstream end
+//	 * of a Link.  No PCIe component has two Links.  Two Links are
+//	 * connected by a Switch that has a Port on each Link and internal
+//	 * logic to connect the two Ports.
+//	 */
+//	type = pci_pcie_type(pdev);
+//	if (type == PCI_EXP_TYPE_ROOT_PORT ||
+//	    type == PCI_EXP_TYPE_PCIE_BRIDGE)
+//		pdev->has_secondary_link = 1;
+//	else if (type == PCI_EXP_TYPE_UPSTREAM ||
+//		 type == PCI_EXP_TYPE_DOWNSTREAM) {
+//		parent = pci_upstream_bridge(pdev);
+//
+//		/*
+//		 * Usually there's an upstream device (Root Port or Switch
+//		 * Downstream Port), but we can't assume one exists.
+//		 */
+//		if (parent && !parent->has_secondary_link)
+//			pdev->has_secondary_link = 1;
+//	}
+        pdev->has_secondary_link = 1;
+}
+
 int pci_setup_device(struct pci_dev *dev)
 {
 	u32 class;
@@ -601,6 +643,16 @@ int pci_setup_device(struct pci_dev *dev)
 	int pos = 0;
 	struct pci_bus_region region;
 	struct resource *res;
+
+        //slot=0, function=0    
+        dev->devfn = PCI_DEVFN(0, 0);
+
+        dev->vendor = 0x10EC;//PCI vendor ID of RTL
+        dev->device = 0x8168;//PCI device ID of RTL NIC
+        dev->subsystem_vendor = 0x103c; //as to RTL
+        dev->subsystem_device = 0x1838; //as to RTL
+
+        dev_set_name(&dev->dev, "rockerdev");
         
         hdr_type = PCI_HEADER_TYPE_NORMAL;
 	dev->sysdata = dev->bus->sysdata;
@@ -609,7 +661,7 @@ int pci_setup_device(struct pci_dev *dev)
 	dev->hdr_type = hdr_type & 0x7f;
 	dev->multifunction = !!(hdr_type & 0x80);
 	dev->error_state = pci_channel_io_normal;
-//	set_pcie_port_type(dev);
+	set_pcie_port_type(dev);
 //
 //	pci_dev_assign_slot(dev);
 	/* Assume 32-bit PCI; let 64-bit PCI cards (which are far rarer)
@@ -655,8 +707,7 @@ int pci_setup_device(struct pci_dev *dev)
 //			goto bad;
 //		pci_read_irq(dev);
 //		pci_read_bases(dev, 6, PCI_ROM_ADDRESS);
-//		pci_read_config_word(dev, PCI_SUBSYSTEM_VENDOR_ID, &dev->subsystem_vendor);
-//		pci_read_config_word(dev, PCI_SUBSYSTEM_ID, &dev->subsystem_device);
+
 //
 //		/*
 //		 * Do the ugly legacy mode stuff here rather than broken chip
@@ -751,6 +802,7 @@ static struct pci_dev* create_virtual_pci_dev(void)
     struct pci_bus *bus = pci_alloc_bus(NULL);
     if(!bus)
         return NULL;
+
     
     //Use default domain 0000
     //Bus # 0,8,9,10 has been occupied in my PC 
@@ -772,12 +824,6 @@ static struct pci_dev* create_virtual_pci_dev(void)
     if (!dev)
             return NULL;
     
-    //slot=0, function=0    
-    dev->devfn = PCI_DEVFN(0, 0);
-    
-    dev->vendor = 0x10EC;//PCI vendor ID of RTL
-    dev->device = 0x8168;//PCI device ID of RTL NIC
-    dev_set_name(&dev->dev, "rockerdev");
     pci_set_of_node(dev);
     pci_device_add(dev, bus);
 
