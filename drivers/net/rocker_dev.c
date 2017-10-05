@@ -637,7 +637,6 @@ void set_pcie_port_type(struct pci_dev *pdev)
 
 int pci_setup_device(struct pci_dev *dev)
 {
-	u32 class;
 	u16 cmd;
 	u8 hdr_type;
 	int pos = 0;
@@ -647,10 +646,11 @@ int pci_setup_device(struct pci_dev *dev)
         //slot=0, function=0    
         dev->devfn = PCI_DEVFN(0, 0);
 
-        dev->vendor = 0x10EC;//PCI vendor ID of RTL
-        dev->device = 0x8168;//PCI device ID of RTL NIC
-        dev->subsystem_vendor = 0x103c; //as to RTL
-        dev->subsystem_device = 0x1838; //as to RTL
+        
+        dev->vendor = 0x1b36;
+        dev->device = 0x0006;
+        dev->subsystem_vendor = 0x0000; 
+        dev->subsystem_device = 0x0000; 
 
         dev_set_name(&dev->dev, "rockerdev");
         
@@ -662,20 +662,15 @@ int pci_setup_device(struct pci_dev *dev)
 	dev->multifunction = !!(hdr_type & 0x80);
 	dev->error_state = pci_channel_io_normal;
 	set_pcie_port_type(dev);
-//
-//	pci_dev_assign_slot(dev);
-	/* Assume 32-bit PCI; let 64-bit PCI cards (which are far rarer)
-	   set this higher, assuming the system even supports it.  */
 	dev->dma_mask = 0xffffffff;
-
+        dev->irq = 0x0;
+        dev->pin = 0x0;        
+	dev->revision = 0x01;
+	dev->class = 0x2800;
+        
 	dev_set_name(&dev->dev, "%04x:%02x:%02x.%d", pci_domain_nr(dev->bus),
 		     dev->bus->number, PCI_SLOT(dev->devfn),
 		     PCI_FUNC(dev->devfn));
-
-        
-	class = PCI_CLASS_NETWORK_ETHERNET;
-	dev->revision = class & 0xff;
-	dev->class = class >> 8;		    /* upper 3 bytes */
 
 	dev_printk(KERN_DEBUG, &dev->dev, "[%04x:%04x] type %02x class %#08x\n",
 		   dev->vendor, dev->device, dev->hdr_type, dev->class);
@@ -684,23 +679,9 @@ int pci_setup_device(struct pci_dev *dev)
 	dev->cfg_size = PCI_CFG_SPACE_EXP_SIZE;
 
 	/* "Unknown power state" */
-	dev->current_state = PCI_UNKNOWN;
-//
-//	/* Early fixups, before probing the BARs */
-//	pci_fixup_device(pci_fixup_early, dev);
-//	/* device class may be changed after fixup */
-//	class = dev->class >> 8;
-//
-//	if (dev->non_compliant_bars) {
-//		pci_read_config_word(dev, PCI_COMMAND, &cmd);
-//		if (cmd & (PCI_COMMAND_IO | PCI_COMMAND_MEMORY)) {
-//			dev_info(&dev->dev, "device has non-compliant BARs; disabling IO/MEM decoding\n");
-//			cmd &= ~PCI_COMMAND_IO;
-//			cmd &= ~PCI_COMMAND_MEMORY;
-//			pci_write_config_word(dev, PCI_COMMAND, cmd);
-//		}
-//	}
-//
+	dev->current_state = PCI_UNKNOWN;       
+
+
 //	switch (dev->hdr_type) {		    /* header type */
 //	case PCI_HEADER_TYPE_NORMAL:		    /* standard header */
 //		if (class == PCI_CLASS_BRIDGE_PCI)
