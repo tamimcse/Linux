@@ -1662,7 +1662,7 @@ int device_add(struct device *dev)
 	}
 
 	/* notify platform of device entry */
-	if (platform_notify)
+	if (platform_notify/* && strcmp(dev_name(dev), "0000:0b:00.0")*/ )
 		platform_notify(dev);
 
 	error = device_create_file(dev, &dev_attr_uevent);
