@@ -19,6 +19,7 @@
 #include <net/tcp.h>
 #include <net/pkt_sched.h>
 #include <linux/proc_fs.h>
+#include <asm/msr.h>
 
 static unsigned long bufsize __read_mostly = 64 * 4096;
 static const char procname[] = "mf_probe";
@@ -79,6 +80,7 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb)
         int opcode;
         s64 rate;
         s64 delta;
+        u64 tsc_begin, tsc_end;
         const struct tcphdr *th;
         struct mf_sched_data *q = qdisc_priv(sch);
         if(q->nFlow == 0)
@@ -89,7 +91,10 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb)
 
         if (likely(mf==0))
         {
+            tsc_begin = rdtsc();
             rate = q->capacity > sch->qstats.backlog? 12*(q->capacity - sch->qstats.backlog)/(q->nFlow*10) : 0;
+            tsc_end = rdtsc();
+            pr_info("TSC: %llu !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", tsc_end - tsc_begin);            
         }
         else if(mf == 1)
         {            
