@@ -635,6 +635,210 @@ void set_pcie_port_type(struct pci_dev *pdev)
         pdev->has_secondary_link = 1;
 }
 
+static ssize_t rocker_dev_read_config(struct file *filp, struct kobject *kobj,
+			       struct bin_attribute *bin_attr, char *buf,
+			       loff_t off, size_t count)
+{
+    
+    pr_info("Inside rocker_dev_read_config !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    return 3;
+//	struct pci_dev *dev = to_pci_dev(kobj_to_dev(kobj));
+//	unsigned int size = 64;
+//	loff_t init_off = off;
+//	u8 *data = (u8 *) buf;
+//
+//	/* Several chips lock up trying to read undefined config space */
+//	if (file_ns_capable(filp, &init_user_ns, CAP_SYS_ADMIN))
+//		size = dev->cfg_size;
+//	else if (dev->hdr_type == PCI_HEADER_TYPE_CARDBUS)
+//		size = 128;
+//
+//	if (off > size)
+//		return 0;
+//	if (off + count > size) {
+//		size -= off;
+//		count = size;
+//	} else {
+//		size = count;
+//	}
+//
+//	pci_config_pm_runtime_get(dev);
+//
+//	if ((off & 1) && size) {
+//		u8 val;
+//		pci_user_read_config_byte(dev, off, &val);
+//		data[off - init_off] = val;
+//		off++;
+//		size--;
+//	}
+//
+//	if ((off & 3) && size > 2) {
+//		u16 val;
+//		pci_user_read_config_word(dev, off, &val);
+//		data[off - init_off] = val & 0xff;
+//		data[off - init_off + 1] = (val >> 8) & 0xff;
+//		off += 2;
+//		size -= 2;
+//	}
+//
+//	while (size > 3) {
+//		u32 val;
+//		pci_user_read_config_dword(dev, off, &val);
+//		data[off - init_off] = val & 0xff;
+//		data[off - init_off + 1] = (val >> 8) & 0xff;
+//		data[off - init_off + 2] = (val >> 16) & 0xff;
+//		data[off - init_off + 3] = (val >> 24) & 0xff;
+//		off += 4;
+//		size -= 4;
+//	}
+//
+//	if (size >= 2) {
+//		u16 val;
+//		pci_user_read_config_word(dev, off, &val);
+//		data[off - init_off] = val & 0xff;
+//		data[off - init_off + 1] = (val >> 8) & 0xff;
+//		off += 2;
+//		size -= 2;
+//	}
+//
+//	if (size > 0) {
+//		u8 val;
+//		pci_user_read_config_byte(dev, off, &val);
+//		data[off - init_off] = val;
+//		off++;
+//		--size;
+//	}
+//
+//	pci_config_pm_runtime_put(dev);
+//
+//	return count;
+}
+
+static ssize_t rocker_dev_write_config(struct file *filp, struct kobject *kobj,
+				struct bin_attribute *bin_attr, char *buf,
+				loff_t off, size_t count)
+{
+    pr_info("Inside rocker_dev_write_config !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    return 3;
+//	struct pci_dev *dev = to_pci_dev(kobj_to_dev(kobj));
+//	unsigned int size = count;
+//	loff_t init_off = off;
+//	u8 *data = (u8 *) buf;
+//
+//	if (off > dev->cfg_size)
+//		return 0;
+//	if (off + count > dev->cfg_size) {
+//		size = dev->cfg_size - off;
+//		count = size;
+//	}
+//
+//	pci_config_pm_runtime_get(dev);
+//
+//	if ((off & 1) && size) {
+//		pci_user_write_config_byte(dev, off, data[off - init_off]);
+//		off++;
+//		size--;
+//	}
+//
+//	if ((off & 3) && size > 2) {
+//		u16 val = data[off - init_off];
+//		val |= (u16) data[off - init_off + 1] << 8;
+//		pci_user_write_config_word(dev, off, val);
+//		off += 2;
+//		size -= 2;
+//	}
+//
+//	while (size > 3) {
+//		u32 val = data[off - init_off];
+//		val |= (u32) data[off - init_off + 1] << 8;
+//		val |= (u32) data[off - init_off + 2] << 16;
+//		val |= (u32) data[off - init_off + 3] << 24;
+//		pci_user_write_config_dword(dev, off, val);
+//		off += 4;
+//		size -= 4;
+//	}
+//
+//	if (size >= 2) {
+//		u16 val = data[off - init_off];
+//		val |= (u16) data[off - init_off + 1] << 8;
+//		pci_user_write_config_word(dev, off, val);
+//		off += 2;
+//		size -= 2;
+//	}
+//
+//	if (size) {
+//		pci_user_write_config_byte(dev, off, data[off - init_off]);
+//		off++;
+//		--size;
+//	}
+//
+//	pci_config_pm_runtime_put(dev);
+//
+//	return count;
+}
+
+static struct bin_attribute rocker_dev_config_attr = {
+	.attr =	{
+		.name = "config",
+		.mode = S_IRUGO | S_IWUSR,
+	},
+	.size = PCI_CFG_SPACE_EXP_SIZE,
+	.read = rocker_dev_read_config,
+	.write = rocker_dev_write_config,
+};
+
+/*
+static int pci_create_attr(struct pci_dev *pdev, int num, int write_combine)
+{
+
+	int name_len = write_combine ? 13 : 10;
+	struct bin_attribute *res_attr;
+	char *res_attr_name;
+	int retval;
+
+	res_attr = kzalloc(sizeof(*res_attr) + name_len, GFP_ATOMIC);
+	if (!res_attr)
+		return -ENOMEM;
+
+	res_attr_name = (char *)(res_attr + 1);
+
+	sysfs_bin_attr_init(res_attr);
+//	if (write_combine) {
+//		pdev->res_attr_wc[num] = res_attr;
+//		sprintf(res_attr_name, "resource%d_wc", num);
+////		res_attr->mmap = pci_mmap_resource_wc;
+//	} else {
+//		pdev->res_attr[num] = res_attr;
+//		sprintf(res_attr_name, "resource%d", num);
+////		res_attr->mmap = pci_mmap_resource_uc;
+//	}
+        pdev->res_attr[num] = res_attr;
+        sprintf(res_attr_name, "resource%d", num);        
+        res_attr->read = pci_read_config;
+        res_attr->write = pci_write_config;        
+        res_attr->mmap = NULL;        
+//	if (pci_resource_flags(pdev, num) & IORESOURCE_IO) {
+//		res_attr->read = pci_read_config;
+//		res_attr->write = pci_write_config;
+//	}
+	res_attr->attr.name = res_attr_name;
+	res_attr->attr.mode = S_IRUSR | S_IWUSR;
+	res_attr->size = pci_resource_len(pdev, num);
+	res_attr->private = &pdev->resource[num];
+        
+        pdev->dev.kobj = kobject_create_and_add("kernel", NULL);
+	if (!pdev->dev.kobj) {
+		return -ENOMEM;
+	}
+        
+	retval = sysfs_create_bin_file(&pdev->dev.kobj, res_attr);
+	if (retval)
+		kfree(res_attr);
+
+	return retval;
+}
+*/
+
 int pci_setup_device(struct pci_dev *dev)
 {
 	u16 cmd;
@@ -642,6 +846,7 @@ int pci_setup_device(struct pci_dev *dev)
 	int pos = 0;
 	struct pci_bus_region region;
 	struct resource *res;
+        int i, retval;
 
         //slot=0, function=0    
         dev->devfn = PCI_DEVFN(0, 0);
@@ -663,10 +868,14 @@ int pci_setup_device(struct pci_dev *dev)
 	dev->error_state = pci_channel_io_normal;
 	set_pcie_port_type(dev);
 	dev->dma_mask = 0xffffffff;
-        dev->irq = 0x0;
+        dev->irq = 47; //Free in /proc/interrupts
         dev->pin = 0x0;        
 	dev->revision = 0x01;
 	dev->class = 0x2800;
+        dev->block_cfg_access = 0;
+        dev->is_physfn = 0;//Not a physical PCI
+        dev->is_virtfn = 1; //The device is a virtual function, not physcal function
+        
         
 	dev_set_name(&dev->dev, "%04x:%02x:%02x.%d", pci_domain_nr(dev->bus),
 		     dev->bus->number, PCI_SLOT(dev->devfn),
@@ -681,6 +890,13 @@ int pci_setup_device(struct pci_dev *dev)
 	/* "Unknown power state" */
 	dev->current_state = PCI_UNKNOWN;       
 
+	/* Expose the PCI resources from this device as files */
+//	for (i = 0; i < PCI_ROM_RESOURCE; i++) 
+//        {
+//            retval = pci_create_attr(dev, i, 0);
+//	}     
+        
+//        dev->res_attr[0] = &pcie_config_attr;
 
 //	switch (dev->hdr_type) {		    /* header type */
 //	case PCI_HEADER_TYPE_NORMAL:		    /* standard header */
@@ -775,8 +991,31 @@ int pci_setup_device(struct pci_dev *dev)
 	return 0;
 }
 
+static int rocker_bus_read(struct pci_bus *bus, unsigned int devfn, int where, int size, u32 *value)
+{
+    pr_info("rocker_bus_read !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    *value = 8;
+    return 0;
+//	return raw_pci_read(pci_domain_nr(bus), bus->number,
+//				 devfn, where, size, value);
+}
+
+static int rocker_bus_write(struct pci_bus *bus, unsigned int devfn, int where, int size, u32 value)
+{
+    pr_info("rocker_bus_write !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    return 0;
+//	return raw_pci_write(pci_domain_nr(bus), bus->number,
+//				  devfn, where, size, value);
+}
+
+struct pci_ops rocker_bus = {
+	.read = rocker_bus_read,
+	.write = rocker_bus_write,
+};
+
 static struct pci_dev* create_virtual_pci_dev(void)
 {
+    int retval;
     int err;
     struct pci_dev *dev;
     char *name;
@@ -789,9 +1028,10 @@ static struct pci_dev* create_virtual_pci_dev(void)
     //Bus # 0,8,9,10 has been occupied in my PC 
     bus->number = 11;
     bus->parent = NULL; //For virtual bus
-    dev_set_name(&bus->dev, "virtual_pci_bus");
+    dev_set_name(&bus->dev, "rocker_bus");
     bus->sysdata = kzalloc(sizeof(sd), GFP_KERNEL);
-    memcpy(bus->sysdata, &sd, sizeof(sd));    
+    memcpy(bus->sysdata, &sd, sizeof(sd));  
+    bus->ops = &rocker_bus;
     
     name = dev_name(&bus->dev);
     
@@ -817,9 +1057,14 @@ static struct pci_dev* create_virtual_pci_dev(void)
     err = device_register(&dev->dev);
     if(err)
         return NULL;
-    else
-        pr_info("Virtual PCI Device has been registered !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    pr_info("Virtual PCI Device has been registered !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 
+    //Expose config file from this device as file
+    retval = sysfs_create_bin_file(&dev->dev.kobj, &rocker_dev_config_attr);
+    if(retval)
+        return retval;
+    pr_info("Config file has been created !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");    
+    
     return dev;
 }
 
