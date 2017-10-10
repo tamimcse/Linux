@@ -787,7 +787,7 @@ static struct bin_attribute rocker_dev_config_attr = {
 	.write = rocker_dev_write_config,
 };
 
-/*
+
 static int pci_create_attr(struct pci_dev *pdev, int num, int write_combine)
 {
 
@@ -814,8 +814,8 @@ static int pci_create_attr(struct pci_dev *pdev, int num, int write_combine)
 //	}
         pdev->res_attr[num] = res_attr;
         sprintf(res_attr_name, "resource%d", num);        
-        res_attr->read = pci_read_config;
-        res_attr->write = pci_write_config;        
+        res_attr->read = rocker_dev_read_config;
+        res_attr->write = rocker_dev_write_config;        
         res_attr->mmap = NULL;        
 //	if (pci_resource_flags(pdev, num) & IORESOURCE_IO) {
 //		res_attr->read = pci_read_config;
@@ -825,19 +825,14 @@ static int pci_create_attr(struct pci_dev *pdev, int num, int write_combine)
 	res_attr->attr.mode = S_IRUSR | S_IWUSR;
 	res_attr->size = pci_resource_len(pdev, num);
 	res_attr->private = &pdev->resource[num];
-        
-        pdev->dev.kobj = kobject_create_and_add("kernel", NULL);
-	if (!pdev->dev.kobj) {
-		return -ENOMEM;
-	}
-        
+                
 	retval = sysfs_create_bin_file(&pdev->dev.kobj, res_attr);
 	if (retval)
 		kfree(res_attr);
 
 	return retval;
 }
-*/
+
 
 int pci_setup_device(struct pci_dev *dev)
 {
@@ -1017,6 +1012,7 @@ static struct pci_dev* create_virtual_pci_dev(void)
 {
     int retval;
     int err;
+    int i;
     struct pci_dev *dev;
     char *name;
     struct pci_bus *bus = pci_alloc_bus(NULL);
@@ -1064,6 +1060,16 @@ static struct pci_dev* create_virtual_pci_dev(void)
     if(retval)
         return retval;
     pr_info("Config file has been created !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");    
+    
+    
+    /* Expose the PCI resources from this device as files */
+    for (i = 0; i < PCI_ROM_RESOURCE; i++) 
+    {
+        retval = pci_create_attr(dev, i, 0);
+        if(retval)
+            pr_err("Couldn't create resource attribute !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");            
+    }     
+    
     
     return dev;
 }
