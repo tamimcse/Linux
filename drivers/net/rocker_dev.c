@@ -639,9 +639,27 @@ static ssize_t rocker_dev_read_config(struct file *filp, struct kobject *kobj,
 			       struct bin_attribute *bin_attr, char *buf,
 			       loff_t off, size_t count)
 {
+    struct device *dev = kobj_to_dev(kobj);
+    struct pci_dev *pcidev = to_pci_dev(dev);
+    
+    pr_info("Vendor: %hu Device: %hu !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", pcidev->vendor, pcidev->device);
+    
+    sprintf(buf, "%hu%hu%hu%hu%s", pcidev->vendor, pcidev->device,
+        5,//status
+        5,//command
+      //  pcidev->class & 0xFFFF, (pcidev->class & 0xFF0000) >> 16, pcidev->revision,
+        "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC");
+    
+    pr_info("PCI configuration space: %s !!!!!!!!!!!!!!!!!!", buf);
+    
+    //configure PCI configuration space
+//    memcpy(buf, pcidev->vendor, 2);
+//    memcpy(buf+2, pcidev->device, 2);
+//    memcpy(buf+4, "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC", 60);
+//    *buf = 'C';
     
     pr_info("Inside rocker_dev_read_config !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    return 3;
+    return 64;
 //	struct pci_dev *dev = to_pci_dev(kobj_to_dev(kobj));
 //	unsigned int size = 64;
 //	loff_t init_off = off;
@@ -719,7 +737,7 @@ static ssize_t rocker_dev_write_config(struct file *filp, struct kobject *kobj,
 				loff_t off, size_t count)
 {
     pr_info("Inside rocker_dev_write_config !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    return 3;
+    return 1;
 //	struct pci_dev *dev = to_pci_dev(kobj_to_dev(kobj));
 //	unsigned int size = count;
 //	loff_t init_off = off;
@@ -784,7 +802,7 @@ static struct bin_attribute rocker_dev_config_attr = {
 	},
 	.size = PCI_CFG_SPACE_EXP_SIZE,
 	.read = rocker_dev_read_config,
-	.write = rocker_dev_write_config,
+//	.write = rocker_dev_write_config,
 };
 
 
