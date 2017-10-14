@@ -130,8 +130,12 @@ sudo ip link add type rocker
 ISSUES
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-If Gstreamer video does not work, check if you are getting error in Gstreamer application. If Gstreamer application does not give any error, and the bbb.mp4 wouldn't be played by the player, most probably qtdemux has not been installed properly. It is part of gstreamer-plugins-good. But it may happen that gstreamer-plugins-good is installed, still that element is not present.
+If Gstreamer video does not work, check if you are getting error in Gstreamer application. If Gstreamer application does not give any error, and the bbb.mp4 wouldnot be played by the player, most probably qtdemux has not been installed properly. It is part of gstreamer-plugins-good. But it may happen that gstreamer-plugins-good is installed, still that element is not present.
 
 Solution: Uninstall and reinstall Gstreamer-plugins-good from source.
 
+
+If eBPF wouldnot compile.
+
+Solution: Please look at the README at samples/bpf/. Most probably you need to also execute make headers_install to make it to work.
 
