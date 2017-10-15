@@ -61,10 +61,17 @@ def main(cli=0):
 
 #    testing using port 45678 
 #    net['h2'].cmd('iperf -s -p 45678 &')
-#    net['h1'].cmd('iperf -c 172.16.101.2 -p 45678 -t 30')
+#    net['h1'].cmd('iperf -c 172.16.102.1 -p 45678 -t 30')
 
-    hosts = [net['h1'], net['h2']]        
-    net.iperf(hosts, seconds=30, l4Type='UDP', udpBw='850M')
+
+#Note that if you use mf module, the following test wouldn't work
+#    hosts = [net['h1'], net['h2']]        
+#    net.iperf(hosts, seconds=30, l4Type='UDP', udpBw='850M')
+
+#This test however would work with mf module. But it gives very small throughput due to small window size
+#    hosts = [net['h1'], net['h2']]        
+#    net.iperf(hosts, seconds=30, l4Type='TCP')
+
 
     CLI( net )
     net.stop()
