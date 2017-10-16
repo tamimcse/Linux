@@ -2,6 +2,7 @@
 #F10: BIOS, F9: advanced boot, sometimes I had to hold the key down to get it to work
 #sudo apt-get -f install &&
 sudo apt-get install -y git subversion &&
+sudo apt-get install -y netperf inetutils-traceroute &&
 sudo apt-get install -y python-gobject-dev liborc-0.4-dev gir1.2-gst-* &&
 sudo apt-get install -y texstudio texlive-latex-extra &&
 sudo apt-get install -y liblz4-tool liblz-dev &&
