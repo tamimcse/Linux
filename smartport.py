@@ -59,9 +59,7 @@ def main(cli=0):
 
 #    net['r1'].cmd( 'tc qdisc add dev r1-eth3 root handle 1: mf')
 
-#    testing using port 45678 
-#    net['h2'].cmd('iperf -s -p 45678 &')
-#    net['h1'].cmd('iperf -c 172.16.102.1 -p 45678 -t 30')
+
 
 
 #Note that if you use mf module, the following test wouldn't work
@@ -71,6 +69,14 @@ def main(cli=0):
 #This test however would work with mf module. But it gives very small throughput due to small window size
 #    hosts = [net['h1'], net['h2']]        
 #    net.iperf(hosts, seconds=30, l4Type='TCP')
+
+
+#   testing using port 45678, TCP window size 20MB and 10 connection 
+    net['h2'].cmd('iperf -s -p 45678 -w 20MB &')
+#Anyhing that blocks shouldn't be used in cmd(). Use popen() instead. It will create a new process. Now monitor the output of the process
+    proc = net['h1'].popen('iperf -c 172.16.102.1 -p 45678 -t 30  -w 20MB -P 10')
+    for line in iter(proc.stdout.readline, b''):
+	print line
 
 
     CLI( net )
