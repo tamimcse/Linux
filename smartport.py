@@ -76,10 +76,13 @@ def main(cli=0):
 #   testing using port 45678, TCP window size 20MB and 10 connection. 
     net['h2'].cmd('iperf -s -p 45678 -w 20MB &')
 #Anyhing that blocks shouldn't be used in cmd(). Use popen() instead. It will create a new process. Now monitor the output of the process
-    proc = net['h1'].popen('iperf -c 172.16.102.1 -p 45678 -t 30  -w 20MB -P 10')
+    proc = net['h1'].popen('iperf -c 172.16.102.1 -p 45678 -t 30  -w 20MB -P 5')
 
+
+#Netperf try
 #    net['h2'].cmd('sudo netserver -p 16604')
-#    proc = net['h1'].popen('netperf -f g -H 172.16.102.1 -p 16604 -l 30 -- -m 1500')
+# -f g stands for outputing in Gb/s
+#    proc = net['h1'].popen('netperf -f g -H 172.16.102.1 -p 16604 -l 30')
 
     for line in iter(proc.stdout.readline, b''):
 	print line
