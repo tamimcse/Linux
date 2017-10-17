@@ -71,13 +71,18 @@ def main(cli=0):
 #    net.iperf(hosts, seconds=30, l4Type='TCP')
 
 
-#   testing using port 45678, TCP window size 20MB and 10 connection 
+# Make sure to run cubic.sh if you didn't already. Otherwise it wouldn;t work
+
+#   testing using port 45678, TCP window size 20MB and 10 connection. 
     net['h2'].cmd('iperf -s -p 45678 -w 20MB &')
 #Anyhing that blocks shouldn't be used in cmd(). Use popen() instead. It will create a new process. Now monitor the output of the process
     proc = net['h1'].popen('iperf -c 172.16.102.1 -p 45678 -t 30  -w 20MB -P 10')
+
+#    net['h2'].cmd('sudo netserver -p 16604')
+#    proc = net['h1'].popen('netperf -f g -H 172.16.102.1 -p 16604 -l 30 -- -m 1500')
+
     for line in iter(proc.stdout.readline, b''):
 	print line
-
 
     CLI( net )
     net.stop()
