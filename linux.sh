@@ -41,7 +41,7 @@ sudo add-apt-repository ppa:graphics-drivers/ppa &&
 sudo apt-get update -y &&
 sudo apt-get install -y nvidia-361 nvidia-prime &&
 #Needed for NVIDIA graphics driver and lsscsi command
-sudo apt-get install -y lsscsi &&
+sudo apt-get install -y lsscsi cpuset &&
 #DVD burner
 sudo apt-get install -y k3b &&
 cd Downloads &&
