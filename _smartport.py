@@ -28,6 +28,8 @@ from mininet.cli import CLI
 import sys
 import time
 
+#following question shows how to reserve CPU cores to an user space process
+#https://unix.stackexchange.com/questions/282256/isolcpus-kernel-parameter-has-no-effect-on-ubuntu-16-04-desktop
 
 class LinuxRouter( Node ):
     "A Node with IP forwarding enabled."
@@ -82,7 +84,8 @@ def main(cli=0):
 #Anyhing that blocks shouldn't be used in cmd(). Use popen() instead. It will create a new process. Now monitor the output of the process
     proc = net['h1'].popen('iperf -c 172.16.102.1 -p 45678 -t 30  -w 20MB -P 10')
 
-#Parse the res to find out the PID of iperf server
+#Parse the res to find out the PID of iperf server. The program can crash if res isn't formatted properly. Try again
+    print res
     pid = res.split(" ")
     iperf_s_pid = pid[1]
     iperf_c_pid = int(pid[1]) + 1
@@ -102,6 +105,9 @@ def main(cli=0):
 
     for line in iter(proc.stdout.readline, b''):
 	print line
+
+    net['h2'].cmd('sudo kill -9 {0}'.format(iperf_s_pid))
+    net['h1'].cmd('sudo kill -9 {0}'.format(iperf_c_pid))
 
     CLI( net )
     net.stop()
