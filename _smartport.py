@@ -84,8 +84,10 @@ def main(cli=0):
 #Anyhing that blocks shouldn't be used in cmd(). Use popen() instead. It will create a new process. Now monitor the output of the process
     proc = net['h1'].popen('iperf -c 172.16.102.1 -p 45678 -t 30  -w 20MB -P 10')
 
+
+#    print res #Don't uncomment this. Strange things happen :-(
+
 #Parse the res to find out the PID of iperf server. The program can crash if res isn't formatted properly. Try again
-    print res
     pid = res.split(" ")
     iperf_s_pid = pid[1]
     iperf_c_pid = int(pid[1]) + 1
