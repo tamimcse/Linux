@@ -30,6 +30,10 @@ import time
 
 #following question shows how to reserve CPU cores to an user space process
 #https://unix.stackexchange.com/questions/282256/isolcpus-kernel-parameter-has-no-effect-on-ubuntu-16-04-desktop
+#Add  "nohz_full=1-3 isolcpus=1-3 rcu_nocbs=1-3 intel_idle.max_cstate=0 irqaffinity=0,1 selinux=0 audit=0 tsc=reliable" to grub config instead to make it tickless
+#Also compile kernel with these kernel configs:
+#CONFIG_NO_HZ_FULL=y
+#CONFIG_NO_HZ_FULL_ALL=y
 
 class LinuxRouter( Node ):
     "A Node with IP forwarding enabled."
