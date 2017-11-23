@@ -101,7 +101,7 @@ def main(cli=0):
 #Pin iperf server and client to core 0 and 1 respectively. Note that throughput you get depends on other applications running on a CPU. So if you get bad throughput, try restatring. Even though you close some applications, the process can sit in the backgroud
     net['h2'].cmd('sudo taskset -pc 0 {0}'.format(iperf_s_pid))
     net['h1'].cmd('sudo taskset -pc 1 {0}'.format(iperf_c_pid))
-  
+#Currently it's getting >50Gbps without isolcpus  
 
 
 #Netperf try
