@@ -824,6 +824,6 @@ CONFIG_PERF_EVENTS=y
 #CONFIG_ARC_UBOOT_SUPPORT=y
 
 #Disable the timer ticks. Convert RCU callback and interrupts to kernel threads.
-#CONFIG_NO_HZ_FULL=y
+CONFIG_NO_HZ_FULL=y
 CONFIG_RCU_NOCB_CPU=y
 CONFIG_IRQ_FORCED_THREADING=y
