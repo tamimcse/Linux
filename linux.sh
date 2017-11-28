@@ -42,6 +42,7 @@ sudo apt-get update -y &&
 sudo apt-get install -y nvidia-361 nvidia-prime &&
 #Needed for NVIDIA graphics driver, lsscsi, DPDK command
 sudo apt-get install -y lsscsi cpuset sysstat rt-tests libnuma-dev &&
+sudo apt-get install -y libvirt-bin libvirt-dev &&
 #DVD burner
 sudo apt-get install -y k3b &&
 cd Downloads &&
