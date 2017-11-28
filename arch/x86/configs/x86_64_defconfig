@@ -827,6 +827,9 @@ CONFIG_HUGETLBFS=y
 CONFIG_PROC_PAGE_MONITOR=y 
 CONFIG_HPET=y
 CONFIG_HPET_MMAP=y
+#Enables userspace IO
+CONFIG_UIO_PCI_GENERIC=m
+CONFIG_UIO=m
 
 #Disable the timer ticks. Convert RCU callback and interrupts to kernel threads.
 CONFIG_NO_HZ_FULL=y
