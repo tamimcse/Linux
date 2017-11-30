@@ -125,12 +125,6 @@ sudo ip link add type rocker
 
 
 
-#DPDK
-make config T=x86_64-native-linuxapp-gcc
-make install DESTDIR=install
-cd example/helloworld
-make RTE_SDK=$(readlink -e ../../install/usr/local/share/dpdk)
-
 
 
 ISSUES
