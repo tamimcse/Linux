@@ -852,6 +852,14 @@ CONFIG_PPC_BOOK3E_64=y
 CONFIG_ARCH_LAYERSCAPE=y
 #This is needed for drivers relevent to other architecture
 CONFIG_COMPILE_TEST=y
+CONFIG_FS_ENET=m
+CONFIG_PPC_MPC512x=y
+CONFIG_6xx=y
+CONFIG_CPM1=y
+CONFIG_CPM2=y
+CONFIG_MPC8560=y
+CONFIG_MPC8560_ADS=y
+
 
 
 #Disable the timer ticks. Convert RCU callback and interrupts to kernel threads.
