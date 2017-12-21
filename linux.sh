@@ -138,9 +138,9 @@ sudo chmod a+rwx netbeans-8.2-cpp-linux-x64.sh &&
 sudo sh netbeans-8.2-cpp-linux-x64.sh &&
 cd .. &&
 cd Downloads &&
-wget http://www.syntevo.com/static/smart/download/smartgit/smartgit-17_0_4.deb &&     
-sudo chmod a+rwx smartgit-17_0_4.deb &&
-sudo dpkg -i smartgit-17_0_4.deb &&
+wget http://www.syntevo.com/static/smart/download/smartgit/smartgit-17_1_3.deb &&     
+sudo chmod a+rwx smartgit-17_1_3.deb &&
+sudo dpkg -i smartgit-17_1_3.deb &&
 sudo apt-get -f install &&
 cd .. &&
 sudo rm -R openflow &&
