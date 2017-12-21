@@ -105,8 +105,8 @@ git clone https://github.com/rampageX/firmware-mod-kit &&
 git clone https://github.com/wkennington/linux-firmware &&
 git clone git://github.com/mininet/mininet &&
 git clone https://git.kernel.org/pub/scm/linux/kernel/git/shemminger/iproute2.git &&
-git clone https://git.lede-project.org/source.git lede &&
-cd lede && ./scripts/feeds update -a && ./scripts/feeds install -a && git config core.fileMode && cd .. &&
+#git clone https://git.lede-project.org/source.git lede &&
+#cd lede && ./scripts/feeds update -a && ./scripts/feeds install -a && git config core.fileMode && cd .. &&
 git config --global core.compression 0 &&
 git clone --depth 1 https://_tamim_@bitbucket.org/_tamim_/research.git &&
 cd research &&
