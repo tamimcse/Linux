@@ -429,15 +429,6 @@ static struct Qdisc *mf_leaf(struct Qdisc *sch, unsigned long arg)
 	return q->qdisc;
 }
 
-static unsigned long mf_get(struct Qdisc *sch, u32 classid)
-{
-	return 1;
-}
-
-static void mf_put(struct Qdisc *sch, unsigned long arg)
-{
-}
-
 static void mf_walk(struct Qdisc *sch, struct qdisc_walker *walker)
 {
 	if (!walker->stop) {
@@ -453,8 +444,6 @@ static void mf_walk(struct Qdisc *sch, struct qdisc_walker *walker)
 static const struct Qdisc_class_ops mf_class_ops = {
 	.graft		=	mf_graft,
 	.leaf		=	mf_leaf,
-	.get		=	mf_get,
-	.put		=	mf_put,
 	.walk		=	mf_walk,
 	.dump		=	mf_dump_class,
 };

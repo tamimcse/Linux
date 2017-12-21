@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _SCSI_SCSI_HOST_H
 #define _SCSI_SCSI_HOST_H
 
@@ -452,11 +453,6 @@ struct scsi_host_template {
 	unsigned no_write_same:1;
 
 	/*
-	 * True if asynchronous aborts are not supported
-	 */
-	unsigned no_async_abort:1;
-
-	/*
 	 * Countdown for host blocking with no commands outstanding.
 	 */
 	unsigned int max_host_blocked;
@@ -695,12 +691,6 @@ struct Scsi_Host {
 	/* Protection Information */
 	unsigned int prot_capabilities;
 	unsigned char prot_guard_type;
-
-	/*
-	 * q used for scsi_tgt msgs, async events or any other requests that
-	 * need to be processed in userspace
-	 */
-	struct request_queue *uspace_req_q;
 
 	/* legacy crap */
 	unsigned long base;

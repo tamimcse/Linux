@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2015, Wang Nan <wangnan0@huawei.com>
  * Copyright (C) 2015, Huawei Inc.
@@ -12,6 +13,7 @@
 #include "llvm-utils.h"
 #include "config.h"
 #include "util.h"
+#include <sys/wait.h>
 
 #define CLANG_BPF_CMD_DEFAULT_TEMPLATE				\
 		"$CLANG_EXEC -D__KERNEL__ -D__NR_CPUS__=$NR_CPUS "\
@@ -32,7 +34,7 @@ struct llvm_param llvm_param = {
 
 int perf_llvm_config(const char *var, const char *value)
 {
-	if (prefixcmp(var, "llvm."))
+	if (!strstarts(var, "llvm."))
 		return 0;
 	var += sizeof("llvm.") - 1;
 

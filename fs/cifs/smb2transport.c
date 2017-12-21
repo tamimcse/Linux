@@ -335,9 +335,31 @@ generate_smb3signingkey(struct cifs_ses *ses,
 	if (rc)
 		return rc;
 
-	return generate_key(ses, ptriplet->decryption.label,
-			    ptriplet->decryption.context,
-			    ses->smb3decryptionkey, SMB3_SIGN_KEY_SIZE);
+	rc = generate_key(ses, ptriplet->decryption.label,
+			  ptriplet->decryption.context,
+			  ses->smb3decryptionkey, SMB3_SIGN_KEY_SIZE);
+
+	if (rc)
+		return rc;
+
+#ifdef CONFIG_CIFS_DEBUG_DUMP_KEYS
+	cifs_dbg(VFS, "%s: dumping generated AES session keys\n", __func__);
+	/*
+	 * The session id is opaque in terms of endianness, so we can't
+	 * print it as a long long. we dump it as we got it on the wire
+	 */
+	cifs_dbg(VFS, "Session Id    %*ph\n", (int)sizeof(ses->Suid),
+			&ses->Suid);
+	cifs_dbg(VFS, "Session Key   %*ph\n",
+		 SMB2_NTLMV2_SESSKEY_SIZE, ses->auth_key.response);
+	cifs_dbg(VFS, "Signing Key   %*ph\n",
+		 SMB3_SIGN_KEY_SIZE, ses->smb3signingkey);
+	cifs_dbg(VFS, "ServerIn Key  %*ph\n",
+		 SMB3_SIGN_KEY_SIZE, ses->smb3encryptionkey);
+	cifs_dbg(VFS, "ServerOut Key %*ph\n",
+		 SMB3_SIGN_KEY_SIZE, ses->smb3decryptionkey);
+#endif
+	return rc;
 }
 
 int
@@ -368,6 +390,7 @@ generate_smb30signingkey(struct cifs_ses *ses)
 	return generate_smb3signingkey(ses, &triplet);
 }
 
+#ifdef CONFIG_CIFS_SMB311
 int
 generate_smb311signingkey(struct cifs_ses *ses)
 
@@ -376,25 +399,26 @@ generate_smb311signingkey(struct cifs_ses *ses)
 	struct derivation *d;
 
 	d = &triplet.signing;
-	d->label.iov_base = "SMB2AESCMAC";
-	d->label.iov_len = 12;
-	d->context.iov_base = "SmbSign";
-	d->context.iov_len = 8;
+	d->label.iov_base = "SMBSigningKey";
+	d->label.iov_len = 14;
+	d->context.iov_base = ses->preauth_sha_hash;
+	d->context.iov_len = 64;
 
 	d = &triplet.encryption;
-	d->label.iov_base = "SMB2AESCCM";
-	d->label.iov_len = 11;
-	d->context.iov_base = "ServerIn ";
-	d->context.iov_len = 10;
+	d->label.iov_base = "SMBC2SCipherKey";
+	d->label.iov_len = 16;
+	d->context.iov_base = ses->preauth_sha_hash;
+	d->context.iov_len = 64;
 
 	d = &triplet.decryption;
-	d->label.iov_base = "SMB2AESCCM";
-	d->label.iov_len = 11;
-	d->context.iov_base = "ServerOut";
-	d->context.iov_len = 10;
+	d->label.iov_base = "SMBS2CCipherKey";
+	d->label.iov_len = 16;
+	d->context.iov_base = ses->preauth_sha_hash;
+	d->context.iov_len = 64;
 
 	return generate_smb3signingkey(ses, &triplet);
 }
+#endif /* 311 */
 
 int
 smb3_calc_signature(struct smb_rqst *rqst, struct TCP_Server_Info *server)
@@ -538,23 +562,19 @@ smb2_mid_entry_alloc(const struct smb2_sync_hdr *shdr,
 	}
 
 	temp = mempool_alloc(cifs_mid_poolp, GFP_NOFS);
-	if (temp == NULL)
-		return temp;
-	else {
-		memset(temp, 0, sizeof(struct mid_q_entry));
-		temp->mid = le64_to_cpu(shdr->MessageId);
-		temp->pid = current->pid;
-		temp->command = shdr->Command; /* Always LE */
-		temp->when_alloc = jiffies;
-		temp->server = server;
+	memset(temp, 0, sizeof(struct mid_q_entry));
+	temp->mid = le64_to_cpu(shdr->MessageId);
+	temp->pid = current->pid;
+	temp->command = shdr->Command; /* Always LE */
+	temp->when_alloc = jiffies;
+	temp->server = server;
 
-		/*
-		 * The default is for the mid to be synchronous, so the
-		 * default callback just wakes up the current task.
-		 */
-		temp->callback = cifs_wake_up_task;
-		temp->callback_data = current;
-	}
+	/*
+	 * The default is for the mid to be synchronous, so the
+	 * default callback just wakes up the current task.
+	 */
+	temp->callback = cifs_wake_up_task;
+	temp->callback_data = current;
 
 	atomic_inc(&midCount);
 	temp->mid_state = MID_REQUEST_ALLOCATED;

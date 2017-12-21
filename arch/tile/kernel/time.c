@@ -155,11 +155,14 @@ static DEFINE_PER_CPU(struct clock_event_device, tile_timer) = {
 	.name = "tile timer",
 	.features = CLOCK_EVT_FEAT_ONESHOT,
 	.min_delta_ns = 1000,
+	.min_delta_ticks = 1,
+	.max_delta_ticks = MAX_TICK,
 	.rating = 100,
 	.irq = -1,
 	.set_next_event = tile_timer_set_next_event,
 	.set_state_shutdown = tile_timer_shutdown,
 	.set_state_oneshot = tile_timer_shutdown,
+	.set_state_oneshot_stopped = tile_timer_shutdown,
 	.tick_resume = tile_timer_shutdown,
 };
 

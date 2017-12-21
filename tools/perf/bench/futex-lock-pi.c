@@ -1,8 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2015 Davidlohr Bueso.
  */
 
 /* For the CLR_() macros */
+#include <string.h>
 #include <pthread.h>
 
 #include <signal.h>
@@ -139,8 +141,7 @@ static void create_threads(struct worker *w, pthread_attr_t thread_attr)
 	}
 }
 
-int bench_futex_lock_pi(int argc, const char **argv,
-			const char *prefix __maybe_unused)
+int bench_futex_lock_pi(int argc, const char **argv)
 {
 	int ret = 0;
 	unsigned int i;

@@ -32,6 +32,7 @@ da# NOTE! Don't add files that are generated in specific
 *.lzo
 *.patch
 *.gcno
+*.ll
 modules.builtin
 Module.symvers
 nbproject

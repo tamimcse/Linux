@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include "r8192U.h"
 #include "r8192U_hw.h"
 #include "r819xU_phy.h"
@@ -1559,17 +1560,17 @@ void rtl8192_SetBWModeWorkItem(struct net_device *dev)
 				 0x00100000, 1);
 
 		/* Correct the tx power for CCK rate in 20M. */
-		priv->cck_present_attentuation =
-			priv->cck_present_attentuation_20Mdefault +
-			priv->cck_present_attentuation_difference;
+		priv->cck_present_attenuation =
+			priv->cck_present_attenuation_20Mdefault +
+			priv->cck_present_attenuation_difference;
 
-		if (priv->cck_present_attentuation > 22)
-			priv->cck_present_attentuation = 22;
-		if (priv->cck_present_attentuation < 0)
-			priv->cck_present_attentuation = 0;
+		if (priv->cck_present_attenuation > 22)
+			priv->cck_present_attenuation = 22;
+		if (priv->cck_present_attenuation < 0)
+			priv->cck_present_attenuation = 0;
 		RT_TRACE(COMP_INIT,
 			 "20M, pHalData->CCKPresentAttentuation = %d\n",
-			 priv->cck_present_attentuation);
+			 priv->cck_present_attenuation);
 
 		if (priv->chan == 14 && !priv->bcck_in_ch14) {
 			priv->bcck_in_ch14 = true;
@@ -1590,18 +1591,18 @@ void rtl8192_SetBWModeWorkItem(struct net_device *dev)
 		rtl8192_setBBreg(dev, rFPGA0_AnalogParameter1, 0x00100000, 0);
 		rtl8192_setBBreg(dev, rOFDM1_LSTF, 0xC00,
 				 priv->nCur40MhzPrimeSC);
-		priv->cck_present_attentuation =
-			priv->cck_present_attentuation_40Mdefault +
-			priv->cck_present_attentuation_difference;
+		priv->cck_present_attenuation =
+			priv->cck_present_attenuation_40Mdefault +
+			priv->cck_present_attenuation_difference;
 
-		if (priv->cck_present_attentuation > 22)
-			priv->cck_present_attentuation = 22;
-		if (priv->cck_present_attentuation < 0)
-			priv->cck_present_attentuation = 0;
+		if (priv->cck_present_attenuation > 22)
+			priv->cck_present_attenuation = 22;
+		if (priv->cck_present_attenuation < 0)
+			priv->cck_present_attenuation = 0;
 
 		RT_TRACE(COMP_INIT,
 			 "40M, pHalData->CCKPresentAttentuation = %d\n",
-			 priv->cck_present_attentuation);
+			 priv->cck_present_attenuation);
 		if (priv->chan == 14 && !priv->bcck_in_ch14) {
 			priv->bcck_in_ch14 = true;
 			dm_cck_txpower_adjust(dev, priv->bcck_in_ch14);

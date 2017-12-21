@@ -1,6 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
 #include "cpumap.h"
 #include "env.h"
 #include "util.h"
+#include <errno.h>
 
 struct perf_env perf_env;
 

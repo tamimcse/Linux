@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <elf.h>
 #include <inttypes.h>
 #include <sys/ttydefaults.h>
@@ -10,6 +11,8 @@
 #include "../helpline.h"
 #include "../keysyms.h"
 #include "map.h"
+
+#include "sane_ctype.h"
 
 struct map_browser {
 	struct ui_browser b;

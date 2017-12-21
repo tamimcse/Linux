@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 # define_trace.h needs to know how to find our header
 CFLAGS_trace.o				:= -I$(src)
 
@@ -15,6 +16,10 @@ endif
 
 ifneq ($(filter y,$(CONFIG_USB_DWC3_GADGET) $(CONFIG_USB_DWC3_DUAL_ROLE)),)
 	dwc3-y				+= gadget.o ep0.o
+endif
+
+ifneq ($(CONFIG_USB_DWC3_DUAL_ROLE),)
+	dwc3-y				+= drd.o
 endif
 
 ifneq ($(CONFIG_USB_DWC3_ULPI),)

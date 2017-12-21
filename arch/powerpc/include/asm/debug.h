@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (C) 1999 Cort Dougan <cort@cs.nmt.edu>
  */
@@ -7,8 +8,6 @@
 #include <asm/hw_breakpoint.h>
 
 struct pt_regs;
-
-extern struct dentry *powerpc_debugfs_root;
 
 #if defined(CONFIG_DEBUGGER) || defined(CONFIG_KEXEC_CORE)
 

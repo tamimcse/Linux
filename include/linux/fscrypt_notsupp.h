@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * fscrypt_notsupp.h
  *
@@ -145,6 +146,15 @@ static inline int fscrypt_fname_usr_to_disk(struct inode *inode,
 					    struct fscrypt_str *oname)
 {
 	return -EOPNOTSUPP;
+}
+
+static inline bool fscrypt_match_name(const struct fscrypt_name *fname,
+				      const u8 *de_name, u32 de_name_len)
+{
+	/* Encryption support disabled; use standard comparison */
+	if (de_name_len != fname->disk_name.len)
+		return false;
+	return !memcmp(de_name, fname->disk_name.name, fname->disk_name.len);
 }
 
 /* bio.c */

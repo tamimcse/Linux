@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __LINUX_GPIO_CONSUMER_H
 #define __LINUX_GPIO_CONSUMER_H
 
@@ -170,14 +171,14 @@ static inline struct gpio_desc *__must_check
 gpiod_get_optional(struct device *dev, const char *con_id,
 		   enum gpiod_flags flags)
 {
-	return ERR_PTR(-ENOSYS);
+	return NULL;
 }
 
 static inline struct gpio_desc *__must_check
 gpiod_get_index_optional(struct device *dev, const char *con_id,
 			 unsigned int index, enum gpiod_flags flags)
 {
-	return ERR_PTR(-ENOSYS);
+	return NULL;
 }
 
 static inline struct gpio_descs *__must_check
@@ -191,7 +192,7 @@ static inline struct gpio_descs *__must_check
 gpiod_get_array_optional(struct device *dev, const char *con_id,
 			 enum gpiod_flags flags)
 {
-	return ERR_PTR(-ENOSYS);
+	return NULL;
 }
 
 static inline void gpiod_put(struct gpio_desc *desc)
@@ -231,14 +232,14 @@ static inline struct gpio_desc *__must_check
 devm_gpiod_get_optional(struct device *dev, const char *con_id,
 			  enum gpiod_flags flags)
 {
-	return ERR_PTR(-ENOSYS);
+	return NULL;
 }
 
 static inline struct gpio_desc *__must_check
 devm_gpiod_get_index_optional(struct device *dev, const char *con_id,
 				unsigned int index, enum gpiod_flags flags)
 {
-	return ERR_PTR(-ENOSYS);
+	return NULL;
 }
 
 static inline struct gpio_descs *__must_check
@@ -252,7 +253,7 @@ static inline struct gpio_descs *__must_check
 devm_gpiod_get_array_optional(struct device *dev, const char *con_id,
 			      enum gpiod_flags flags)
 {
-	return ERR_PTR(-ENOSYS);
+	return NULL;
 }
 
 static inline void devm_gpiod_put(struct device *dev, struct gpio_desc *desc)

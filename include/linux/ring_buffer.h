@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_RING_BUFFER_H
 #define _LINUX_RING_BUFFER_H
 
@@ -185,7 +186,7 @@ size_t ring_buffer_page_len(void *page);
 
 
 void *ring_buffer_alloc_read_page(struct ring_buffer *buffer, int cpu);
-void ring_buffer_free_read_page(struct ring_buffer *buffer, void *data);
+void ring_buffer_free_read_page(struct ring_buffer *buffer, int cpu, void *data);
 int ring_buffer_read_page(struct ring_buffer *buffer, void **data_page,
 			  size_t len, int cpu, int full);
 

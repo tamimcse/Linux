@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _RAID1_H
 #define _RAID1_H
 
@@ -84,6 +85,7 @@ struct r1conf {
 	 */
 	wait_queue_head_t	wait_barrier;
 	spinlock_t		resync_lock;
+	atomic_t		nr_sync_pending;
 	atomic_t		*nr_pending;
 	atomic_t		*nr_waiting;
 	atomic_t		*nr_queued;
@@ -106,6 +108,8 @@ struct r1conf {
 	struct pool_info	*poolinfo;
 	mempool_t		*r1bio_pool;
 	mempool_t		*r1buf_pool;
+
+	struct bio_set		*bio_split;
 
 	/* temporary buffer to synchronous IO when attempting to repair
 	 * a read error.
@@ -153,9 +157,13 @@ struct r1bio {
 	int			read_disk;
 
 	struct list_head	retry_list;
-	/* Next two are only valid when R1BIO_BehindIO is set */
-	struct bio_vec		*behind_bvecs;
-	int			behind_page_count;
+
+	/*
+	 * When R1BIO_BehindIO is set, we store pages for write behind
+	 * in behind_master_bio.
+	 */
+	struct bio		*behind_master_bio;
+
 	/*
 	 * if the IO is in WRITE direction, then multiple bios are used.
 	 * We choose the number when they are allocated.

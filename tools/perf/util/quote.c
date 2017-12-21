@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0
+#include <errno.h>
 #include <stdlib.h>
 #include "strbuf.h"
 #include "quote.h"

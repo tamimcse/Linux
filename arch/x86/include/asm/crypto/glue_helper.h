@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Shared glue code for 128bit block ciphers
  */
@@ -123,16 +124,6 @@ static inline void le128_inc(le128 *i)
 
 	i->a = cpu_to_le64(a);
 	i->b = cpu_to_le64(b);
-}
-
-static inline void le128_gf128mul_x_ble(le128 *dst, const le128 *src)
-{
-	u64 a = le64_to_cpu(src->a);
-	u64 b = le64_to_cpu(src->b);
-	u64 _tt = ((s64)a >> 63) & 0x87;
-
-	dst->a = cpu_to_le64((a << 1) ^ (b >> 63));
-	dst->b = cpu_to_le64((b << 1) ^ _tt);
 }
 
 extern int glue_ecb_crypt_128bit(const struct common_glue_ctx *gctx,

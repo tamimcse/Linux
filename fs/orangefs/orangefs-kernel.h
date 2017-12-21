@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * (C) 2001 Clemson University and The University of Chicago
  *
@@ -215,6 +216,7 @@ struct orangefs_inode_s {
 	unsigned long pinode_flags;
 
 	unsigned long getattr_time;
+	u32 getattr_mask;
 };
 
 #define P_ATIME_FLAG 0
@@ -338,11 +340,6 @@ static inline ino_t orangefs_khandle_to_ino(struct orangefs_khandle *khandle)
 static inline struct orangefs_khandle *get_khandle_from_ino(struct inode *inode)
 {
 	return &(ORANGEFS_I(inode)->refn.khandle);
-}
-
-static inline __s32 get_fsid_from_ino(struct inode *inode)
-{
-	return ORANGEFS_I(inode)->refn.fs_id;
 }
 
 static inline ino_t get_ino_from_khandle(struct inode *inode)
@@ -500,7 +497,8 @@ int orangefs_inode_setxattr(struct inode *inode,
 			 size_t size,
 			 int flags);
 
-int orangefs_inode_getattr(struct inode *inode, int new, int bypass);
+int orangefs_inode_getattr(struct inode *inode, int new, int bypass,
+    u32 request_mask);
 
 int orangefs_inode_check_changed(struct inode *inode);
 

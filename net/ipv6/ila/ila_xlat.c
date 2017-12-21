@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/jhash.h>
 #include <linux/netfilter.h>
 #include <linux/rcupdate.h>
@@ -41,13 +42,7 @@ static int alloc_ila_locks(struct ila_net *ilan)
 	size = roundup_pow_of_two(nr_pcpus * LOCKS_PER_CPU);
 
 	if (sizeof(spinlock_t) != 0) {
-#ifdef CONFIG_NUMA
-		if (size * sizeof(spinlock_t) > PAGE_SIZE)
-			ilan->locks = vmalloc(size * sizeof(spinlock_t));
-		else
-#endif
-		ilan->locks = kmalloc_array(size, sizeof(spinlock_t),
-					    GFP_KERNEL);
+		ilan->locks = kvmalloc(size * sizeof(spinlock_t), GFP_KERNEL);
 		if (!ilan->locks)
 			return -ENOMEM;
 		for (i = 0; i < size; i++)
@@ -68,6 +63,7 @@ static inline u32 ila_locator_hash(struct ila_locator loc)
 {
 	u32 *v = (u32 *)loc.v32;
 
+	__ila_hash_secret_init();
 	return jhash_2words(v[0], v[1], hashrnd);
 }
 
@@ -213,7 +209,7 @@ ila_nf_input(void *priv,
 	return NF_ACCEPT;
 }
 
-static struct nf_hook_ops ila_nf_hook_ops[] __read_mostly = {
+static const struct nf_hook_ops ila_nf_hook_ops[] = {
 	{
 		.hook = ila_nf_input,
 		.pf = NFPROTO_IPV6,

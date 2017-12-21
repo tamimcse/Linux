@@ -344,6 +344,11 @@ void __init arm_mm_memblock_reserve(void)
 	 * reserved here.
 	 */
 #endif
+	/*
+	 * In any case, always ensure address 0 is never used as many things
+	 * get very confused if 0 is returned as a legitimate address.
+	 */
+	memblock_reserve(0, 1);
 }
 
 void __init adjust_lowmem_bounds(void)
@@ -435,6 +440,18 @@ void __iomem *ioremap_wc(resource_size_t res_cookie, size_t size)
 				    __builtin_return_address(0));
 }
 EXPORT_SYMBOL(ioremap_wc);
+
+#ifdef CONFIG_PCI
+
+#include <asm/mach/map.h>
+
+void __iomem *pci_remap_cfgspace(resource_size_t res_cookie, size_t size)
+{
+	return arch_ioremap_caller(res_cookie, size, MT_UNCACHED,
+				   __builtin_return_address(0));
+}
+EXPORT_SYMBOL_GPL(pci_remap_cfgspace);
+#endif
 
 void *arch_memremap_wb(phys_addr_t phys_addr, size_t size)
 {
