@@ -305,7 +305,6 @@ CONFIG_ATH9K_HTC=m
 CONFIG_ATH9K_HTC_DEBUGFS=y
 
 
-CONFIG_TCP_MF=n
 CONFIG_TCP_INIGO=y
 
 #Veth, Network namespace, and NetEm setup (Needed for Mininet)

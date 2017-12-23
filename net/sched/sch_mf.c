@@ -441,10 +441,16 @@ static void mf_walk(struct Qdisc *sch, struct qdisc_walker *walker)
 	}
 }
 
+static unsigned long mf_find(struct Qdisc *sch, u32 classid)
+{
+	return 0;
+}
+
 static const struct Qdisc_class_ops mf_class_ops = {
 	.graft		=	mf_graft,
 	.leaf		=	mf_leaf,
 	.walk		=	mf_walk,
+        .find           =       mf_find,
 	.dump		=	mf_dump_class,
 };
 

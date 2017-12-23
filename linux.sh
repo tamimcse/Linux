@@ -144,4 +144,3 @@ sudo dpkg -i smartgit-17_1_3.deb &&
 sudo apt-get -f install &&
 cd .. &&
 sudo rm -R openflow &&
-sudo rm -R mf_tcp
