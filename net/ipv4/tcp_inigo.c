@@ -541,12 +541,23 @@ static void inigo_pkts_acked(struct sock *sk, const struct ack_sample *sample)
 		ca->rtts_late++;
 }
 
+
+/* Copied from BBR.
+ * In theory BBR does not need to undo the cwnd since it does not
+ * always reduce cwnd on losses (see bbr_main()). Keep it for now.
+ */
+static u32 inigo_undo_cwnd(struct sock *sk)
+{
+	return tcp_sk(sk)->snd_cwnd;
+}
+
 static struct tcp_congestion_ops inigo __read_mostly = {
 	.init		= inigo_init,
 	.in_ack_event   = inigo_update_alpha,
 	.cwnd_event	= inigo_cwnd_event,
 	.ssthresh	= inigo_ssthresh,
 	.cong_avoid	= tcp_reno_cong_avoid,
+        .undo_cwnd      = inigo_undo_cwnd,
 	.pkts_acked 	= inigo_pkts_acked,
 	.set_state	= inigo_state,
 	.owner		= THIS_MODULE,
