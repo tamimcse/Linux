@@ -443,7 +443,9 @@ static void mf_walk(struct Qdisc *sch, struct qdisc_walker *walker)
 
 static unsigned long mf_find(struct Qdisc *sch, u32 classid)
 {
-	return 0;
+    //Currently MF has no class. So we always return 1. CoDel is returning 0. This made MF not to be
+    //chained by other qdiscs.
+	return 1;
 }
 
 static const struct Qdisc_class_ops mf_class_ops = {
