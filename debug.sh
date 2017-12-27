@@ -1,6 +1,6 @@
 sudo -i &&
-#cd ../home/tamim/Linux/ &&
-echo 8 > /proc/sys/kernel/printk &&
+#There should be a space between 7 and >
+echo 7 > /proc/sys/kernel/printk &&
 cat /proc/sys/kernel/printk &&
 exit
 
