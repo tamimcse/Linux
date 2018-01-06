@@ -874,7 +874,15 @@ CONFIG_UIO=m
 #Freescale IOMMU
 #CONFIG_FSL_PAMU=y
 
+#Enable NIC DMA (On my laptop, enabling these makes things slow)
+#CONFIG_NET_DMA=y
+#CONFIG_DMA_ENGINE=y
+#CONFIG_INTEL_IOATDMA=m
 
+#Enable Intel DDIO (DCA), although y by default (On my laptop, enabling these makes things slow)
+#CONFIG_DCA=m
+#CONFIG_IXGBE_DCA=y
+#CONFIG_IGB=m
 
 #Disable the timer ticks. Convert RCU callback and interrupts to kernel threads.
 CONFIG_NO_HZ_FULL=y
