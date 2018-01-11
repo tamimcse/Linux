@@ -132,7 +132,7 @@ def main(cli=0):
 #	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 2:10 handle 10: netem delay {1} {2} loss {3}'.format(router, bottleneck_delay, bottleneck_delay_var, bottleneck_loss))
         #NetEm in kernel 14.14 does does not support 0% loss
 	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 2:10 handle 10: netem delay {1} {2}'.format(router, bottleneck_delay, bottleneck_delay_var))
-#	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 10: handle 101: codel'.format(router))	      
+#	net[router].cmd( 'tc qdisc add dev {0}-eth1 parent 10: handle 101: codel'.format(router))//fq_codel ain't designed to be a root 	      
 
     for router in ['r2']:    	
 	net[router].cmd( 'tc qdisc add dev {0}-eth1 root handle 1: htb default 10'.format(router))
