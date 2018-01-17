@@ -4,7 +4,7 @@
 sudo apt-get install -y git subversion &&
 sudo apt-get install -y netperf inetutils-traceroute &&
 sudo apt-get install -y python-gobject-dev liborc-0.4-dev gir1.2-gst-* &&
-sudo apt-get install -y texstudio texlive-latex-extra texlive-generic-extra &&
+sudo apt-get install -y texstudio texlive-latex-extra texlive-generic-extra texlive-full &&
 sudo apt-get install -y liblz4-tool liblz-dev &&
 sudo apt-get install -y kexec-tools &&
 sudo apt-get install -y openjdk-8-jre-headless &&
