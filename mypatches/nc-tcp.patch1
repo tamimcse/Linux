@@ -1,0 +1,1843 @@
+From 03abcbd163cb60d259ceace74f89d12bec46a68a Mon Sep 17 00:00:00 2001
+From: tamimcse <tamim@csebuet.org>
+Date: Mon, 5 Feb 2018 21:05:50 -0500
+Subject: [PATCH 1/2] NC-TCP patch
+
+---
+ net/sched/sch_mf.c | 498 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 498 insertions(+)
+ create mode 100644 net/sched/sch_mf.c
+
+diff --git a/net/sched/sch_mf.c b/net/sched/sch_mf.c
+new file mode 100644
+index 0000000..0a56b17
+--- /dev/null
++++ b/net/sched/sch_mf.c
+@@ -0,0 +1,498 @@
++/*
++ * net/sched/sch_fifo.c	The simplest MF Scheduler.
++ *
++ *		This program is free software; you can redistribute it and/or
++ *		modify it under the terms of the GNU General Public License
++ *		as published by the Free Software Foundation; either version
++ *		2 of the License, or (at your option) any later version.
++ *
++ * Authors:	MD Iftakharul Islam , <tamim@csebuet.org>
++ */
++
++#include <linux/module.h>
++#include <linux/slab.h>
++#include <linux/types.h>
++#include <linux/kernel.h>
++#include <linux/errno.h>
++#include <linux/skbuff.h>
++#include <linux/tcp.h>
++#include <net/tcp.h>
++#include <net/pkt_sched.h>
++#include <linux/proc_fs.h>
++#include <asm/msr.h>
++
++static unsigned long bufsize __read_mostly = 64 * 4096;
++static const char procname[] = "mf_probe";
++static const int proc_name_len = 9;
++static const int control_interval = 140;
++static atomic_t queue_id = ATOMIC_INIT(0);
++
++int mf = 0;//NC-TCP
++module_param(mf, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
++
++struct flow {
++    __be32  saddr;
++    __be32  daddr;
++    //Not the actual hash table but this pointer would be used to be added to hash table
++     struct hlist_node hash_item_ptr;
++};
++
++//Actual hash table of size 8
++static DEFINE_HASHTABLE(flows, 3);
++
++struct mf_sched_data {
++    u32 nFlow;
++    int id;
++    char procname[20];
++    u32 capacity;
++    u32 queue_sample;
++    ktime_t sample_time;
++    int queue_gradiant;
++    int parsistant_queue;
++    int min_queue; //Minimum queueu during the control interval
++    u64 bytes_processed; //Bytes processed during the control interval 
++    u64 incoming_rate;
++
++    struct tcp_mf_cookie mfc;
++    struct Qdisc	*qdisc;
++};
++
++struct mf_probe{
++        ktime_t		start;
++        unsigned long	head, tail;
++        struct mf_log *log;
++} probes [3];
++
++struct mf_log {
++	ktime_t tstamp;
++	__u32	backlog;
++};
++
++
++
++static void mf_apply(struct Qdisc *sch, struct sk_buff *skb)
++{
++        unsigned char *ptr;
++        struct tcp_mf_cookie mfc;
++//        u32 tsval;
++        u8 *feedback;
++	int opsize;
++        int opcode;
++        s64 rate;
++        s64 delta;
++        u64 tsc_begin, tsc_end;
++        const struct tcphdr *th;
++        struct mf_sched_data *q = qdisc_priv(sch);
++        if(q->nFlow == 0)
++        {
++            pr_err("Some thing is terribly wrong !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
++            return;
++        }
++
++        if (likely(mf==0))
++        {
++            tsc_begin = rdtsc();
++            rate = q->capacity > sch->qstats.backlog? 12*(q->capacity - sch->qstats.backlog)/(q->nFlow*10) : 0;
++            tsc_end = rdtsc();
++            pr_info("TSC: %llu !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", tsc_end - tsc_begin);            
++        }
++        else if(mf == 1)
++        {            
++            int elapsed_time = (int)ktime_to_ms (ktime_sub(ktime_get(), q->sample_time));
++            q->min_queue = min(q->min_queue, sch->qstats.backlog);
++            q->bytes_processed += skb->len;
++
++            delta = 4 * 140 * (q->capacity - q->incoming_rate)/10  - 226 * q->parsistant_queue/1000;
++            //changed Bytes to MB
++            delta = delta/(1024*1024);            
++            rate = (q->capacity + delta)/q->nFlow;
++
++//            pr_err("XCP Capacity=%lu  BPS=%llu  delata=%llu Parsistent Queue=%d feedback rate=%lld KB packet len=%u", 
++//                    q->capacity, q->incoming_rate, delta, q->parsistant_queue, rate, skb->len); 
++
++            
++            if(elapsed_time > control_interval)
++            {
++//                //Don't do it for the very first sample
++//                if(q->sample_time.tv64 > 0)
++//                {
++//                    q->parsistant_queue = sch->qstats.backlog;
++////                    change of queue per millisecond
++////                    q->queue_gradiant = (int)(sch->qstats.backlog - q->queue_sample) /elapsed_time;
++////                    pr_info("Queue diff: %d Time diff: %d queue_gradiant=%d", 
++////                            (sch->qstats.backlog - q->queue_sample), 
++////                            elapsed_time, q->queue_gradiant);
++//                }
++                q->sample_time = ktime_get();
++                q->queue_sample = sch->qstats.backlog;                
++                q->parsistant_queue = q->min_queue;
++                q->incoming_rate = q->bytes_processed * 1000 / elapsed_time;
++                //reset min_queue and bytes_proccessed
++                q->min_queue = INT_MAX;
++                q->bytes_processed = 0;
++            }
++
++        }
++
++        if(likely(mf == 0 || mf == 1))
++        {
++            //convert into bytes back to to KB (as MF TCP option)
++            rate = rate/1024;        
++//            pr_info("backlog=%u KB, queue_gradiant=%d KB rate=%lld KB", sch->qstats.backlog/1000, q->queue_gradiant/1000, rate);        
++
++            th = tcp_hdr(skb);
++            int length = (th->doff * 4) - sizeof(struct tcphdr);        
++            //Jump to the beginning of the TCP option
++            ptr = (unsigned char *)(th + 1);
++            //Jump to beginning of the MF optionm
++            ptr += 16;
++            feedback = ptr + 2;
++    //        pr_info("feedback= %d, rate= %lld", *feedback, rate);
++            if(*feedback > rate)
++                *feedback = rate;
++//            mfc.req_thput = *ptr;
++//            mfc.cur_thput = *(ptr + 1);
++//            mfc.feedback_thput = *(ptr + 2);
++//            mfc.prop_delay_est = *(ptr + 3);                    
++//            if(mfc.feedback_thput > 0 || mfc.req_thput > 0 )
++//                pr_err("IN SCH MF: req_thput:%d feedback_thput:%d curr_thput: %d prop_delay:%d", 
++//                    (int)mfc.req_thput, (int)mfc.feedback_thput, (int)mfc.cur_thput, (int)mfc.prop_delay_est);                                    
++        }           
++        
++//	while (length > 0) {
++//		opcode = *ptr++;
++//
++//		switch (opcode) {
++//		case TCPOPT_EOL:
++//			return;
++//		case TCPOPT_NOP:	/* Ref: RFC 793 section 3.1 */
++//			length--;
++//			continue;
++//		default:
++//			opsize = *ptr++;
++//			if (opsize < 2) /* "silly options" */
++//				return;
++//			if (opsize > length)
++//				return;	/* don't parse partial options */
++//			switch (opcode) {   
++//                        
++////                        case TCPOPT_TIMESTAMP:
++////                            if (opsize == TCPOLEN_TIMESTAMP) {    
++////                                tsval = get_unaligned_be32(ptr);
++////                                pr_info("Time stamp: %u !!!!!!!!!!!!!!!!!!!!", tsval);
++////                            }
++////                            break;
++//			case TCPOPT_MF:
++//				if (opsize == TCPOLEN_MF) {    
++//                                        feedback = ptr + 2;
++////                                        pr_info("feedback= %d, rate= %lld", *feedback, rate);
++//                                        if(*feedback > rate)
++//                                            *feedback = rate;
++//					mfc->req_thput = *ptr;
++//                                        mfc->cur_thput = *(ptr + 1);
++//                                        mfc->feedback_thput = *(ptr + 2);
++//                                        mfc->prop_delay_est = *(ptr + 3); 
++//				}
++//				return;                                        
++//			}
++//			ptr += opsize-2;
++//			length -= opsize;
++//		}
++//	}
++}
++
++static void record_mf(struct Qdisc *sch)
++{
++    struct mf_sched_data *q = qdisc_priv(sch);
++    struct mf_probe *mf_probe = &probes[q->id];
++    if(mf_probe->start == 0)
++    {
++        mf_probe->start = ktime_get();
++    }
++    struct mf_log *p = mf_probe->log + mf_probe->head;
++    p->tstamp = ktime_get();
++    p->backlog = sch->qstats.backlog;
++    mf_probe->head = (mf_probe->head + 1) & (bufsize - 1);    
++}
++
++
++static int mf_enqueue(struct sk_buff *skb, struct Qdisc *sch,
++			 struct sk_buff **to_free)
++{
++        struct mf_sched_data *q = qdisc_priv(sch);
++        struct iphdr *iph = ip_hdr(skb);
++        __be32  val;
++        
++        //check if it belongs to a new flow
++        int found = 0;
++        //Used by the hash_for_each()
++        int b;
++        struct flow *temp;
++        
++        //check the IP address belong to one of the Mininet
++        if((q->nFlow < 3) && ((iph->daddr & 255) == 172))
++        {   
++            //the last parameter is the pointer of the item to be added (it's not the variable itself but the variable w/o ref)
++            hash_for_each(flows, b, temp, hash_item_ptr)
++            {
++                if(temp->daddr == iph->daddr)
++                    found = 1;
++            };
++
++            if(found == 0)
++            {
++                //Declare the flow to be added
++                struct flow *f = kmalloc(sizeof(*f), GFP_KERNEL);
++                f->daddr = iph->daddr;
++                f->saddr = iph->saddr;
++    //            f->hash_item_ptr = 0; /* Will be initilaized when added to the hashtable */
++                hash_add(flows, &f->hash_item_ptr, f->saddr);
++                q->nFlow++;
++            }            
++        }
++        
++//        pr_info("Number of flows: %d !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", q->nFlow);
++        
++        record_mf(sch);        
++	if (likely(sch->q.qlen < sch->limit))
++        {
++            qdisc_qstats_backlog_inc(sch, skb);
++            sch->q.qlen++;
++            return qdisc_enqueue(skb, q->qdisc, to_free);
++        }
++	qdisc_qstats_drop(sch);	
++	return qdisc_drop(skb, q->qdisc, to_free);
++}
++
++
++static inline struct sk_buff *mf_dequeue(struct Qdisc *sch)
++{
++        struct tcphdr *tcph;
++        struct mf_sched_data *q = qdisc_priv(sch);
++        struct sk_buff *skb = qdisc_dequeue_peeked(q->qdisc);
++        if(skb)
++        {
++            qdisc_bstats_update(sch, skb);
++            qdisc_qstats_backlog_dec(sch, skb);
++            sch->q.qlen--;
++            
++            tcph = tcp_hdr(skb);
++            if(tcph)
++            {
++                mf_apply(sch, skb);
++            }
++            return skb;            
++        }
++        return NULL;
++}
++
++static ssize_t mfprobe_read(struct file *file, char __user *buf,
++			     size_t len, loff_t *ppos)
++{
++        int error = 0;
++        size_t cnt = 0;  
++        
++        //Get proc file name where we are writting
++        unsigned char *fname = file->f_path.dentry->d_iname;
++        int f_index = (int)(*(fname + proc_name_len - 1)- 48);
++        
++        struct mf_probe *mf_probe = &probes[f_index];
++        while(mf_probe->head > 0 && cnt < len)
++        {
++            char tbuf[256];
++            const struct mf_log *p
++                   = mf_probe->log + mf_probe->tail;           
++            struct timespec64 ts
++                    = ktime_to_timespec64(ktime_sub(p->tstamp, mf_probe->start));
++            int width = scnprintf(tbuf, sizeof(tbuf),
++                            "%lu.%09lu %u\n",
++                            (unsigned long)ts.tv_sec,
++                            (unsigned long)ts.tv_nsec,
++                            p->backlog);                
++            mf_probe->tail = (mf_probe->tail + 1) & (bufsize - 1);
++            mf_probe->head = (mf_probe->head - 1) & (bufsize - 1);
++            if (copy_to_user(buf + cnt, tbuf, width))
++                    return -EFAULT; 
++            cnt += width;
++        }        
++
++        return cnt == 0 ? error : cnt;
++}
++
++static const struct file_operations mfpprobe_fops = {
++	.owner	 = THIS_MODULE,
++	.read    = mfprobe_read,
++	.llseek  = noop_llseek,
++};
++
++static void mf_probe_init(struct Qdisc *sch, char procname [])
++{
++        struct mf_sched_data *q = qdisc_priv(sch);
++        bufsize = roundup_pow_of_two(bufsize);
++        struct mf_probe *mf_probe = &probes[q->id];
++	mf_probe->start = 0;
++        mf_probe->head = mf_probe->tail = 0;
++        mf_probe->log = kcalloc(bufsize, sizeof(struct mf_log), GFP_KERNEL);            
++        if(!mf_probe->log)
++        {
++            kfree(mf_probe->log);
++            return ENOMEM;
++        }        
++        
++	if (!proc_create(procname, S_IRUSR, init_net.proc_net, &mfpprobe_fops))
++        {
++            pr_err("Cannot create mf_probe proc file");
++            return ENOMEM;
++        }
++}
++
++static int mf_init(struct Qdisc *sch, struct nlattr *opt,
++					struct netlink_ext_ack *extack)
++{
++        struct mf_sched_data *q = qdisc_priv(sch);
++	if (opt == NULL) {
++		u32 limit = qdisc_dev(sch)->tx_queue_len;
++                sch->limit = limit;
++                q->qdisc = fifo_create_dflt(sch, &bfifo_qdisc_ops, limit, extack);
++		q->qdisc->limit = limit;
++                q->capacity = 1024; //666;
++                //everything in kernel is interms of bytes. So convert Mininet kbits to bytes
++                q->capacity = (q->capacity * 1024)/8;
++                q->nFlow = 3; //2; //Make it 0 when flows are apart from each other
++                q->queue_sample = 0;
++                q->sample_time = 0;
++                q->queue_gradiant = 0;
++                q->bytes_processed = 0;
++                q->incoming_rate = 0;
++                q->min_queue = INT_MAX;
++                q->parsistant_queue = INT_MAX;
++                q->id = atomic_read(&queue_id); 
++                scnprintf(q->procname, sizeof(q->procname), "%s%d", procname, atomic_read(&queue_id));
++                atomic_inc(&queue_id);
++	}
++        mf_probe_init(sch, q->procname);
++        
++        return 0;
++}
++
++static void mf_destroy(struct Qdisc *sch)
++{
++	struct mf_sched_data *q = qdisc_priv(sch);
++        qdisc_destroy(q->qdisc);
++        //Used by the hash_for_each()
++        int b;
++        struct flow *temp;        
++        //the last parameter is the pointer of the item to be added (it's not the variable itself but the variable w/o ref)
++        hash_for_each(flows, b, temp, hash_item_ptr)
++        {
++            hash_del(&temp->hash_item_ptr);
++        };
++        q->nFlow = 0;
++}
++
++static int mf_dump(struct Qdisc *sch, struct sk_buff *skb)
++{
++	struct tc_fifo_qopt opt = { .limit = sch->limit };
++	if (nla_put(skb, TCA_OPTIONS, sizeof(opt), &opt))
++		goto nla_put_failure;
++	return skb->len;
++
++nla_put_failure:
++	return -1;
++}
++
++static int mf_dump_class(struct Qdisc *sch, unsigned long cl,
++			  struct sk_buff *skb, struct tcmsg *tcm)
++{
++	struct mf_sched_data *q = qdisc_priv(sch);
++
++	tcm->tcm_handle |= TC_H_MIN(1);
++	tcm->tcm_info = q->qdisc->handle;
++
++	return 0;
++}
++
++static int mf_graft(struct Qdisc *sch, unsigned long arg, struct Qdisc *new,
++		     struct Qdisc **old, struct netlink_ext_ack *extack)
++{
++	struct mf_sched_data *q = qdisc_priv(sch);
++
++	if (new == NULL)
++		new = &noop_qdisc;
++
++	*old = qdisc_replace(sch, new, &q->qdisc);
++	return 0;
++}
++
++static struct Qdisc *mf_leaf(struct Qdisc *sch, unsigned long arg)
++{
++	struct mf_sched_data *q = qdisc_priv(sch);
++	return q->qdisc;
++}
++
++static void mf_walk(struct Qdisc *sch, struct qdisc_walker *walker)
++{
++	if (!walker->stop) {
++		if (walker->count >= walker->skip)
++			if (walker->fn(sch, 1, walker) < 0) {
++				walker->stop = 1;
++				return;
++			}
++		walker->count++;
++	}
++}
++
++static unsigned long mf_find(struct Qdisc *sch, u32 classid)
++{
++    //Currently MF has no class. So we always return 1. CoDel is returning 0. This made MF not to be
++    //chained by other qdiscs.
++	return 1;
++}
++
++static const struct Qdisc_class_ops mf_class_ops = {
++	.graft		=	mf_graft,
++	.leaf		=	mf_leaf,
++	.walk		=	mf_walk,
++        .find           =       mf_find,
++	.dump		=	mf_dump_class,
++};
++
++struct Qdisc_ops mf_qdisc_ops __read_mostly = {
++        .next		=	NULL,  
++        .cl_ops		=	&mf_class_ops,
++	.id		=	"mf",
++	.priv_size	=	sizeof(struct mf_sched_data),
++	.enqueue	=	mf_enqueue,
++	.dequeue	=	mf_dequeue,
++	.peek		=	qdisc_peek_head,
++	.init		=	mf_init,
++	.reset		=	qdisc_reset_queue,
++        .destroy	=	mf_destroy,        
++	.change		=	mf_init,
++	.dump		=	mf_dump,
++	.owner		=	THIS_MODULE,
++};
++
++static int __init mf_module_init(void)
++{        
++	return register_qdisc(&mf_qdisc_ops);
++}
++
++static void __exit mf_module_exit(void)
++{
++    int i;
++    int nqueue = atomic_read(&queue_id);
++    for(i = 0; i < nqueue; i++)
++    {
++        char proc_name [30];
++        scnprintf(proc_name, sizeof(proc_name), "%s%d", procname, i);
++        remove_proc_entry(proc_name, init_net.proc_net);
++    }
++    
++    unregister_qdisc(&mf_qdisc_ops);
++}
++
++module_init(mf_module_init)
++module_exit(mf_module_exit)
++
++MODULE_LICENSE("GPL");
+\ No newline at end of file
+-- 
+2.7.4
+
+
+From 4e1d179e17ce252747783f6a7e3f719a79a6c5cf Mon Sep 17 00:00:00 2001
+From: tamimcse <tamim@csebuet.org>
+Date: Mon, 5 Feb 2018 21:08:25 -0500
+Subject: [PATCH 2/2] NC-TCP patch
+
+---
+ .gitignore                        |   5 +
+ arch/x86/configs/x86_64_defconfig | 641 ++++++++++++++++++++++++++++++++++++--
+ include/linux/tcp.h               |  30 +-
+ include/net/tcp.h                 |  11 +
+ include/uapi/linux/tcp.h          |   4 +
+ net/ipv4/sysctl_net_ipv4.c        |  16 +
+ net/ipv4/tcp.c                    |  12 +
+ net/ipv4/tcp_input.c              |  96 +++++-
+ net/ipv4/tcp_ipv4.c               |  66 ++++
+ net/ipv4/tcp_output.c             |  68 ++++
+ net/sched/Kconfig                 |  17 +
+ net/sched/Makefile                |   2 +
+ 12 files changed, 941 insertions(+), 27 deletions(-)
+
+diff --git a/.gitignore b/.gitignore
+index 705e099..71816e2 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -127,3 +127,8 @@ all.config
+ 
+ # Kdevelop4
+ *.kdev4
++
++*.log
++*.data
++streamer
++nbproject
+diff --git a/arch/x86/configs/x86_64_defconfig b/arch/x86/configs/x86_64_defconfig
+index e32fc1f..d280503 100644
+--- a/arch/x86/configs/x86_64_defconfig
++++ b/arch/x86/configs/x86_64_defconfig
+@@ -61,11 +61,6 @@ CONFIG_HIBERNATION=y
+ CONFIG_PM_DEBUG=y
+ CONFIG_PM_TRACE_RTC=y
+ CONFIG_ACPI_DOCK=y
+-CONFIG_CPU_FREQ=y
+-# CONFIG_CPU_FREQ_STAT is not set
+-CONFIG_CPU_FREQ_DEFAULT_GOV_USERSPACE=y
+-CONFIG_CPU_FREQ_GOV_PERFORMANCE=y
+-CONFIG_CPU_FREQ_GOV_ONDEMAND=y
+ CONFIG_X86_ACPI_CPUFREQ=y
+ CONFIG_PCI_MMCONFIG=y
+ CONFIG_PCIEPORTBUS=y
+@@ -75,12 +70,12 @@ CONFIG_HOTPLUG_PCI=y
+ CONFIG_BINFMT_MISC=y
+ CONFIG_IA32_EMULATION=y
+ CONFIG_NET=y
+-CONFIG_PACKET=y
+ CONFIG_UNIX=y
+ CONFIG_XFRM_USER=y
+ CONFIG_INET=y
+ CONFIG_IP_MULTICAST=y
+ CONFIG_IP_ADVANCED_ROUTER=y
++#CONFIG_IP_ROUTE_CLASSID=y
+ CONFIG_IP_MULTIPLE_TABLES=y
+ CONFIG_IP_ROUTE_MULTIPATH=y
+ CONFIG_IP_ROUTE_VERBOSE=y
+@@ -102,6 +97,7 @@ CONFIG_TCP_CONG_ADVANCED=y
+ # CONFIG_TCP_CONG_HTCP is not set
+ CONFIG_TCP_MD5SIG=y
+ CONFIG_IPV6=y
++CONFIG_IPV6_MULTIPLE_TABLES=y
+ CONFIG_INET6_AH=y
+ CONFIG_INET6_ESP=y
+ CONFIG_NETLABEL=y
+@@ -134,7 +130,6 @@ CONFIG_IP6_NF_TARGET_REJECT=y
+ CONFIG_IP6_NF_MANGLE=y
+ CONFIG_NET_SCHED=y
+ CONFIG_NET_EMATCH=y
+-CONFIG_NET_CLS_ACT=y
+ CONFIG_HAMRADIO=y
+ CONFIG_CFG80211=y
+ CONFIG_MAC80211=y
+@@ -176,7 +171,6 @@ CONFIG_E1000E=y
+ CONFIG_SKY2=y
+ CONFIG_FORCEDETH=y
+ CONFIG_8139TOO=y
+-CONFIG_R8169=y
+ CONFIG_FDDI=y
+ CONFIG_INPUT_POLLDEV=y
+ # CONFIG_INPUT_MOUSEDEV_PSAUX is not set
+@@ -200,15 +194,11 @@ CONFIG_HW_RANDOM=y
+ # CONFIG_HW_RANDOM_INTEL is not set
+ # CONFIG_HW_RANDOM_AMD is not set
+ CONFIG_NVRAM=y
+-CONFIG_HPET=y
+-# CONFIG_HPET_MMAP is not set
+ CONFIG_I2C_I801=y
+ CONFIG_WATCHDOG=y
+ CONFIG_AGP=y
+ CONFIG_AGP_AMD64=y
+ CONFIG_AGP_INTEL=y
+-CONFIG_DRM=y
+-CONFIG_DRM_I915=y
+ CONFIG_FB_MODE_HELPERS=y
+ CONFIG_FB_TILEBLITTING=y
+ CONFIG_FB_EFI=y
+@@ -217,16 +207,7 @@ CONFIG_VGACON_SOFT_SCROLLBACK=y
+ CONFIG_LOGO=y
+ # CONFIG_LOGO_LINUX_MONO is not set
+ # CONFIG_LOGO_LINUX_VGA16 is not set
+-CONFIG_SOUND=y
+-CONFIG_SND=y
+-CONFIG_SND_SEQUENCER=y
+-CONFIG_SND_SEQ_DUMMY=y
+-CONFIG_SND_MIXER_OSS=y
+-CONFIG_SND_PCM_OSS=y
+-CONFIG_SND_SEQUENCER_OSS=y
+-CONFIG_SND_HRTIMER=y
+-CONFIG_SND_HDA_INTEL=y
+-CONFIG_SND_HDA_HWDEP=y
++
+ CONFIG_HIDRAW=y
+ CONFIG_HID_GYRATION=y
+ CONFIG_LOGITECH_FF=y
+@@ -255,7 +236,6 @@ CONFIG_RTC_CLASS=y
+ CONFIG_DMADEVICES=y
+ CONFIG_EEEPC_LAPTOP=y
+ CONFIG_AMD_IOMMU=y
+-CONFIG_INTEL_IOMMU=y
+ # CONFIG_INTEL_IOMMU_DEFAULT_ON is not set
+ CONFIG_EFI_VARS=y
+ CONFIG_EXT4_FS=y
+@@ -273,7 +253,6 @@ CONFIG_MSDOS_FS=y
+ CONFIG_VFAT_FS=y
+ CONFIG_PROC_KCORE=y
+ CONFIG_TMPFS_POSIX_ACL=y
+-CONFIG_HUGETLBFS=y
+ CONFIG_NFS_FS=y
+ CONFIG_NFS_V3_ACL=y
+ CONFIG_NFS_V4=y
+@@ -299,10 +278,622 @@ CONFIG_DEBUG_STACKOVERFLOW=y
+ # CONFIG_DEBUG_RODATA_TEST is not set
+ CONFIG_DEBUG_BOOT_PARAMS=y
+ CONFIG_OPTIMIZE_INLINING=y
+-CONFIG_UNWINDER_ORC=y
+ CONFIG_SECURITY=y
+ CONFIG_SECURITY_NETWORK=y
+ CONFIG_SECURITY_SELINUX=y
+ CONFIG_SECURITY_SELINUX_BOOTPARAM=y
+ CONFIG_SECURITY_SELINUX_DISABLE=y
+ # CONFIG_CRYPTO_ANSI_CPRNG is not set
++
++#
++#For my laptop Wifi
++#
++CONFIG_ATH9K_HW=m
++CONFIG_ATH9K_COMMON=m
++CONFIG_ATH9K_BTCOEX_SUPPORT=y
++CONFIG_ATH9K=m
++CONFIG_ATH9K_PCI=y
++CONFIG_ATH9K_AHB=y
++CONFIG_ATH9K_DEBUGFS=y
++CONFIG_ATH9K_STATION_STATISTICS=y
++# CONFIG_ATH9K_DYNACK is not set
++CONFIG_ATH9K_WOW=y
++CONFIG_ATH9K_RFKILL=y
++CONFIG_ATH9K_CHANNEL_CONTEXT=y
++CONFIG_ATH9K_PCOEM=y
++CONFIG_ATH9K_HTC=m
++CONFIG_ATH9K_HTC_DEBUGFS=y
++
++
++CONFIG_TCP_INIGO=y
++
++#Veth, Network namespace, and NetEm setup (Needed for Mininet)
++CONFIG_VETH=m
++CONFIG_NET_NS=y
++
++#Packet scheduling
++CONFIG_NET_SCH_NETEM=m
++CONFIG_NET_SCH_HTB=m
++CONFIG_NET_SCH_TBF=m 
++CONFIG_NET_SCH_MF=m
++#CONFIG_NET_SCH_CLK_JIFFIES=y 
++#CONFIG_NET_SCH_CLK_GETTIMEOFDAY=y
++#CONFIG_NET_SCH_CLK_CPU=y
++CONFIG_NET_SCH_HFSC=m 
++CONFIG_NET_SCH_PRIO=m 
++CONFIG_NET_SCH_RED=m 
++CONFIG_NET_SCH_SFQ=m
++CONFIG_NET_SCH_CBQ=m
++CONFIG_NET_SCH_PIE=m
++CONFIG_NET_SCH_FQ=m  
++#CONFIG_NET_SCH_TEQL=y 
++#CONFIG_NET_SCH_GRED=y 
++CONFIG_NET_SCH_CODEL=m
++CONFIG_NET_SCH_FQ_CODEL=m
++
++#packet classification
++CONFIG_NET_CLS_RSVP=m
++CONFIG_NET_CLS_RSVP6=m
++CONFIG_NET_CLS_U32=m
++CONFIG_NET_CLS_FLOW=m
++CONFIG_NET_CLS_CGROUP=m
++CONFIG_NET_ACT_PEDIT=m
++CONFIG_NET_ACT_NAT=m
++CONFIG_NET_ACT_SKBEDIT=m
++CONFIG_NET_ACT_CSUM=m
++CONFIG_NET_ACT_VLAN=m
++CONFIG_NET_ACT_CONNMARK=m
++CONFIG_NET_ACT_SKBMOD=m
++
++
++#Add DiffServ (apply packet classifier) 
++#CONFIG_NET_QOS=y 
++#CONFIG_NET_SCH_INGRESS=y
++#CONFIG_NET_SCH_DSMARK=y 
++
++#V4L2 and UVC driver
++CONFIG_VIDEO_DEV=m
++CONFIG_MEDIA_SUPPORT=m
++CONFIG_MEDIA_CAMERA_SUPPORT=y
++CONFIG_MEDIA_USB_SUPPORT=y
++CONFIG_USB_VIDEO_CLASS=m
++CONFIG_USB_VIDEO_CLASS_INPUT_EDEV=y
++CONFIG_VIDEOBUF2_CORE=m
++CONFIG_VIDEOBUF2_MEMOPS=m
++CONFIG_VIDEOBUF2_VMALLOC=m
++
++#Enable tcp_probe
++CONFIG_NET_TCPPROBE=m
++
++#enable switchdev
++CONFIG_NET_SWITCHDEV=y
++CONFIG_NET_DEVLINK=m
++CONFIG_VLAN_8021Q=m
++
++CONFIG_ROCKER_DEV=n
++
++#Ethernet card
++CONFIG_ETHERNET=y
++CONFIG_X86=y
++CONFIG_PCI=y
++
++#PCI card virtualization
++CONFIG_PCI_IOV=y
++
++#enable RTL8111/8168/8411 PCI Express Gigabit Ethernet Interface
++CONFIG_R8169=m
++
++#Mellanox NIC and Switch. Requisite modules such as I2C, PCI, IOMMU, HWMON enabled by default
++CONFIG_NET_VENDOR_MELLANOX=y
++CONFIG_MLXSW_PCI=m
++CONFIG_MLXSW_CORE=m
++CONFIG_MLXSW_SWITCHX2=m
++CONFIG_MLXSW_SPECTRUM=m
++CONFIG_MLX5_CORE=m
++CONFIG_MLX5_CORE_EN=y
++
++#Netronome
++CONFIG_NET_VENDOR_NETRONOME=y
++CONFIG_NFP=m
++CONFIG_NFP_DEBUG=y
++CONFIG_NFP_NETVF=m
++CONFIG_NFP_NET_DEBUG=y
++CONFIG_NFP_NET=y
++CONFIG_PCI_MSI=y
++CONFIG_GENERIC_MSI_IRQ=y
++
++#Intel Ethernet cards 
++
++#Intel FlexPipe
++CONFIG_FM10K=m
++
++#Intel XL710 family 
++CONFIG_I40E=m
++CONFIG_I40E_DCB=y
++CONFIG_I40EVF=m
++CONFIG_I40E_FCOE=y
++
++#Intel 10GbE family NIC
++CONFIG_IXGBE=m
++CONFIG_IXGBEVF=m
++
++#NVIDIA
++CONFIG_DRM_NOUVEAU=m
++CONFIG_DRM_NOUVEAU_BACKLIGHT=y
++
++#intel GPU
++CONFIG_DRM=y
++CONFIG_DRM_I915=y
++CONFIG_DRM_I915_PRELIMINARY_HW_SUPPORT=y
++CONFIG_DRM_I915_USERPTR=y
++
++#Intel Communication controller
++CONFIG_WATCHDOG_CORE=y
++CONFIG_INTEL_MEI=y
++CONFIG_INTEL_MEI_ME=y
++CONFIG_VXLAN=m
++
++#USB
++CONFIG_USB_ARCH_HAS_XHCI=y
++CONFIG_USB_XHCI_HCD=y
++
++#DCCP
++CONFIG_IP_DCCP=m
++CONFIG_NET_DCCPPROBE=m
++CONFIG_IP_DCCP_DEBUG=y
++CONFIG_IP_DCCP_CCID2_DEBUG=y
++CONFIG_IP_DCCP_CCID3=y
++CONFIG_IP_DCCP_CCID3_DEBUG=y
++
++#SCTP
++CONFIG_IP_SCTP=m
++
++#BBR
++CONFIG_TCP_CONG_BBR=y
++CONFIG_TCP_CONG_CDG=y
++
++#Wireguard Prereq
++CONFIG_NET_UDP_TUNNEL=m
++CONFIG_NETFILTER_XT_MATCH_HASHLIMIT=y
++CONFIG_CRYPTO_BLKCIPHER=y
++CONFIG_PADATA=y
++
++#Wireguard
++CONFIG_WIREGUARD=n
++CONFIG_WIREGUARD_DEBUG=n
++CONFIG_WIREGUARD_PARALLEL=n 
++
++#netfilter
++CONFIG_NETFILTER_XT_MATCH_IPRANGE=m
++CONFIG_NETFILTER_NETLINK=m
++CONFIG_NETFILTER_XTABLES=m
++CONFIG_NETFILTER_XT_MATCH_CLUSTER=m
++CONFIG_NETFILTER_XT_TARGET_CLASSIFY=m
++CONFIG_NETFILTER_XT_TARGET_CONNMARK=m
++CONFIG_NETFILTER_XT_MATCH_BPF=m
++CONFIG_NETFILTER_XT_TARGET_DSCP=m
++CONFIG_NETFILTER_XT_MATCH_DSCP=m
++CONFIG_NETFILTER_XT_TARGET_TCPOPTSTRIP=m
++CONFIG_NETFILTER_XT_MATCH_IPVS=m
++CONFIG_IP_NF_TARGET_CLUSTERIP=y
++CONFIG_IP_NF_TARGET_ECN=y
++CONFIG_IP_NF_TARGET_TTL=y
++CONFIG_IP_NF_RAW=y
++
++
++#nftable
++CONFIG_NF_TABLES=m
++CONFIG_NFT_PAYLOAD=m
++CONFIG_NFT_EXTHDR=m
++CONFIG_NFT_META=m
++CONFIG_NFT_CT=m
++CONFIG_NFT_RBTREE=m
++CONFIG_NFT_HASH=m
++CONFIG_NFT_SET_HASH=m
++CONFIG_NFT_COUNTER=m
++CONFIG_NFT_LOG=m
++CONFIG_NFT_LIMIT=m
++CONFIG_NFT_NAT=m
++CONFIG_NFT_REDIR=m
++CONFIG_NFT_QUEUE=m
++CONFIG_NFT_MASQ=m
++CONFIG_NFT_QUOTA=m
++CONFIG_NFT_COMPAT=m
++CONFIG_NFT_REJECT=m
++CONFIG_NFT_REJECT_IPV4=m
++CONFIG_NFT_CHAIN_ROUTE_IPV4=m
++CONFIG_NFT_CHAIN_NAT_IPV4=m
++CONFIG_NFT_CHAIN_ROUTE_IPV6=m
++CONFIG_NFT_CHAIN_NAT_IPV6=m
++CONFIG_NF_TABLES_BRIDGE=m
++CONFIG_NF_TABLES_NETDEV=m
++CONFIG_NF_TABLES_INET=m
++CONFIG_NF_TABLES_IPV4=m
++CONFIG_NF_TABLES_IPV6=m
++CONFIG_NF_DUP_NETDEV=m
++CONFIG_NFT_DUP_NETDEV=m
++CONFIG_NFT_FWD_NETDEV=m
++CONFIG_NF_CONNTRACK_BROADCAST=m
++CONFIG_NF_CONNTRACK_H323=m
++CONFIG_NFT_REJECT_IPV6=m
++CONFIG_NFT_REJECT_INET=m
++CONFIG_NFT_MASQ_IPV4=m
++CONFIG_NFT_REDIR_IPV4=m
++CONFIG_NFT_MASQ_IPV6=m
++CONFIG_NFT_REDIR_IPV6=m
++CONFIG_NFT_BRIDGE_META=m
++CONFIG_NFT_BRIDGE_REJECT=m
++
++#IPVS
++CONFIG_IP_VS=m
++CONFIG_IP_VS_IPV6=y
++CONFIG_IP_VS_DEBUG=y
++CONFIG_IP_VS_TAB_BITS=12
++CONFIG_IP_VS_PROTO_TCP
++CONFIG_IP_VS_RR=m
++CONFIG_IP_VS_DH=m
++CONFIG_IP_VS_SH=m
++CONFIG_IP_VS_NQ=m
++CONFIG_IP_VS_NFCT=y
++
++# Open vSwitch
++CONFIG_OPENVSWITCH=m
++CONFIG_OPENVSWITCH_GRE=m
++CONFIG_OPENVSWITCH_GENEVE=m
++
++#Enable protocols in switch
++CONFIG_MPLS_ROUTING=m
++CONFIG_NET_DSA=m
++CONFIG_NET_DSA_TAG_BRCM=y
++CONFIG_NET_DSA_TAG_DSA=y
++CONFIG_NET_DSA_TAG_EDSA=y
++CONFIG_NET_DSA_TAG_TRAILER=y
++CONFIG_NET_DSA_TAG_QCA=y
++#CONFIG_BRIDGE_VLAN_FILTERING=y
++CONFIG_GENEVE=m
++CONFIG_BONDING=m
++CONFIG_IPVLAN=m
++CONFIG_IPVTAP=m
++CONFIG_MACVLAN=m
++CONFIG_MACVTAP=m
++CONFIG_TUN=m
++CONFIG_TAP=m
++
++
++#IP options
++#CONFIG_IP_FIB_TRIE_STATS=y
++
++#Enable VRF
++CONFIG_NET_VRF=m
++CONFIG_NET_L3_MASTER_DEV=y
++
++
++#Enable rocker switch
++CONFIG_NET_VENDOR_ROCKER=y
++CONFIG_ROCKER=m
++CONFIG_BRIDGE=y
++
++#DCB
++CONFIG_DCB=y
++
++#FCOE RDMA
++CONFIG_FCOE=m
++CONFIG_LIBFCOE=m
++CONFIG_LIBFC=m 
++
++#Enable Qlogic
++CONFIG_NET_VENDOR_QLOGIC=y
++CONFIG_QED=m
++CONFIG_QED_LL2=y
++CONFIG_QED_SRIOV=y
++CONFIG_QEDE=m
++CONFIG_QED_RDMA=y
++
++#Mellanox Infiniband
++CONFIG_MLX5_INFINIBAND=m
++
++#Enable init options
++CONFIG_EPOLL=y
++CONFIG_BPF_SYSCALL=y
++CONFIG_BPF=y
++#CONFIG_BPF_EVENTS=y
++CONFIG_BPF_JIT=y
++CONFIG_HAVE_BPF_JIT=y
++CONFIG_HAVE_EBPF_JIT=y
++#CONFIG_KPROBE_EVENT=y
++
++#BCC
++CONFIG_NET_ACT_POLICE=m
++CONFIG_NET_ACT_GACT=m
++CONFIG_DUMMY=m
++
++#Enable Sample
++CONFIG_SAMPLES=y
++
++#Enable Crypto API (AF_ALG sock)
++CONFIG_CRYPTO_USER_API=m
++CONFIG_CRYPTO_USER_API_HASH=m
++CONFIG_CRYPTO_USER_API_SKCIPHER=m
++
++#Enable IOMMU, VFIO, Virtio and eventfd
++CONFIG_IOMMU_SUPPORT=y
++CONFIG_IOMMU_API=y
++CONFIG_INTEL_IOMMU=y
++CONFIG_INTEL_IOMMU_SVM=y
++CONFIG_IRQ_REMAP=y
++CONFIG_VFIO=m
++CONFIG_VFIO_PLATFORM=m
++CONFIG_VFIO_PCI=m
++CONFIG_VGA_ARB=y
++CONFIG_VFIO_PCI_VGA=y
++CONFIG_EVENTFD=y
++CONFIG_VIRTIO=m
++CONFIG_VIRTIO_PCI=m
++CONFIG_VIRTIO_NET=m
++CONFIG_VIRTIO_RING=m
++CONFIG_VIRTIO_BALLOON=m
++CONFIG_VIRTIO_BLK=m 
++
++#
++# HD-Audio
++#
++CONFIG_SND_PCI=y
++CONFIG_SOUND=y
++CONFIG_SND=y
++#CONFIG_SND_SEQUENCER=y
++#CONFIG_SND_SEQ_DUMMY=y
++#CONFIG_SND_MIXER_OSS=y
++#CONFIG_SND_PCM_OSS=y
++#CONFIG_SND_SEQUENCER_OSS=y
++#CONFIG_SND_HRTIMER=y
++CONFIG_SND_HDA=m
++CONFIG_SND_HDA_INTEL=m
++CONFIG_SND_HDA_HWDEP=y
++CONFIG_SND_HDA_RECONFIG=y
++CONFIG_SND_HDA_INPUT_BEEP=y
++CONFIG_SND_HDA_INPUT_BEEP_MODE=0
++CONFIG_SND_HDA_PATCH_LOADER=y
++CONFIG_SND_HDA_CODEC_REALTEK=m
++CONFIG_SND_HDA_CODEC_ANALOG=m
++CONFIG_SND_HDA_CODEC_SIGMATEL=m
++CONFIG_SND_HDA_CODEC_VIA=m
++CONFIG_SND_HDA_CODEC_HDMI=m
++CONFIG_SND_HDA_CODEC_CIRRUS=m
++CONFIG_SND_HDA_CODEC_CONEXANT=m
++CONFIG_SND_HDA_CODEC_CA0110=m
++CONFIG_SND_HDA_CODEC_CA0132=m
++CONFIG_SND_HDA_CODEC_CA0132_DSP=y
++CONFIG_SND_HDA_CODEC_CMEDIA=m
++CONFIG_SND_HDA_CODEC_SI3054=m
++CONFIG_SND_HDA_GENERIC=m
++CONFIG_SND_HDA_POWER_SAVE_DEFAULT=0
++CONFIG_SND_HDA_CORE=m
++CONFIG_SND_HDA_DSP_LOADER=y
++CONFIG_SND_HDA_I915=y
++#CONFIG_SND_HDA_EXT_CORE=m
++#CONFIG_SND_HDA_PREALLOC_SIZE=64
++#CONFIG_SND_SPI=y
++#CONFIG_SND_USB=y
++#CONFIG_SND_USB_AUDIO=m
++#CONFIG_SND_USB_UA101=m
++#CONFIG_SND_USB_USX2Y=m
++#CONFIG_SND_USB_CAIAQ=m
++#CONFIG_SND_USB_CAIAQ_INPUT=y
++#CONFIG_SND_USB_US122L=m
++#CONFIG_SND_USB_6FIRE=m
++#CONFIG_SND_USB_HIFACE=m
++#CONFIG_SND_BCD2000=m
++#CONFIG_SND_USB_LINE6=m
++#CONFIG_SND_USB_POD=m
++#CONFIG_SND_USB_PODHD=m
++#CONFIG_SND_USB_TONEPORT=m
++#CONFIG_SND_USB_VARIAX=m
++#CONFIG_SND_FIREWIRE=y
++#CONFIG_SND_FIREWIRE_LIB=m
++#CONFIG_SND_DICE=m
++#CONFIG_SND_OXFW=m
++#CONFIG_SND_ISIGHT=m
++#CONFIG_SND_SCS1X=m
++#CONFIG_SND_FIREWORKS=m
++#CONFIG_SND_BEBOB=m
++#CONFIG_SND_FIREWIRE_DIGI00X=m
++#CONFIG_SND_FIREWIRE_TASCAM=m
++CONFIG_SND_PCMCIA=y
++#CONFIG_SND_VXPOCKET=m
++#CONFIG_SND_PDAUDIOCF=m
++#CONFIG_SND_SOC=m
++#CONFIG_SND_SOC_AC97_BUS=y
++#CONFIG_SND_SOC_GENERIC_DMAENGINE_PCM=y
++#CONFIG_SND_SOC_COMPRESS=y
++#CONFIG_SND_SOC_TOPOLOGY=y
++#CONFIG_SND_ATMEL_SOC=m
++#CONFIG_SND_DESIGNWARE_I2S=m
++
++
++#Needed for tc bpf classifier and action
++CONFIG_NET_CLS=y
++CONFIG_NET_CLS_ACT=y
++CONFIG_NET_EGRESS=y
++CONFIG_NET_INGRESS=y
++#enable sch_clsact
++CONFIG_NET_SCH_INGRESS=m
++#bpf classifier
++CONFIG_NET_CLS_BPF=m
++#bpf action
++CONFIG_NET_ACT_BPF=y
++#Transmit Packet Steering
++#CONFIG_XPS=y
++#PF_PACKET socket
++CONFIG_PACKET=y
++
++#KVM
++CONFIG_KVM=y
++CONFIG_KVM_INTEL=m
++#CONFIG_IKCONFIG=y
++#CONFIG_IKCONFIG_PROC=y
++
++
++
++#sysfs
++#CONFIG_SYSFS_SYSCALL=y
++#CONFIG_SYSFS=y
++
++#Packet generator
++CONFIG_NET_PKTGEN=m
++CONFIG_PROC_FS=y
++
++CONFIG_CFS_BANDWIDTH=y
++CONFIG_FAIR_GROUP_SCHED=y
++CONFIG_PROC_PID_CPUSET=y
++#CONFIG_RT_GROUP_SCHED=y
++#CONFIG_PREEMPT_RT_FULL=y
++
++
++#Needed for embedded Linux
++
++CONFIG_ARCH_MULTIPLATFORM=y
++CONFIG_MMU=y
++CONFIG_BLOCK=y
++CONFIG_RAMFS=y
++CONFIG_SCSI_FC_ATTRS=m
++CONFIG_SCSI=m
++
++CONFIG_JFFS2_FS=y
++CONFIG_JFFS2_FS_DEBUG=1
++CONFIG_JFFS2_FS_WBUF_VERIFY=y
++CONFIG_JFFS2_SUMMARY=y
++CONFIG_JFFS2_FS_XATTR=y
++CONFIG_JFFS2_COMPRESSION_OPTIONS=y
++CONFIG_JFFS2_LZO=y
++CONFIG_JFFS2_RUBIN=y
++
++
++CONFIG_SQUASHFS=y
++CONFIG_SQUASHFS_LZO=y
++CONFIG_SQUASHFS_XZ=y
++CONFIG_ROMFS_FS=y
++
++CONFIG_MTD=y
++CONFIG_MTD_CHAR=y
++CONFIG_MTD_MTDRAM=y
++CONFIG_MTD_BLOCK=y
++CONFIG_MTD_BLOCK_RO=y
++CONFIG_MTD_DEVICE=y
++CONFIG_ETRAX_AXISFLASHMAP=y
++CONFIG_ETRAX_ARCH_V32=y
++CONFIG_ETRAX_ARCH_V10=y
++CONFIG_GENERIC_IO=y
++CONFIG_MTD_PARTITIONS=y
++CONFIG_FTL=y
++CONFIG_NFTL_RW=y
++
++CONFIG_LOGFS=y
++
++CONFIG_MTD_UBI=y
++CONFIG_UBIFS_FS=y
++CONFIG_UBIFS_FS_ADVANCED_COMPR=y
++CONFIG_UBIFS_FS_LZO=y
++CONFIG_UBIFS_FS_ZLIB=y
++CONFIG_UBIFS_FS_ENCRYPTION=y
++
++CONFIG_YAFFS_FS=y
++CONFIG_YAFFS_YAFFS1=y
++CONFIG_YAFFS_YAFFS2=y
++CONFIG_LZO=y
++
++CONFIG_HAVE_KERNEL_GZIP=y
++CONFIG_HAVE_KERNEL_BZIP2=y
++CONFIG_HAVE_KERNEL_LZMA=y
++CONFIG_HAVE_KERNEL_XZ=y
++CONFIG_HAVE_KERNEL_LZO=y
++CONFIG_HAVE_KERNEL_LZ4=y
++
++
++#Enable CPU shutdown if it's idle
++CONFIG_CPU_IDLE=y
++CONFIG_CPU_HOTPLUG=y
++#Enable dynamic CPU freequency to conserve power
++CONFIG_CPU_FREQ=y
++# CONFIG_CPU_FREQ_STAT is not set
++CONFIG_CPU_FREQ_DEFAULT_GOV_USERSPACE=y
++CONFIG_CPU_FREQ_GOV_PERFORMANCE=y
++CONFIG_CPU_FREQ_GOV_ONDEMAND=y
++
++#Copied from NPS-400 config
++CONFIG_BLK_DEV_RAM=y
++CONFIG_BLK_DEV_RAM_COUNT=1
++CONFIG_BLK_DEV_RAM_SIZE=2048
++CONFIG_DEBUG_INFO=y
++CONFIG_DEBUG_MEMORY_INIT=y
++CONFIG_ENABLE_DEFAULT_TRACERS=y
++#CONFIG_PREEMPT=y
++#CONFIG_EMBEDDED=y
++CONFIG_IKCONFIG=y
++CONFIG_IKCONFIG_PROC=y
++CONFIG_SYSCTL_SYSCALL=y
++#CONFIG_NO_HZ_IDLE=y
++CONFIG_PERF_EVENTS=y
++#CONFIG_ARC_PLAT_EZNPS=y
++#CONFIG_ARC_CACHE_LINE_SHIFT=5
++#CONFIG_ARC_KVADDR_SIZE=402
++#CONFIG_ARC_EMUL_UNALIGNED=y
++#CONFIG_ARC_UBOOT_SUPPORT=y
++
++#DPDK
++CONFIG_RTE_LIBRTE_PMD_PCAP=y
++CONFIG_HUGETLB_PAGE=y
++CONFIG_HUGETLBFS=y
++CONFIG_PROC_PAGE_MONITOR=y 
++CONFIG_HPET=y
++CONFIG_HPET_MMAP=y
++CONFIG_HPET_MMAP_DEFAULT=y
++#Enables userspace IO
++CONFIG_UIO_PCI_GENERIC=m
++CONFIG_UIO=m
++
++#Freescale DPAA
++#CONFIG_FSL_DPAA_ETH=m
++#CONFIG_FSL_DPAA=y
++#CONFIG_FSL_FMAN=m
++#CONFIG_NET_VENDOR_FREESCALE=y
++#CONFIG_FSL_SOC=y
++#CONFIG_FSL_SOC_BOOKE=y
++#CONFIG_PPC_85xx=y
++#CONFIG_PPC_BOOK3E=y
++#CONFIG_PPC_BOOK3E_64=y
++#CONFIG_ARCH_LAYERSCAPE=y
++#This is needed for drivers relevent to other architecture
++#CONFIG_COMPILE_TEST=y
++#CONFIG_FS_ENET=m
++#CONFIG_PPC_MPC512x=y
++#CONFIG_6xx=y
++#CONFIG_CPM1=y
++#CONFIG_CPM2=y
++#CONFIG_MPC8560=y
++#CONFIG_MPC8560_ADS=y
++#Freescale IOMMU
++#CONFIG_FSL_PAMU=y
++
++#Enable NIC DMA (On my laptop, enabling these makes things slow)
++#CONFIG_NET_DMA=y
++#CONFIG_DMA_ENGINE=y
++#CONFIG_INTEL_IOATDMA=m
++
++#Enable Intel DDIO (DCA), although y by default (On my laptop, enabling these makes things slow)
++#CONFIG_DCA=m
++#CONFIG_IXGBE_DCA=y
++#CONFIG_IGB=m
++
++#Disable the timer ticks. Convert RCU callback and interrupts to kernel threads.
++CONFIG_NO_HZ_FULL=y
++CONFIG_RCU_NOCB_CPU=y
++CONFIG_IRQ_FORCED_THREADING=y
++
++#Processor family
++#Intel Processor family 6 or higher
++#CONFIG_MCORE2=y
++#Optimize for AMD Opteron/Athlon64/Hammer/K8 CPUs
++#CONFIG_MK8=y
++#Following are generated by default, so change it if appropiate 
++#CONFIG_X86_L1_CACHE_SHIFT=7 
++
+diff --git a/include/linux/tcp.h b/include/linux/tcp.h
+index 8f4c549..8b04557 100644
+--- a/include/linux/tcp.h
++++ b/include/linux/tcp.h
+@@ -72,6 +72,17 @@ struct tcp_fastopen_cookie {
+ 	bool	exp;	/* In RFC6994 experimental option format */
+ };
+ 
++#if IS_ENABLED(CONFIG_NET_SCH_MF)
++    /* TCP MF Cookie as stored in memory */
++    struct tcp_mf_cookie {
++            u8	len;
++            u8 req_thput,           /* Required throughput in MF */ 
++               cur_thput,           /* Current throughput in MF */
++               feedback_thput,      /* Feedback throughput in MF */
++               prop_delay_est;
++    };
++#endif
++
+ /* This defines a selective acknowledgement block. */
+ struct tcp_sack_block_wire {
+ 	__be32	start_seq;
+@@ -94,7 +105,7 @@ struct tcp_options_received {
+ 	u32	rcv_tsval;	/* Time stamp value             	*/
+ 	u32	rcv_tsecr;	/* Time stamp echo reply        	*/
+ 	u16 	saw_tstamp : 1,	/* Saw TIMESTAMP on last packet		*/
+-		tstamp_ok : 1,	/* TIMESTAMP seen on SYN packet		*/
++		tstamp_ok : 1,	/* TIMESTAMP seen on SYN packet		*/                
+ 		dsack : 1,	/* D-SACK is scheduled			*/
+ 		wscale_ok : 1,	/* Wscale seen on SYN packet		*/
+ 		sack_ok : 3,	/* SACK seen on SYN packet		*/
+@@ -104,6 +115,14 @@ struct tcp_options_received {
+ 	u8	num_sacks;	/* Number of SACK blocks		*/
+ 	u16	user_mss;	/* mss requested by user in ioctl	*/
+ 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
++        
++#if IS_ENABLED(CONFIG_NET_SCH_MF)        
++        u16     mf_ok : 1;	/* MF option seen on SYN packet		*/
++        u8      feedback_thput, /* Feedback throughput from network in option MF */
++                req_thput,      /* Required throughput from network in option MF */
++                cur_thput,      /* Current throughput from network in option MF */       
++                prop_delay_est;
++#endif                
+ };
+ 
+ static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
+@@ -113,6 +132,9 @@ static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
+ #if IS_ENABLED(CONFIG_SMC)
+ 	rx_opt->smc_ok = 0;
+ #endif
++#if IS_ENABLED(CONFIG_NET_SCH_MF)         
++        rx_opt->mf_ok = 0;
++#endif        
+ }
+ 
+ /* This is the max number of SACKS that we'll generate and process. It's safe
+@@ -379,6 +401,12 @@ struct tcp_sock {
+ 
+ /* TCP fastopen related information */
+ 	struct tcp_fastopen_request *fastopen_req;
++
++#if IS_ENABLED(CONFIG_NET_SCH_MF)        
++/* TCP MF TCP related information */
++	struct tcp_mf_cookie *mf_cookie_req;        
++#endif
++        
+ 	/* fastopen_rsk points to request_sock that resulted in this big
+ 	 * socket. Used to retransmit SYNACKs etc.
+ 	 */
+diff --git a/include/net/tcp.h b/include/net/tcp.h
+index 5827866..bbb6845 100644
+--- a/include/net/tcp.h
++++ b/include/net/tcp.h
+@@ -214,6 +214,13 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
+ #define TCPOLEN_MSS_ALIGNED		4
+ #define TCPOLEN_EXP_SMC_BASE_ALIGNED	8
+ 
++#if IS_ENABLED(CONFIG_NET_SCH_MF)
++#define TCPOPT_MF		38	/* Predefined option number for
++                                         Media-friendly (this is a researved number) */
++#define TCPOLEN_MF             6
++#define TCPOLEN_MF_ALIGNED              8
++#endif
++
+ /* Flags in tp->nonagle */
+ #define TCP_NAGLE_OFF		1	/* Nagle's algo is disabled */
+ #define TCP_NAGLE_CORK		2	/* Socket is corked	    */
+@@ -238,6 +245,10 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
+  */
+ #define	TFO_SERVER_WO_SOCKOPT1	0x400
+ 
++#if IS_ENABLED(CONFIG_NET_SCH_MF)
++    extern int sysctl_tcp_mf;
++    extern int sysctl_tcp_xcp;
++#endif
+ 
+ /* sysctl variables for tcp */
+ extern int sysctl_tcp_max_orphans;
+diff --git a/include/uapi/linux/tcp.h b/include/uapi/linux/tcp.h
+index b4a4f64..599e5a2 100644
+--- a/include/uapi/linux/tcp.h
++++ b/include/uapi/linux/tcp.h
+@@ -221,6 +221,10 @@ struct tcp_info {
+ 
+ 	__u64   tcpi_delivery_rate;
+ 
++#if IS_ENABLED(CONFIG_NET_SCH_MF)        
++        __u8   tcpi_feedback_rate;
++#endif
++        
+ 	__u64	tcpi_busy_time;      /* Time (usec) busy sending data */
+ 	__u64	tcpi_rwnd_limited;   /* Time (usec) limited by receive window */
+ 	__u64	tcpi_sndbuf_limited; /* Time (usec) limited by send buffer */
+diff --git a/net/ipv4/sysctl_net_ipv4.c b/net/ipv4/sysctl_net_ipv4.c
+index 93e1721..e40a225 100644
+--- a/net/ipv4/sysctl_net_ipv4.c
++++ b/net/ipv4/sysctl_net_ipv4.c
+@@ -943,6 +943,22 @@ static struct ctl_table ipv4_net_table[] = {
+ 		.mode		= 0644,
+ 		.proc_handler	= proc_dointvec
+ 	},
++#if IS_ENABLED(CONFIG_NET_SCH_MF)        
++	{
++		.procname	= "tcp_mf",
++		.data		= &sysctl_tcp_mf,
++		.maxlen		= sizeof(int),
++		.mode		= 0644,
++		.proc_handler	= proc_dointvec
++	},
++	{
++		.procname	= "tcp_xcp",
++		.data		= &sysctl_tcp_xcp,
++		.maxlen		= sizeof(int),
++		.mode		= 0644,
++		.proc_handler	= proc_dointvec
++	},        
++#endif        
+ 	{
+ 		.procname	= "tcp_window_scaling",
+ 		.data		= &init_net.ipv4.sysctl_tcp_window_scaling,
+diff --git a/net/ipv4/tcp.c b/net/ipv4/tcp.c
+index c059aa7..a7522e4 100644
+--- a/net/ipv4/tcp.c
++++ b/net/ipv4/tcp.c
+@@ -283,6 +283,10 @@
+ #include <asm/ioctls.h>
+ #include <net/busy_poll.h>
+ 
++#if IS_ENABLED(CONFIG_NET_SCH_MF)
++    #include <asm/unaligned.h>
++#endif
++
+ struct percpu_counter tcp_orphan_count;
+ EXPORT_SYMBOL_GPL(tcp_orphan_count);
+ 
+@@ -3045,6 +3049,14 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
+ 	rate64 = tcp_compute_delivery_rate(tp);
+ 	if (rate64)
+ 		info->tcpi_delivery_rate = rate64;
++        
++#if IS_ENABLED(CONFIG_NET_SCH_MF)        
++        if(likely(sysctl_tcp_mf))
++        {
++            put_unaligned(tp->mf_cookie_req->feedback_thput, &info->tcpi_feedback_rate);
++        }
++#endif        
++        
+ 	unlock_sock_fast(sk, slow);
+ }
+ EXPORT_SYMBOL_GPL(tcp_get_info);
+diff --git a/net/ipv4/tcp_input.c b/net/ipv4/tcp_input.c
+index cfa51cf..61b908c 100644
+--- a/net/ipv4/tcp_input.c
++++ b/net/ipv4/tcp_input.c
+@@ -79,6 +79,15 @@
+ #include <trace/events/tcp.h>
+ #include <linux/static_key.h>
+ 
++#if IS_ENABLED(CONFIG_NET_SCH_MF)
++#include <linux/compiler.h>
++#endif
++
++#if IS_ENABLED(CONFIG_NET_SCH_MF)
++    int sysctl_tcp_mf __read_mostly = 1;
++    int sysctl_tcp_xcp __read_mostly = 0;
++#endif
++
+ int sysctl_tcp_max_orphans __read_mostly = NR_FILE;
+ 
+ #define FLAG_DATA		0x01 /* Incoming frame contained data.		*/
+@@ -3267,6 +3276,36 @@ static void tcp_cong_control(struct sock *sk, u32 ack, u32 acked_sacked,
+ 			     int flag, const struct rate_sample *rs)
+ {
+ 	const struct inet_connection_sock *icsk = inet_csk(sk);
++        
++#if IS_ENABLED(CONFIG_NET_SCH_MF)    
++        struct tcp_sock *tp = tcp_sk(sk);        
++        if(likely(sysctl_tcp_mf) && tp->rx_opt.mf_ok)
++        {
++            if(likely(sysctl_tcp_xcp == 0))
++            {
++                //MF TCP feedback is in KB and everything in kernel is in Byte
++    //            int wnd = (((tp->mf_cookie_req->feedback_thput * 1024) * ((tp->srtt_us >> 3) /USEC_PER_SEC)) / tp->mss_cache);
++
++                //calculated based on tcp_update_pacing_rate()
++                int wnd = ((tp->mf_cookie_req->feedback_thput * 1024) * tcp_min_rtt(tp)) / (tp->mss_cache * ((USEC_PER_SEC/100) << 3));
++                tp->snd_cwnd = wnd;
++                pr_info("Feedback= %d RTT= %d MSS= %d Cwnd= %d on ", 
++                        tp->mf_cookie_req->feedback_thput, tp->srtt_us, tp->mss_cache, tp->snd_cwnd);
++                u32 feedback = tp->mf_cookie_req->feedback_thput * 1024;
++                WRITE_ONCE(sk->sk_pacing_rate, feedback);
++                return;                
++            }
++            else
++            {
++                //calculated based on tcp_update_pacing_rate()
++                int wnd = ((tp->mf_cookie_req->feedback_thput * 1024) * tp->srtt_us) / (tp->mss_cache * ((USEC_PER_SEC/100) << 3));
++//                int wnd = ((tp->mf_cookie_req->feedback_thput * 1024 * 1024) * (tp->srtt_us >> 3) ) / (tp->mss_cache * USEC_PER_SEC);
++                tp->snd_cwnd = wnd;
++                pr_info("Feedback= %d RTT= %d MSS= %d Cwnd= %d on ", 
++                        tp->mf_cookie_req->feedback_thput, tp->srtt_us, tp->mss_cache, tp->snd_cwnd);                
++            }
++        }
++#endif        
+ 
+ 	if (icsk->icsk_ca_ops->cong_control) {
+ 		icsk->icsk_ca_ops->cong_control(sk, rs);
+@@ -3719,6 +3758,10 @@ void tcp_parse_options(const struct net *net,
+ 	const struct tcphdr *th = tcp_hdr(skb);
+ 	int length = (th->doff * 4) - sizeof(struct tcphdr);
+ 
++#if IS_ENABLED(CONFIG_NET_SCH_MF)        
++        char *seg_type;
++#endif        
++
+ 	ptr = (const unsigned char *)(th + 1);
+ 	opt_rx->saw_tstamp = 0;
+ 
+@@ -3818,6 +3861,26 @@ void tcp_parse_options(const struct net *net,
+ 							  opsize);
+ 				break;
+ 
++#if IS_ENABLED(CONFIG_NET_SCH_MF)                                
++			case TCPOPT_MF:
++				if (opsize == TCPOLEN_MF) {
++                                        opt_rx->mf_ok = 1;     
++					opt_rx->req_thput = *ptr;
++                                        opt_rx->cur_thput = *(ptr + 1);
++                                        opt_rx->feedback_thput = *(ptr + 2);
++                                        opt_rx->prop_delay_est = *(ptr + 3);
++                                        if(skb->data_len > 0)
++                                            seg_type = "DATA";
++                                        else
++                                            seg_type = "ACK";
++                                pr_err("Receiving MF TCP in %s segment on [%d.%d.%d.%d] : req_thput:%d curr_thput: %d feedback_thput:%d", 
++                                        seg_type, ip_hdr(skb)->daddr & 255, (ip_hdr(skb)->daddr >> 8U) & 255,
++                                        (ip_hdr(skb)->daddr >> 16U) & 255, (ip_hdr(skb)->daddr >> 24U) & 255,                                        
++                                        (int)opt_rx->req_thput, (int)opt_rx->cur_thput, (int)opt_rx->feedback_thput);                                
++				}
++				break;     
++#endif                                
++
+ 			}
+ 			ptr += opsize-2;
+ 			length -= opsize;
+@@ -5596,6 +5659,21 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
+ 	if (tp->rx_opt.saw_tstamp && tp->rx_opt.rcv_tsecr)
+ 		tp->rx_opt.rcv_tsecr -= tp->tsoffset;
+ 
++#if IS_ENABLED(CONFIG_NET_SCH_MF)        
++        if(likely(sysctl_tcp_mf))
++        {
++            //Copy the received option to TCP MF cookie        
++            if(!tp->mf_cookie_req)
++                tp->mf_cookie_req = (struct tcp_mf_cookie *) kzalloc(sizeof(struct tcp_mf_cookie), 
++                                            sk->sk_allocation);
++            tp->mf_cookie_req->cur_thput = tp->rx_opt.cur_thput;
++            tp->mf_cookie_req->feedback_thput = tp->rx_opt.feedback_thput;
++            tp->mf_cookie_req->req_thput = tp->rx_opt.req_thput;
++            tp->mf_cookie_req->prop_delay_est = tp->rx_opt.prop_delay_est;
++            tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;     
++        }             
++#endif
++        
+ 	if (th->ack) {
+ 		/* rfc793:
+ 		 * "If the state is SYN-SENT then
+@@ -6260,7 +6338,23 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
+ 	tmp_opt.user_mss  = tp->rx_opt.user_mss;
+ 	tcp_parse_options(sock_net(sk), skb, &tmp_opt, 0,
+ 			  want_cookie ? NULL : &foc);
+-
++        
++#if IS_ENABLED(CONFIG_NET_SCH_MF)        
++        if(likely(sysctl_tcp_mf))
++        {
++            //Copy the received option to TCP MF cookie        
++            tp->rx_opt.mf_ok = tmp_opt.mf_ok;
++            if(!tp->mf_cookie_req)
++                tp->mf_cookie_req = (struct tcp_mf_cookie *) kzalloc(sizeof(struct tcp_mf_cookie), 
++                                            sk->sk_allocation);
++            tp->mf_cookie_req->cur_thput = tmp_opt.cur_thput;
++            tp->mf_cookie_req->feedback_thput = tmp_opt.feedback_thput;
++            tp->mf_cookie_req->req_thput = tmp_opt.req_thput;
++            tp->mf_cookie_req->prop_delay_est = tmp_opt.prop_delay_est;
++            tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;     
++        }        
++#endif
++        
+ 	if (want_cookie && !tmp_opt.saw_tstamp)
+ 		tcp_clear_options(&tmp_opt);
+ 
+diff --git a/net/ipv4/tcp_ipv4.c b/net/ipv4/tcp_ipv4.c
+index 95738aa..34864c2 100644
+--- a/net/ipv4/tcp_ipv4.c
++++ b/net/ipv4/tcp_ipv4.c
+@@ -1441,6 +1441,52 @@ static struct sock *tcp_v4_cookie_check(struct sock *sk, struct sk_buff *skb)
+ 	return sk;
+ }
+ 
++#if IS_ENABLED(CONFIG_NET_SCH_MF)
++static void skb_mf(struct sk_buff *skb, struct tcp_mf_cookie *mfc)
++{
++        unsigned char *ptr;
++        u8 *feedback;
++	int opsize;
++        int opcode;
++        const struct tcphdr *th;
++	th = tcp_hdr(skb);
++	int length = (th->doff * 4) - sizeof(struct tcphdr);        
++
++	ptr = (unsigned char *)(th + 1);
++        
++	while (length > 0) {
++		opcode = *ptr++;
++
++		switch (opcode) {
++		case TCPOPT_EOL:
++			return;
++		case TCPOPT_NOP:	/* Ref: RFC 793 section 3.1 */
++			length--;
++			continue;
++		default:
++			opsize = *ptr++;
++			if (opsize < 2) /* "silly options" */
++				return;
++			if (opsize > length)
++				return;	/* don't parse partial options */
++			switch (opcode) {
++			case TCPOPT_MF:
++				if (opsize == TCPOLEN_MF) {    
++                                        feedback = ptr + 2;
++					mfc->req_thput = *ptr;
++                                        mfc->cur_thput = *(ptr + 1);
++                                        mfc->feedback_thput = *(ptr + 2);
++                                        mfc->prop_delay_est = *(ptr + 3);
++				}
++				return;                                        
++			}
++			ptr += opsize-2;
++			length -= opsize;
++		}
++	}
++}
++#endif
++
+ /* The socket must have it's spinlock held when we get
+  * here, unless it is a TCP_LISTEN socket.
+  *
+@@ -1453,6 +1499,26 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
+ {
+ 	struct sock *rsk;
+ 
++#if IS_ENABLED(CONFIG_NET_SCH_MF)        
++	struct tcp_sock *tp = tcp_sk(sk);
++        __be32	dest_ip;
++        
++        //Copy the received option to TCP MF cookie for ACK segment
++        if(likely(sysctl_tcp_mf))
++        {       
++            if(!tp->mf_cookie_req)
++                tp->mf_cookie_req = (struct tcp_mf_cookie *) kzalloc(sizeof(struct tcp_mf_cookie), 
++                                            sk->sk_allocation);
++            skb_mf(skb, tp->mf_cookie_req);
++            if(skb->data_len == 0)
++            {
++                dest_ip = ip_hdr(skb)->daddr;
++                pr_info("Feedback throughput= %d on [%d.%d.%d.%d]", tp->mf_cookie_req->feedback_thput, 
++                    dest_ip & 255, (dest_ip >> 8U) & 255, (dest_ip >> 16U) & 255, (dest_ip >> 24U) & 255);                
++            }
++        }        
++#endif        
++
+ 	if (sk->sk_state == TCP_ESTABLISHED) { /* Fast path */
+ 		struct dst_entry *dst = sk->sk_rx_dst;
+ 
+diff --git a/net/ipv4/tcp_output.c b/net/ipv4/tcp_output.c
+index e9f985e..f5f1afc 100644
+--- a/net/ipv4/tcp_output.c
++++ b/net/ipv4/tcp_output.c
+@@ -405,6 +405,10 @@ static inline bool tcp_urg_mode(const struct tcp_sock *tp)
+ #define OPTION_FAST_OPEN_COOKIE	(1 << 8)
+ #define OPTION_SMC		(1 << 9)
+ 
++#if IS_ENABLED(CONFIG_NET_SCH_MF)
++#define OPTION_MF		(1 << 4)
++#endif
++
+ static void smc_options_write(__be32 *ptr, u16 *options)
+ {
+ #if IS_ENABLED(CONFIG_SMC)
+@@ -429,6 +433,9 @@ struct tcp_out_options {
+ 	__u8 *hash_location;	/* temporary pointer, overloaded */
+ 	__u32 tsval, tsecr;	/* need to include OPTION_TS */
+ 	struct tcp_fastopen_cookie *fastopen_cookie;	/* Fast open cookie */
++#if IS_ENABLED(CONFIG_NET_SCH_MF)        
++        struct tcp_mf_cookie *mf_cookie;	        /* TCP MF cookie */ 
++#endif        
+ };
+ 
+ /* Write previously computed TCP options to the packet.
+@@ -538,6 +545,20 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
+ 		ptr += (len + 3) >> 2;
+ 	}
+ 
++#if IS_ENABLED(CONFIG_NET_SCH_MF)        
++	if (likely(OPTION_MF & options)) {
++            pr_debug("Writting MF TCP option in bytes!!\n");
++	        *ptr++ = htonl((TCPOPT_NOP << 24) |
++                                (TCPOPT_NOP << 16) |
++			        (TCPOPT_MF << 8) |
++			        TCPOLEN_MF);
++                *ptr++ = htonl((opts->mf_cookie->req_thput << 24) |
++                               (opts->mf_cookie->cur_thput << 16)  |
++                               (opts->mf_cookie->feedback_thput << 8)  |
++                                opts->mf_cookie->prop_delay_est);
++	}     
++#endif        
++
+ 	smc_options_write(ptr, &options);
+ }
+ 
+@@ -613,6 +634,14 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
+ 		opts->tsecr = tp->rx_opt.ts_recent;
+ 		remaining -= TCPOLEN_TSTAMP_ALIGNED;
+ 	}
++#if IS_ENABLED(CONFIG_NET_SCH_MF)        
++        if (likely(sysctl_tcp_mf)) {
++                pr_err("Setting MF TCP for SYN packet");
++		opts->options |= OPTION_MF;
++                opts->mf_cookie = tp->mf_cookie_req;
++		remaining -= TCPOLEN_MF_ALIGNED;
++	}
++#endif        
+ 	if (likely(sock_net(sk)->ipv4.sysctl_tcp_window_scaling)) {
+ 		opts->ws = tp->rx_opt.rcv_wscale;
+ 		opts->options |= OPTION_WSCALE;
+@@ -684,6 +713,16 @@ static unsigned int tcp_synack_options(const struct sock *sk,
+ 		opts->tsecr = req->ts_recent;
+ 		remaining -= TCPOLEN_TSTAMP_ALIGNED;
+ 	}
++#if IS_ENABLED(CONFIG_NET_SCH_MF)    
++        struct tcp_sock *tp = tcp_sk(sk);
++        if (likely(sysctl_tcp_mf)) {
++                pr_err("Setting MF TCP for SYN packet");
++		opts->options |= OPTION_MF;
++                opts->mf_cookie = tp->mf_cookie_req;
++		remaining -= TCPOLEN_MF_ALIGNED;
++                pr_err("Setting MF TCP for SYN-ACK packet. Feedback: %d", opts->mf_cookie->feedback_thput);                
++	}
++#endif                
+ 	if (likely(ireq->sack_ok)) {
+ 		opts->options |= OPTION_SACK_ADVERTISE;
+ 		if (unlikely(!ireq->tstamp_ok))
+@@ -737,6 +776,16 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
+ 		size += TCPOLEN_TSTAMP_ALIGNED;
+ 	}
+ 
++#if IS_ENABLED(CONFIG_NET_SCH_MF)            
++	if (likely(tp->rx_opt.mf_ok) && sysctl_tcp_mf) {
++                pr_err("Sending MF TCP from [%d.%d.%d.%d]",
++                        inet_sk(sk)->inet_saddr & 255, (inet_sk(sk)->inet_saddr >> 8U) & 255,
++                        (inet_sk(sk)->inet_saddr >> 16U) & 255, (inet_sk(sk)->inet_saddr >> 24U) & 255);
++		opts->options |= OPTION_MF;
++		opts->mf_cookie = tp->mf_cookie_req; 
++		size += TCPOLEN_MF_ALIGNED;
++	}        
++#endif
+ 	eff_sacks = tp->rx_opt.num_sacks + tp->rx_opt.dsack;
+ 	if (unlikely(eff_sacks)) {
+ 		const unsigned int remaining = MAX_TCP_OPTION_SPACE - size;
+@@ -1069,6 +1118,25 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
+ 	tcb = TCP_SKB_CB(skb);
+ 	memset(&opts, 0, sizeof(opts));
+ 
++#if IS_ENABLED(CONFIG_NET_SCH_MF)        
++        // TODO: populate tp->mf_cookie_req by Netlink socket
++        if (likely(sysctl_tcp_mf))
++        {            
++            if(!tp->mf_cookie_req)
++                tp->mf_cookie_req = kzalloc(sizeof(struct tcp_mf_cookie), sk->sk_allocation);
++            //Initially current thput = feedback throughput = required throughput (in KB/s)
++            if(!tp->rx_opt.mf_ok)
++            {                
++                tp->mf_cookie_req->feedback_thput
++                        = tp->mf_cookie_req->req_thput
++                        = 512/8;
++                tp->mf_cookie_req->cur_thput = 512/8;
++                tp->mf_cookie_req->prop_delay_est = 140;
++                tp->mf_cookie_req->len = TCPOLEN_MF_ALIGNED;                     
++            }
++        }        
++#endif
++        
+ 	if (unlikely(tcb->tcp_flags & TCPHDR_SYN))
+ 		tcp_options_size = tcp_syn_options(sk, skb, &opts, &md5);
+ 	else
+diff --git a/net/sched/Kconfig b/net/sched/Kconfig
+index f24a6ae..0488f1a 100644
+--- a/net/sched/Kconfig
++++ b/net/sched/Kconfig
+@@ -363,6 +363,23 @@ config NET_SCH_PLUG
+ 	  To compile this code as a module, choose M here: the
+ 	  module will be called sch_plug.
+ 
++config NET_SCH_MF
++	tristate "MF Scheduler"
++	depends on NET_CLS_ACT
++	select NET_INGRESS
++	select NET_EGRESS
++	---help---
++	  Say Y here if you want to use classifiers for incoming and/or outgoing
++	  packets. This qdisc doesn't do anything else besides running classifiers,
++	  which can also have actions attached to them. In case of outgoing packets,
++	  classifiers that this qdisc holds are executed in the transmit path
++	  before real enqueuing to an egress qdisc happens.
++
++	  If unsure, say Y.
++
++	  To compile this code as a module, choose M here: the module will be
++	  called sch_ingress with alias of sch_clsact.
++
+ menuconfig NET_SCH_DEFAULT
+ 	bool "Allow override default queue discipline"
+ 	---help---
+diff --git a/net/sched/Makefile b/net/sched/Makefile
+index 5b63544..c5125d7 100644
+--- a/net/sched/Makefile
++++ b/net/sched/Makefile
+@@ -53,8 +53,10 @@ obj-$(CONFIG_NET_SCH_FQ_CODEL)	+= sch_fq_codel.o
+ obj-$(CONFIG_NET_SCH_FQ)	+= sch_fq.o
+ obj-$(CONFIG_NET_SCH_HHF)	+= sch_hhf.o
+ obj-$(CONFIG_NET_SCH_PIE)	+= sch_pie.o
++obj-$(CONFIG_NET_SCH_MF)	+= sch_mf.o
+ obj-$(CONFIG_NET_SCH_CBS)	+= sch_cbs.o
+ 
++
+ obj-$(CONFIG_NET_CLS_U32)	+= cls_u32.o
+ obj-$(CONFIG_NET_CLS_ROUTE4)	+= cls_route.o
+ obj-$(CONFIG_NET_CLS_FW)	+= cls_fw.o
+-- 
+2.7.4
+
