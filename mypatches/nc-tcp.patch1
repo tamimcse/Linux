@@ -1,7 +1,7 @@
 From 03abcbd163cb60d259ceace74f89d12bec46a68a Mon Sep 17 00:00:00 2001
 From: tamimcse <tamim@csebuet.org>
 Date: Mon, 5 Feb 2018 21:05:50 -0500
-Subject: [PATCH 1/2] NC-TCP patch
+Subject: [PATCH 1/3] NC-TCP patch
 
 ---
  net/sched/sch_mf.c | 498 +++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -520,7 +520,7 @@ index 0000000..0a56b17
 From 4e1d179e17ce252747783f6a7e3f719a79a6c5cf Mon Sep 17 00:00:00 2001
 From: tamimcse <tamim@csebuet.org>
 Date: Mon, 5 Feb 2018 21:08:25 -0500
-Subject: [PATCH 2/2] NC-TCP patch
+Subject: [PATCH 2/3] NC-TCP patch
 
 ---
  .gitignore                        |   5 +
@@ -1838,6 +1838,35 @@ index 5b63544..c5125d7 100644
  obj-$(CONFIG_NET_CLS_U32)	+= cls_u32.o
  obj-$(CONFIG_NET_CLS_ROUTE4)	+= cls_route.o
  obj-$(CONFIG_NET_CLS_FW)	+= cls_fw.o
+-- 
+2.7.4
+
+
+From 6ca2e6c51fc32f75b8bd611994a3c33948cd8240 Mon Sep 17 00:00:00 2001
+From: tamimcse <tamim@csebuet.org>
+Date: Wed, 7 Feb 2018 18:58:40 -0500
+Subject: [PATCH 3/3] Removed ifdef in uapi header file bacuse user app cannot
+ use it
+
+---
+ include/uapi/linux/tcp.h | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/include/uapi/linux/tcp.h b/include/uapi/linux/tcp.h
+index 599e5a2..6aa8e1d 100644
+--- a/include/uapi/linux/tcp.h
++++ b/include/uapi/linux/tcp.h
+@@ -221,9 +221,8 @@ struct tcp_info {
+ 
+ 	__u64   tcpi_delivery_rate;
+ 
+-#if IS_ENABLED(CONFIG_NET_SCH_MF)        
+         __u8   tcpi_feedback_rate;
+-#endif
++
+         
+ 	__u64	tcpi_busy_time;      /* Time (usec) busy sending data */
+ 	__u64	tcpi_rwnd_limited;   /* Time (usec) limited by receive window */
 -- 
 2.7.4
 
