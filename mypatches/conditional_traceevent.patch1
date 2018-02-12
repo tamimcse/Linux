@@ -1,0 +1,117 @@
+diff --git a/kernel/trace/trace_events_filter.c b/kernel/trace/trace_events_filter.c
+index 61e7f06..8d733fa 100644
+--- a/kernel/trace/trace_events_filter.c
++++ b/kernel/trace/trace_events_filter.c
+@@ -39,6 +39,7 @@ enum filter_op_ids
+ 	OP_AND,
+ 	OP_GLOB,
+ 	OP_NE,
++        OP_NE_PREV,        
+ 	OP_EQ,
+ 	OP_LT,
+ 	OP_LE,
+@@ -62,6 +63,7 @@ static struct filter_op filter_ops[] = {
+ 	{ OP_AND,	"&&",		2 },
+ 	{ OP_GLOB,	"~",		4 },
+ 	{ OP_NE,	"!=",		4 },
++	{ OP_NE_PREV,   "=<",		4 },        
+ 	{ OP_EQ,	"==",		4 },
+ 	{ OP_LT,	"<",		5 },
+ 	{ OP_LE,	"<=",		5 },
+@@ -202,6 +204,21 @@ static int filter_pred_##size(struct filter_pred *pred, void *event)	\
+ 	return match;							\
+ }
+ 
++#define DEFINE_NE_PREV_PRED(size)					\
++static int filter_ne_prev_pred_##size(struct filter_pred *pred, void *event)	\
++{									\
++	u##size *addr = (u##size *)(event + pred->offset);		\
++	u##size val = (u##size)pred->val;				\
++	int match;                                                      \
++									\
++	match = (val == *addr) ^ pred->not;				\
++                                                                        \
++        if(match == 1)                                                  \
++                pred->val = *addr;                                      \
++	return match;							\
++}
++
++
+ DEFINE_COMPARISON_PRED(s64);
+ DEFINE_COMPARISON_PRED(u64);
+ DEFINE_COMPARISON_PRED(s32);
+@@ -216,6 +233,11 @@ DEFINE_EQUALITY_PRED(32);
+ DEFINE_EQUALITY_PRED(16);
+ DEFINE_EQUALITY_PRED(8);
+ 
++DEFINE_NE_PREV_PRED(64);
++DEFINE_NE_PREV_PRED(32);
++DEFINE_NE_PREV_PRED(16);
++DEFINE_NE_PREV_PRED(8);
++
+ /* Filter predicate for fixed sized arrays of characters */
+ static int filter_pred_string(struct filter_pred *pred, void *event)
+ {
+@@ -980,7 +1002,7 @@ int filter_assign_type(const char *type)
+ static bool is_legal_op(struct ftrace_event_field *field, enum filter_op_ids op)
+ {
+ 	if (is_string_field(field) &&
+-	    (op != OP_EQ && op != OP_NE && op != OP_GLOB))
++	    (op != OP_EQ && op != OP_NE && op != OP_GLOB && op != OP_NE_PREV))
+ 		return false;
+ 	if (!is_string_field(field) && op == OP_GLOB)
+ 		return false;
+@@ -997,6 +1019,8 @@ static filter_pred_fn_t select_comparison_fn(enum filter_op_ids op,
+ 	case 8:
+ 		if (op == OP_EQ || op == OP_NE)
+ 			fn = filter_pred_64;
++                else if (op == OP_NE_PREV)
++			fn = filter_ne_prev_pred_64;
+ 		else if (field_is_signed)
+ 			fn = pred_funcs_s64[op - PRED_FUNC_START];
+ 		else
+@@ -1005,6 +1029,8 @@ static filter_pred_fn_t select_comparison_fn(enum filter_op_ids op,
+ 	case 4:
+ 		if (op == OP_EQ || op == OP_NE)
+ 			fn = filter_pred_32;
++                else if (op == OP_NE_PREV)
++			fn = filter_ne_prev_pred_32;                
+ 		else if (field_is_signed)
+ 			fn = pred_funcs_s32[op - PRED_FUNC_START];
+ 		else
+@@ -1013,6 +1039,8 @@ static filter_pred_fn_t select_comparison_fn(enum filter_op_ids op,
+ 	case 2:
+ 		if (op == OP_EQ || op == OP_NE)
+ 			fn = filter_pred_16;
++                else if (op == OP_NE_PREV)
++			fn = filter_ne_prev_pred_16;                
+ 		else if (field_is_signed)
+ 			fn = pred_funcs_s16[op - PRED_FUNC_START];
+ 		else
+@@ -1021,6 +1049,8 @@ static filter_pred_fn_t select_comparison_fn(enum filter_op_ids op,
+ 	case 1:
+ 		if (op == OP_EQ || op == OP_NE)
+ 			fn = filter_pred_8;
++                else if (op == OP_NE_PREV)
++			fn = filter_ne_prev_pred_8;                
+ 		else if (field_is_signed)
+ 			fn = pred_funcs_s8[op - PRED_FUNC_START];
+ 		else
+@@ -1088,7 +1118,7 @@ static int init_pred(struct filter_parse_state *ps,
+ 		}
+ 	}
+ 
+-	if (pred->op == OP_NE)
++	if (pred->op == OP_NE || pred->op == OP_NE_PREV)
+ 		pred->not ^= 1;
+ 
+ 	pred->fn = fn;
+@@ -2197,7 +2227,7 @@ static int ftrace_function_check_pred(struct filter_pred *pred, int leaf)
+ 		 *  - only '==' and '!=' is used
+ 		 *  - the 'ip' field is used
+ 		 */
+-		if ((pred->op != OP_EQ) && (pred->op != OP_NE))
++		if ((pred->op != OP_EQ) && (pred->op != OP_NE) && (pred->op != OP_NE_PREV))
+ 			return -EINVAL;
+ 
+ 		if (strcmp(field->name, "ip"))
