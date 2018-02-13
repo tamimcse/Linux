@@ -1,0 +1,108 @@
+diff --git a/kernel/trace/trace.h b/kernel/trace/trace.h
+index 2a6d032..15a83c7 100644
+--- a/kernel/trace/trace.h
++++ b/kernel/trace/trace.h
+@@ -1402,6 +1402,7 @@ struct regex {
+ struct filter_pred {
+ 	filter_pred_fn_t 	fn;
+ 	u64 			val;
++        atomic64_t              global_var;
+ 	struct regex		regex;
+ 	unsigned short		*ops;
+ 	struct ftrace_event_field *field;
+@@ -1427,6 +1428,16 @@ static inline bool is_function_field(struct ftrace_event_field *field)
+ 	return field->filter_type == FILTER_TRACE_FN;
+ }
+ 
++/// The string prerdicate is a global variable if it starts with $.
++/// \param field predicate
++/// \return 
++static inline bool is_global_variable(char *field)
++{
++        if(strlen(field) == 0)
++            return false;
++	return field[0] == '$';
++}
++
+ extern enum regex_type
+ filter_parse_regex(char *buff, int len, char **search, int *not);
+ extern void print_event_filter(struct trace_event_file *file,
+diff --git a/kernel/trace/trace_events_filter.c b/kernel/trace/trace_events_filter.c
+index 61e7f06..8bf43353 100644
+--- a/kernel/trace/trace_events_filter.c
++++ b/kernel/trace/trace_events_filter.c
+@@ -202,6 +202,15 @@ static int filter_pred_##size(struct filter_pred *pred, void *event)	\
+ 	return match;							\
+ }
+ 
++#define DEFINE_GLOBAL_PRED(size)					\
++static int filter_global_pred_##size(struct filter_pred *pred, void *event)	\
++{									\
++	u##size *addr = (u##size *)(event + pred->offset);		\
++        u##size old_global_var = (u##size)atomic64_xchg(&pred->global_var, (u64)*addr); \
++	return (old_global_var == *addr) ^ pred->not;			\
++}
++
++
+ DEFINE_COMPARISON_PRED(s64);
+ DEFINE_COMPARISON_PRED(u64);
+ DEFINE_COMPARISON_PRED(s32);
+@@ -216,6 +225,11 @@ DEFINE_EQUALITY_PRED(32);
+ DEFINE_EQUALITY_PRED(16);
+ DEFINE_EQUALITY_PRED(8);
+ 
++DEFINE_GLOBAL_PRED(64);
++DEFINE_GLOBAL_PRED(32);
++DEFINE_GLOBAL_PRED(16);
++DEFINE_GLOBAL_PRED(8);
++
+ /* Filter predicate for fixed sized arrays of characters */
+ static int filter_pred_string(struct filter_pred *pred, void *event)
+ {
+@@ -988,6 +1002,29 @@ static bool is_legal_op(struct ftrace_event_field *field, enum filter_op_ids op)
+ 	return true;
+ }
+ 
++static filter_pred_fn_t select_global_fn(enum filter_op_ids op,
++					    int field_size, int field_is_signed)
++{
++	filter_pred_fn_t fn = NULL;
++
++	switch (field_size) {
++	case 8:
++		fn = filter_global_pred_64;
++		break;
++	case 4:
++		fn = filter_global_pred_32;                
++		break;
++	case 2:
++		fn = filter_global_pred_16;                
++		break;
++	case 1:
++		fn = filter_global_pred_8;                
++		break;
++	}
++
++	return fn;
++}
++
+ static filter_pred_fn_t select_comparison_fn(enum filter_op_ids op,
+ 					    int field_size, int field_is_signed)
+ {
+@@ -1066,7 +1103,15 @@ static int init_pred(struct filter_parse_state *ps,
+ 			parse_error(ps, FILT_ERR_IP_FIELD_ONLY, 0);
+ 			return -EINVAL;
+ 		}
+-	} else {
++	} else if(is_global_variable(pred->regex.pattern)){
++            atomic64_set(&pred->global_var, 0);
++	    fn = select_global_fn(pred->op, field->size,
++					  field->is_signed);  
++            if (!fn) {
++                    parse_error(ps, FILT_ERR_INVALID_OP, 0);
++                    return -EINVAL;
++            }            
++        }else {            
+ 		if (field->is_signed)
+ 			ret = kstrtoll(pred->regex.pattern, 0, &val);
+ 		else

@@ -15,7 +15,9 @@ sudo dmesg -c > old.log &&
 sudo chmod a+rwx -R /sys/kernel/debug/ &&
 cd /sys/kernel/debug/tracing &&
 echo 1 > events/tcp/tcp_probe/enable &&
-echo "sport == 8554 || dport == 8554"  > events/tcp/tcp_probe/filter &&
+echo "(sport == 8554 && snd_cwnd =< \$cwnd)"  > events/tcp/tcp_probe/filter &&
+#echo "(sport == 8554 && snd_cwnd != $cwnd)"  > events/tcp/tcp_probe/filter &&
+#echo "(sport == 8554 && snd_cwnd =< 0)"  > events/tcp/tcp_probe/filter &&
 #Single & because it's a background task
 cat trace_pipe > /home/tamim/net-next/trace.data &
 TCPCAP=$! &&
