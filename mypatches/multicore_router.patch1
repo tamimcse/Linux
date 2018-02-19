@@ -32,7 +32,7 @@ index 44668c2..c0cd6dd 100644
  	struct sock		*fibnl;
  
 diff --git a/net/ipv4/fib_frontend.c b/net/ipv4/fib_frontend.c
-index f05afaf..7d2e332 100644
+index f05afaf..e0f1b23 100644
 --- a/net/ipv4/fib_frontend.c
 +++ b/net/ipv4/fib_frontend.c
 @@ -54,24 +54,43 @@
@@ -97,3 +97,70 @@ index f05afaf..7d2e332 100644
  }
  
  static bool fib4_has_custom_rules(struct net *net)
+@@ -198,7 +217,7 @@ static void fib_flush(struct net *net)
+ 	unsigned int h;
+ 
+ 	for (h = 0; h < FIB_TABLE_HASHSZ; h++) {
+-		struct hlist_head *head = &net->ipv4.fib_table_hash[h];
++		struct hlist_head *head = &(*this_cpu_ptr(net->ipv4.fib_table_hash_dup)[h]);
+ 		struct hlist_node *tmp;
+ 		struct fib_table *tb;
+ 
+@@ -803,7 +822,7 @@ static int inet_dump_fib(struct sk_buff *skb, struct netlink_callback *cb)
+ 
+ 	for (h = s_h; h < FIB_TABLE_HASHSZ; h++, s_e = 0) {
+ 		e = 0;
+-		head = &net->ipv4.fib_table_hash[h];
++		head = &(*this_cpu_ptr(net->ipv4.fib_table_hash_dup)[h]);
+ 		hlist_for_each_entry_rcu(tb, head, tb_hlist) {
+ 			if (e < s_e)
+ 				goto next;
+@@ -1307,7 +1326,7 @@ static void ip_fib_net_exit(struct net *net)
+ 	 * references to data contained in the main table.
+ 	 */
+ 	for (i = FIB_TABLE_HASHSZ - 1; i >= 0; i--) {
+-		struct hlist_head *head = &net->ipv4.fib_table_hash[i];
++		struct hlist_head *head = &(*this_cpu_ptr(net->ipv4.fib_table_hash_dup)[i]);
+ 		struct hlist_node *tmp;
+ 		struct fib_table *tb;
+ 
+diff --git a/net/ipv4/fib_trie.c b/net/ipv4/fib_trie.c
+index 5530cd6..5afb108 100644
+--- a/net/ipv4/fib_trie.c
++++ b/net/ipv4/fib_trie.c
+@@ -1953,7 +1953,7 @@ void fib_notify(struct net *net, struct notifier_block *nb)
+ 	unsigned int h;
+ 
+ 	for (h = 0; h < FIB_TABLE_HASHSZ; h++) {
+-		struct hlist_head *head = &net->ipv4.fib_table_hash[h];
++		struct hlist_head *head = &(*this_cpu_ptr(net->ipv4.fib_table_hash_dup)[h]);
+ 		struct fib_table *tb;
+ 
+ 		hlist_for_each_entry_rcu(tb, head, tb_hlist)
+@@ -2305,7 +2305,7 @@ static int fib_triestat_seq_show(struct seq_file *seq, void *v)
+ 		   LEAF_SIZE, TNODE_SIZE(0));
+ 
+ 	for (h = 0; h < FIB_TABLE_HASHSZ; h++) {
+-		struct hlist_head *head = &net->ipv4.fib_table_hash[h];
++		struct hlist_head *head = &(*this_cpu_ptr(net->ipv4.fib_table_hash_dup)[h]);
+ 		struct fib_table *tb;
+ 
+ 		hlist_for_each_entry_rcu(tb, head, tb_hlist) {
+@@ -2348,7 +2348,7 @@ static struct key_vector *fib_trie_get_idx(struct seq_file *seq, loff_t pos)
+ 	unsigned int h;
+ 
+ 	for (h = 0; h < FIB_TABLE_HASHSZ; h++) {
+-		struct hlist_head *head = &net->ipv4.fib_table_hash[h];
++		struct hlist_head *head = &(*this_cpu_ptr(net->ipv4.fib_table_hash_dup)[h]);
+ 		struct fib_table *tb;
+ 
+ 		hlist_for_each_entry_rcu(tb, head, tb_hlist) {
+@@ -2400,7 +2400,7 @@ static void *fib_trie_seq_next(struct seq_file *seq, void *v, loff_t *pos)
+ 
+ 	/* new hash chain */
+ 	while (++h < FIB_TABLE_HASHSZ) {
+-		struct hlist_head *head = &net->ipv4.fib_table_hash[h];
++		struct hlist_head *head = &(*this_cpu_ptr(net->ipv4.fib_table_hash_dup)[h]);
+ 		hlist_for_each_entry_rcu(tb, head, tb_hlist) {
+ 			n = fib_trie_get_first(iter, (struct trie *) tb->tb_data);
+ 			if (n)
