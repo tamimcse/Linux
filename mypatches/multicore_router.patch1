@@ -1,0 +1,99 @@
+diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
+index f805243..61df29c 100644
+--- a/include/net/ip_fib.h
++++ b/include/net/ip_fib.h
+@@ -243,10 +243,14 @@ static inline struct fib_table *fib_get_table(struct net *net, u32 id)
+ {
+ 	struct hlist_node *tb_hlist;
+ 	struct hlist_head *ptr;
++        struct hlist_head *fib = *this_cpu_ptr(net->ipv4.fib_table_hash_dup);
+ 
++
++//        *per_cpu_ptr(net->ipv4.fib_table_hash_dup, cpu)
++        
+ 	ptr = id == RT_TABLE_LOCAL ?
+-		&net->ipv4.fib_table_hash[TABLE_LOCAL_INDEX] :
+-		&net->ipv4.fib_table_hash[TABLE_MAIN_INDEX];
++		&fib[TABLE_LOCAL_INDEX] :
++		&fib[TABLE_MAIN_INDEX];
+ 
+ 	tb_hlist = rcu_dereference_rtnl(hlist_first_rcu(ptr));
+ 
+diff --git a/include/net/netns/ipv4.h b/include/net/netns/ipv4.h
+index 44668c2..c0cd6dd 100644
+--- a/include/net/netns/ipv4.h
++++ b/include/net/netns/ipv4.h
+@@ -60,6 +60,7 @@ struct netns_ipv4 {
+ 	int			fib_num_tclassid_users;
+ #endif
+ 	struct hlist_head	*fib_table_hash;
++        struct hlist_head  * __percpu	*fib_table_hash_dup;
+ 	bool			fib_offload_disabled;
+ 	struct sock		*fibnl;
+ 
+diff --git a/net/ipv4/fib_frontend.c b/net/ipv4/fib_frontend.c
+index f05afaf..7d2e332 100644
+--- a/net/ipv4/fib_frontend.c
++++ b/net/ipv4/fib_frontend.c
+@@ -54,24 +54,43 @@
+ static int __net_init fib4_rules_init(struct net *net)
+ {
+ 	struct fib_table *local_table, *main_table;
+-
+-	main_table  = fib_trie_table(RT_TABLE_MAIN, NULL);
+-	if (!main_table)
+-		return -ENOMEM;
+-
+-	local_table = fib_trie_table(RT_TABLE_LOCAL, main_table);
+-	if (!local_table)
+-		goto fail;
+-
+-	hlist_add_head_rcu(&local_table->tb_hlist,
+-				&net->ipv4.fib_table_hash[TABLE_LOCAL_INDEX]);
+-	hlist_add_head_rcu(&main_table->tb_hlist,
+-				&net->ipv4.fib_table_hash[TABLE_MAIN_INDEX]);
+-	return 0;
+-
+-fail:
+-	fib_free_table(main_table);
+-	return -ENOMEM;
++        int cpu;
++
++        main_table  = fib_trie_table(RT_TABLE_MAIN, NULL);
++        if (!main_table)
++                return -ENOMEM;
++
++        local_table = fib_trie_table(RT_TABLE_LOCAL, main_table);
++        if (!local_table)
++                return -ENOMEM;
++
++        hlist_add_head_rcu(&local_table->tb_hlist,
++                                &net->ipv4.fib_table_hash[TABLE_LOCAL_INDEX]);
++        hlist_add_head_rcu(&main_table->tb_hlist,
++                                &net->ipv4.fib_table_hash[TABLE_MAIN_INDEX]);
++
++        net->ipv4.fib_table_hash_dup = alloc_percpu(struct hlist_head *);
++        if(!net->ipv4.fib_table_hash_dup)
++            return -ENOMEM;
++        
++        for_each_possible_cpu(cpu){
++            
++            main_table  = fib_trie_table(RT_TABLE_MAIN, NULL);
++            if (!main_table)
++                    return -ENOMEM;
++
++            local_table = fib_trie_table(RT_TABLE_LOCAL, main_table);
++            if (!local_table)
++                    return -ENOMEM;
++
++            struct hlist_head *fib = *per_cpu_ptr(net->ipv4.fib_table_hash_dup, cpu);
++           fib = kmalloc(sizeof (struct hlist_head) * FIB_TABLE_HASHSZ, GFP_KERNEL); 
++            
++            hlist_add_head(&local_table->tb_hlist, &fib[TABLE_LOCAL_INDEX]);
++            hlist_add_head(&main_table->tb_hlist, &fib[TABLE_MAIN_INDEX]);            
++            
++        }
++        return 0;
+ }
+ 
+ static bool fib4_has_custom_rules(struct net *net)
