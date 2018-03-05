@@ -66,9 +66,11 @@ def main(cli=0):
 #Currently sch_mf module is disabled
 #    net['r1'].cmd( 'tc qdisc add dev r1-eth3 root handle 1: mf')
 
-#sudo cat /sys/kernel/debug/tracing/trace_pipe to see the BPF debug output
-    net['r1'].cmd( 'tc qdisc add dev r1-eth3 clsact')
-    net['r1'].cmd( 'tc filter add dev r1-eth3 ingress bpf da obj samples/bpf/mf.o sec mf')
+#Setup BFP. sudo cat /sys/kernel/debug/tracing/trace_pipe to see the BPF debug output
+#    net['r1'].cmd( 'tc qdisc add dev r1-eth3 clsact')
+#    net['r1'].cmd( 'tc filter add dev r1-eth3 ingress bpf da obj samples/bpf/mf.o sec mf')
+
+#Setup RPS CPUs
 #    net['r1'].cmd( 'sudo chmod a+rwx -R /sys/class/net/r1-eth2/queues/rx-0/')
 #    net['r1'].cmd( 'sudo echo 3 > /sys/class/net/r1-eth2/queues/rx-0/rps_cpus')
 #    net['r1'].cmd( 'cat /sys/class/net/r1-eth2/queues/rx-0/rps_cpus')
