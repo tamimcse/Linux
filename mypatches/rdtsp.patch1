@@ -1,0 +1,68 @@
+diff --git a/net/sched/sch_mf.c b/net/sched/sch_mf.c
+index 0a56b17..db168f8 100644
+--- a/net/sched/sch_mf.c
++++ b/net/sched/sch_mf.c
+@@ -68,6 +68,43 @@ struct mf_log {
+ 	__u32	backlog;
+ };
+ 
++#ifdef __i386__
++#  define RDTSC_DIRTY "%eax", "%ebx", "%ecx", "%edx"
++#elif __x86_64__
++#  define RDTSC_DIRTY "%rax", "%rbx", "%rcx", "%rdx"
++#else
++# error unknown platform
++#endif
++
++#define BENCH(func)                                        \
++    do {                                                   \
++        register uint64_t start, end;                      \
++        unsigned long flag;                                \
++        register unsigned cyc_high1, cyc_low1;             \
++        register unsigned cyc_high2, cyc_low2;             \        
++        preempt_disable();                                 \
++        raw_local_irq_save(flag);                          \
++        raw_local_irq_disable();                           \
++        asm volatile("CPUID\n\t"                           \
++                     "RDTSC\n\t"                           \
++                     "mov %%edx, %0\n\t"                   \
++                     "mov %%eax, %1\n\t"                   \
++                     : "=r" (cyc_high1), "=r" (cyc_low1)   \
++                     :: RDTSC_DIRTY);                      \
++        (func);                                            \
++        asm volatile("RDTSCP\n\t"                          \
++                     "mov %%edx, %0\n\t"                   \
++                     "mov %%eax, %1\n\t"                   \
++                     "CPUID\n\t"                           \
++                     : "=r" (cyc_high2), "=r" (cyc_low2)   \
++                     :: RDTSC_DIRTY);                      \
++        raw_local_irq_enable();                            \
++        raw_local_irq_restore(flag);                       \
++        preempt_enable();                                  \
++        start = ((uint64_t)cyc_high1 << 32) | cyc_low1;    \
++        end = ((uint64_t)cyc_high2 << 32) | cyc_low2;      \        
++        pr_info(KERN_INFO "\n MF=  %llu clock cycles !!!!", (end-start)); \
++    } while (0)
+ 
+ 
+ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb)
+@@ -80,7 +117,6 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb)
+         int opcode;
+         s64 rate;
+         s64 delta;
+-        u64 tsc_begin, tsc_end;
+         const struct tcphdr *th;
+         struct mf_sched_data *q = qdisc_priv(sch);
+         if(q->nFlow == 0)
+@@ -91,10 +127,8 @@ static void mf_apply(struct Qdisc *sch, struct sk_buff *skb)
+ 
+         if (likely(mf==0))
+         {
+-            tsc_begin = rdtsc();
++//            BENCH(rate = q->capacity > sch->qstats.backlog? 12*(q->capacity - sch->qstats.backlog)/(q->nFlow*10) : 0);
+             rate = q->capacity > sch->qstats.backlog? 12*(q->capacity - sch->qstats.backlog)/(q->nFlow*10) : 0;
+-            tsc_end = rdtsc();
+-            pr_info("TSC: %llu !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", tsc_end - tsc_begin);            
+         }
+         else if(mf == 1)
+         {            
