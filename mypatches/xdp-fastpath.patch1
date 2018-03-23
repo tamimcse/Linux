@@ -1,0 +1,320 @@
+diff --git a/drivers/net/Kconfig b/drivers/net/Kconfig
+index 944ec3c..8c39128 100644
+--- a/drivers/net/Kconfig
++++ b/drivers/net/Kconfig
+@@ -328,6 +328,15 @@ config VETH
+ 	  When one end receives the packet it appears on its pair and vice
+ 	  versa.
+ 
++config XDP_ROUTER
++	bool "IP forwarding on XDP"
++	depends on IP_ADVANCED_ROUTER
++        depends on VETH
++        default y
++	help
++	  This option will enable IP forwarding on incoming xdp_buff. 
++          Currently it is only supported by VETH  
++
+ config VIRTIO_NET
+ 	tristate "Virtio network driver"
+ 	depends on VIRTIO
+diff --git a/drivers/net/veth.c b/drivers/net/veth.c
+index a69ad39..30876e3 100644
+--- a/drivers/net/veth.c
++++ b/drivers/net/veth.c
+@@ -110,7 +110,24 @@ static netdev_tx_t veth_xmit(struct sk_buff *skb, struct net_device *dev)
+ 		kfree_skb(skb);
+ 		goto drop;
+ 	}
+-
++#ifdef CONFIG_XDP_ROUTER
++        //if IP forwarding is enabled on the receiver, create xdp_buff
++        //from skb and call xdp_router_forward()
++        if(is_forwarding_enabled(rcv)){
++                struct xdp_buff *xdp = kmalloc(sizeof(*xdp), GFP_KERNEL);        
++                xdp->data = skb->data;        
++                xdp->data_end = skb->data + (skb->len - skb->data_len);
++                xdp->data_meta = skb;
++                if (likely(xdp_router_forward(rcv, xdp) == NET_RX_SUCCESS)){
++                        struct pcpu_vstats *stats = this_cpu_ptr(dev->vstats);
++                        u64_stats_update_begin(&stats->syncp);
++                        stats->bytes += length;
++                        stats->packets++;
++                        u64_stats_update_end(&stats->syncp);
++                        goto success;
++                }
++        }
++#endif
+ 	if (likely(dev_forward_skb(rcv, skb) == NET_RX_SUCCESS)) {
+ 		struct pcpu_vstats *stats = this_cpu_ptr(dev->vstats);
+ 
+@@ -122,6 +139,7 @@ static netdev_tx_t veth_xmit(struct sk_buff *skb, struct net_device *dev)
+ drop:
+ 		atomic64_inc(&priv->dropped);
+ 	}
++success:        
+ 	rcu_read_unlock();
+ 	return NETDEV_TX_OK;
+ }
+@@ -276,6 +294,57 @@ static void veth_set_rx_headroom(struct net_device *dev, int new_hr)
+ 	rcu_read_unlock();
+ }
+ 
++#ifdef CONFIG_XDP_ROUTER
++//Called holding RCU lock
++int veth_xdp_xmit(struct net_device *dev, struct xdp_buff *xdp){
++	struct veth_priv *priv = netdev_priv(dev);
++	struct net_device *rcv;
++        struct ethhdr *ethh;
++        struct sk_buff *skb;
++	int length = xdp->data_end - xdp->data;
++
++	rcv = rcu_dereference(priv->peer);
++	if (unlikely(!rcv)) {
++		kfree(xdp);
++		goto drop;
++	}
++        
++        //Update MAC address and checksum
++	ethh = eth_hdr_xdp(xdp);
++        ether_addr_copy(ethh->h_source, dev->dev_addr);
++        ether_addr_copy(ethh->h_dest, rcv->dev_addr);
++        
++
++        //if IP forwarding is enabled on the receiver, call xdp_router_forward()
++        if(is_forwarding_enabled(rcv)){
++                if (likely(xdp_router_forward(rcv, xdp) == NET_RX_SUCCESS)){
++                        struct pcpu_vstats *stats = this_cpu_ptr(dev->vstats);
++                        u64_stats_update_begin(&stats->syncp);
++                        stats->bytes += length;
++                        stats->packets++;
++                        u64_stats_update_end(&stats->syncp);
++                        return NETDEV_TX_OK;
++                }
++        }
++
++        //Local deliver
++        skb = (struct sk_buff *)xdp->data_meta;
++	if (likely(dev_forward_skb(rcv, skb) == NET_RX_SUCCESS)) {
++		struct pcpu_vstats *stats = this_cpu_ptr(dev->vstats);
++
++		u64_stats_update_begin(&stats->syncp);
++		stats->bytes += length;
++		stats->packets++;
++		u64_stats_update_end(&stats->syncp);
++	} else {
++drop:
++		atomic64_inc(&priv->dropped);
++	}
++        return NETDEV_TX_OK;
++
++}
++#endif
++
+ static const struct net_device_ops veth_netdev_ops = {
+ 	.ndo_init            = veth_dev_init,
+ 	.ndo_open            = veth_open,
+@@ -290,6 +359,9 @@ static const struct net_device_ops veth_netdev_ops = {
+ 	.ndo_get_iflink		= veth_get_iflink,
+ 	.ndo_features_check	= passthru_features_check,
+ 	.ndo_set_rx_headroom	= veth_set_rx_headroom,
++#ifdef CONFIG_XDP_ROUTER  
++        .ndo_xdp_xmit           = veth_xdp_xmit,
++#endif        
+ };
+ 
+ #define VETH_FEATURES (NETIF_F_SG | NETIF_F_FRAGLIST | NETIF_F_HW_CSUM | \
+diff --git a/include/linux/ip.h b/include/linux/ip.h
+index 492bc65..7ade66e 100644
+--- a/include/linux/ip.h
++++ b/include/linux/ip.h
+@@ -20,6 +20,22 @@
+ #include <linux/skbuff.h>
+ #include <uapi/linux/ip.h>
+ 
++#include <linux/filter.h>
++
++#ifdef CONFIG_XDP_ROUTER
++
++static inline struct iphdr *ip_hdr_xdp(const struct xdp_buff *xdp)
++{
++	return (struct iphdr *)(xdp->data+ETH_HLEN);
++}
++
++static inline struct ethhdr *eth_hdr_xdp(const struct xdp_buff *xdp)
++{
++	return (struct ethhdr *)(xdp->data);
++}
++
++#endif
++
+ static inline struct iphdr *ip_hdr(const struct sk_buff *skb)
+ {
+ 	return (struct iphdr *)skb_network_header(skb);
+diff --git a/include/linux/netdevice.h b/include/linux/netdevice.h
+index 4c77f39..25db780 100644
+--- a/include/linux/netdevice.h
++++ b/include/linux/netdevice.h
+@@ -3290,6 +3290,12 @@ static inline void dev_consume_skb_any(struct sk_buff *skb)
+ 	__dev_kfree_skb_any(skb, SKB_REASON_CONSUMED);
+ }
+ 
++#ifdef CONFIG_XDP_ROUTER
++bool is_xdp_forwardable(const struct net_device *dev, const struct xdp_buff *xdp);
++bool is_forwarding_enabled(struct net_device *dev);
++int xdp_router_forward(struct net_device *dev, struct xdp_buff *xdp);
++#endif
++
+ void generic_xdp_tx(struct sk_buff *skb, struct bpf_prog *xdp_prog);
+ int do_xdp_generic(struct bpf_prog *xdp_prog, struct sk_buff *skb);
+ int netif_rx(struct sk_buff *skb);
+diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
+index f805243..623b2de 100644
+--- a/include/net/ip_fib.h
++++ b/include/net/ip_fib.h
+@@ -369,6 +369,12 @@ int fib_sync_down_dev(struct net_device *dev, unsigned long event, bool force);
+ int fib_sync_down_addr(struct net_device *dev, __be32 local);
+ int fib_sync_up(struct net_device *dev, unsigned int nh_flags);
+ 
++#ifdef CONFIG_XDP_ROUTER
++int ip_route_lookup(__be32 daddr, __be32 saddr,
++			       u8 tos, struct net_device *dev,
++			       struct fib_result *res);
++#endif
++
+ #ifdef CONFIG_IP_ROUTE_MULTIPATH
+ int fib_multipath_hash(const struct fib_info *fi, const struct flowi4 *fl4,
+ 		       const struct sk_buff *skb);
+diff --git a/net/core/dev.c b/net/core/dev.c
+index dda9d7b..f97818c 100644
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -4090,6 +4090,85 @@ int do_xdp_generic(struct bpf_prog *xdp_prog, struct sk_buff *skb)
+ }
+ EXPORT_SYMBOL_GPL(do_xdp_generic);
+ 
++#ifdef CONFIG_XDP_ROUTER
++
++bool is_xdp_forwardable(const struct net_device *dev, const struct xdp_buff *xdp)
++{
++	unsigned int len;
++        unsigned int pk_len = xdp->data_end - xdp->data;
++	if (!(dev->flags & IFF_UP))
++		return false;
++
++	len = dev->mtu + dev->hard_header_len + VLAN_HLEN;
++	if (pk_len <= len)
++		return true;
++
++	return false;
++}
++
++bool is_forwarding_enabled(struct net_device *dev){
++        struct in_device *in_dev;
++	
++        /* verify forwarding is enabled on this interface */
++	in_dev = __in_dev_get_rcu(dev);
++        if (unlikely(!in_dev || !IN_DEV_FORWARD(in_dev)))                
++                return false;        
++        
++        return true;
++}
++EXPORT_SYMBOL_GPL(is_forwarding_enabled);
++
++
++int xdp_router_forward(struct net_device *dev, struct xdp_buff *xdp)
++{
++        int err;
++        bool forwarded = false;
++        struct fib_result res;       
++        struct iphdr *iph;
++        struct ethhdr *ethh;
++        struct net_device *rcv;
++        
++        if(!is_xdp_forwardable(dev, xdp))
++            return NET_RX_DROP;       
++        
++        //Verify the MAC address of xdp_buff    
++	ethh = eth_hdr_xdp(xdp);
++        if(!ether_addr_equal_64bits(ethh->h_dest, dev->dev_addr))
++                return NET_RX_DROP;        
++
++        iph = ip_hdr_xdp(xdp);
++        
++        preempt_disable();
++        rcu_read_lock();
++
++        err = ip_route_lookup(iph->daddr, iph->saddr, 
++                iph->tos, dev, &res);
++        if(err)
++                goto exit;
++        
++        if(res.type == RTN_LOCAL)
++            goto exit;
++
++        rcv = FIB_RES_DEV(res);
++        if(rcv){
++            if (likely(rcv->netdev_ops->ndo_xdp_xmit(rcv, xdp) == NETDEV_TX_OK)) {
++                    forwarded = true;
++                    goto exit;                    
++            }                                   
++        }        
++
++exit:        
++        rcu_read_unlock();        
++        preempt_enable();
++        if(forwarded)
++            return NET_RX_SUCCESS;
++
++        return NET_RX_DROP;
++}
++EXPORT_SYMBOL_GPL(xdp_router_forward);
++
++#endif
++
+ static int netif_rx_internal(struct sk_buff *skb)
+ {
+ 	int ret;
+diff --git a/net/ipv4/route.c b/net/ipv4/route.c
+index 49cc1c1..58a5adb 100644
+--- a/net/ipv4/route.c
++++ b/net/ipv4/route.c
+@@ -1866,6 +1866,38 @@ static int ip_mkroute_input(struct sk_buff *skb,
+ 	return __mkroute_input(skb, res, in_dev, daddr, saddr, tos);
+ }
+ 
++#ifdef CONFIG_XDP_ROUTER
++
++int ip_route_lookup(__be32 daddr, __be32 saddr,
++			       u8 tos, struct net_device *dev,
++			       struct fib_result *res)
++{
++	struct flowi4	fl4;
++	int		err;
++	struct net    *net = dev_net(dev);  
++        
++	fl4.flowi4_oif = 0;
++	fl4.flowi4_iif = dev->ifindex;
++        fl4.flowi4_mark = 0;
++	fl4.flowi4_tos = tos & IPTOS_RT_MASK;
++	fl4.flowi4_scope = RT_SCOPE_UNIVERSE;
++	fl4.flowi4_flags = 0;
++	fl4.daddr = daddr;
++	fl4.saddr = saddr;
++        
++	err = fib_lookup(net, &fl4, res, 0);       
++	if (err != 0)
++		return err;
++	
++        if(res->type != RTN_UNICAST && res->type != RTN_LOCAL)
++            return -EINVAL;    
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(ip_route_lookup);
++#endif
++
++
+ /*
+  *	NOTE. We drop all the packets that has local source
+  *	addresses, because every properly looped back packet
