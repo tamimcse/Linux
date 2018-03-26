@@ -231,7 +231,7 @@ index dda9d7b..15738a0 100644
 +        err = ip_route_lookup(iph->daddr, iph->saddr, 
 +                iph->tos, dev, &res);
 +        if(unlikely(err))
-+                return NET_RX_DROP;;        
++                return NET_RX_DROP;        
 +
 +        rcv = FIB_RES_DEV(res);
 +        if(likely(rcv)){
