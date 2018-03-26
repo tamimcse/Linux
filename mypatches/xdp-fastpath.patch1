@@ -19,7 +19,7 @@ index 944ec3c..8c39128 100644
  	tristate "Virtio network driver"
  	depends on VIRTIO
 diff --git a/drivers/net/veth.c b/drivers/net/veth.c
-index a69ad39..30876e3 100644
+index a69ad39..b81d9d1 100644
 --- a/drivers/net/veth.c
 +++ b/drivers/net/veth.c
 @@ -110,7 +110,24 @@ static netdev_tx_t veth_xmit(struct sk_buff *skb, struct net_device *dev)
@@ -56,12 +56,11 @@ index a69ad39..30876e3 100644
  	rcu_read_unlock();
  	return NETDEV_TX_OK;
  }
-@@ -276,6 +294,57 @@ static void veth_set_rx_headroom(struct net_device *dev, int new_hr)
+@@ -276,6 +294,59 @@ static void veth_set_rx_headroom(struct net_device *dev, int new_hr)
  	rcu_read_unlock();
  }
  
 +#ifdef CONFIG_XDP_ROUTER
-+//Called holding RCU lock
 +int veth_xdp_xmit(struct net_device *dev, struct xdp_buff *xdp){
 +	struct veth_priv *priv = netdev_priv(dev);
 +	struct net_device *rcv;
@@ -69,6 +68,7 @@ index a69ad39..30876e3 100644
 +        struct sk_buff *skb;
 +	int length = xdp->data_end - xdp->data;
 +
++        rcu_read_lock();
 +	rcv = rcu_dereference(priv->peer);
 +	if (unlikely(!rcv)) {
 +		kfree(xdp);
@@ -89,7 +89,7 @@ index a69ad39..30876e3 100644
 +                        stats->bytes += length;
 +                        stats->packets++;
 +                        u64_stats_update_end(&stats->syncp);
-+                        return NETDEV_TX_OK;
++                        goto success;
 +                }
 +        }
 +
@@ -106,6 +106,8 @@ index a69ad39..30876e3 100644
 +drop:
 +		atomic64_inc(&priv->dropped);
 +	}
++success:
++        rcu_read_unlock();    
 +        return NETDEV_TX_OK;
 +
 +}
@@ -114,7 +116,7 @@ index a69ad39..30876e3 100644
  static const struct net_device_ops veth_netdev_ops = {
  	.ndo_init            = veth_dev_init,
  	.ndo_open            = veth_open,
-@@ -290,6 +359,9 @@ static const struct net_device_ops veth_netdev_ops = {
+@@ -290,6 +361,9 @@ static const struct net_device_ops veth_netdev_ops = {
  	.ndo_get_iflink		= veth_get_iflink,
  	.ndo_features_check	= passthru_features_check,
  	.ndo_set_rx_headroom	= veth_set_rx_headroom,
@@ -191,10 +193,10 @@ index f805243..623b2de 100644
  int fib_multipath_hash(const struct fib_info *fi, const struct flowi4 *fl4,
  		       const struct sk_buff *skb);
 diff --git a/net/core/dev.c b/net/core/dev.c
-index dda9d7b..4478ebc 100644
+index dda9d7b..15738a0 100644
 --- a/net/core/dev.c
 +++ b/net/core/dev.c
-@@ -4090,6 +4090,62 @@ int do_xdp_generic(struct bpf_prog *xdp_prog, struct sk_buff *skb)
+@@ -4090,6 +4090,51 @@ int do_xdp_generic(struct bpf_prog *xdp_prog, struct sk_buff *skb)
  }
  EXPORT_SYMBOL_GPL(do_xdp_generic);
  
@@ -224,30 +226,19 @@ index dda9d7b..4478ebc 100644
 +        if(unlikely(xdp->data_end - xdp->data < MIN_PACKET_SIZE))
 +                return NET_RX_DROP;        
 +        
-+        iph = (struct iphdr *)(xdp->data+ETH_HLEN);
-+        
-+        preempt_disable();
-+        rcu_read_lock();
++        iph = (struct iphdr *)(xdp->data+ETH_HLEN);        
 +
 +        err = ip_route_lookup(iph->daddr, iph->saddr, 
 +                iph->tos, dev, &res);
 +        if(unlikely(err))
-+                goto exit;        
++                return NET_RX_DROP;;        
 +
 +        rcv = FIB_RES_DEV(res);
 +        if(likely(rcv)){
-+            if (likely(rcv->netdev_ops->ndo_xdp_xmit(rcv, xdp) == NETDEV_TX_OK)) {
-+                    forwarded = true;
-+                    goto exit;                    
-+            }                                   
++            if (likely(rcv->netdev_ops->ndo_xdp_xmit(rcv, xdp) == NETDEV_TX_OK))
++                return NET_RX_SUCCESS;                    
 +        }        
-+
-+exit:        
-+        rcu_read_unlock();        
-+        preempt_enable();
-+        if(likely(forwarded))
-+            return NET_RX_SUCCESS;
-+
++        
 +        return NET_RX_DROP;
 +}
 +EXPORT_SYMBOL_GPL(xdp_router_forward);
@@ -258,14 +249,14 @@ index dda9d7b..4478ebc 100644
  {
  	int ret;
 diff --git a/net/ipv4/route.c b/net/ipv4/route.c
-index 49cc1c1..79a05d9 100644
+index 49cc1c1..b983e28 100644
 --- a/net/ipv4/route.c
 +++ b/net/ipv4/route.c
 @@ -1866,6 +1866,36 @@ static int ip_mkroute_input(struct sk_buff *skb,
  	return __mkroute_input(skb, res, in_dev, daddr, saddr, tos);
  }
  
-+	#ifdef CONFIG_XDP_ROUTER
++#ifdef CONFIG_XDP_ROUTER
 +
 +int ip_route_lookup(__be32 daddr, __be32 saddr,
 +			       u8 tos, struct net_device *dev,
