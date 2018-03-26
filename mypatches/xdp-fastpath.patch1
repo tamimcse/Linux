@@ -199,10 +199,10 @@ index f805243..623b2de 100644
  int fib_multipath_hash(const struct fib_info *fi, const struct flowi4 *fl4,
  		       const struct sk_buff *skb);
 diff --git a/net/core/dev.c b/net/core/dev.c
-index dda9d7b..291f3c8 100644
+index dda9d7b..90e64d3 100644
 --- a/net/core/dev.c
 +++ b/net/core/dev.c
-@@ -4090,6 +4090,56 @@ int do_xdp_generic(struct bpf_prog *xdp_prog, struct sk_buff *skb)
+@@ -4090,6 +4090,55 @@ int do_xdp_generic(struct bpf_prog *xdp_prog, struct sk_buff *skb)
  }
  EXPORT_SYMBOL_GPL(do_xdp_generic);
  
@@ -224,7 +224,6 @@ index dda9d7b..291f3c8 100644
 +int xdp_router_forward(struct net_device *dev, struct xdp_buff *xdp)
 +{
 +		int err;
-+		bool forwarded = false;
 +		struct fib_result res;
 +		struct iphdr *iph;
 +		struct net_device *rcv;
