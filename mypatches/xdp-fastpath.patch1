@@ -125,16 +125,18 @@ index a69ad39..30876e3 100644
  
  #define VETH_FEATURES (NETIF_F_SG | NETIF_F_FRAGLIST | NETIF_F_HW_CSUM | \
 diff --git a/include/linux/ip.h b/include/linux/ip.h
-index 492bc65..7ade66e 100644
+index 492bc65..02b148d 100644
 --- a/include/linux/ip.h
 +++ b/include/linux/ip.h
-@@ -20,6 +20,22 @@
+@@ -19,6 +19,28 @@
+ 
  #include <linux/skbuff.h>
  #include <uapi/linux/ip.h>
- 
 +#include <linux/filter.h>
 +
 +#ifdef CONFIG_XDP_ROUTER
++
++#define MIN_PACKET_SIZE 55
 +
 +static inline struct iphdr *ip_hdr_xdp(const struct xdp_buff *xdp)
 +{
@@ -146,21 +148,24 @@ index 492bc65..7ade66e 100644
 +	return (struct ethhdr *)(xdp->data);
 +}
 +
++static inline bool is_xdp_forwardable(const struct xdp_buff *xdp){
++    return xdp->data_end - xdp->data >= MIN_PACKET_SIZE; 
++}
++
 +#endif
 +
+ 
  static inline struct iphdr *ip_hdr(const struct sk_buff *skb)
  {
- 	return (struct iphdr *)skb_network_header(skb);
 diff --git a/include/linux/netdevice.h b/include/linux/netdevice.h
-index 4c77f39..25db780 100644
+index 4c77f39..8369e5e 100644
 --- a/include/linux/netdevice.h
 +++ b/include/linux/netdevice.h
-@@ -3290,6 +3290,12 @@ static inline void dev_consume_skb_any(struct sk_buff *skb)
+@@ -3290,6 +3290,11 @@ static inline void dev_consume_skb_any(struct sk_buff *skb)
  	__dev_kfree_skb_any(skb, SKB_REASON_CONSUMED);
  }
  
 +#ifdef CONFIG_XDP_ROUTER
-+bool is_xdp_forwardable(const struct net_device *dev, const struct xdp_buff *xdp);
 +bool is_forwarding_enabled(struct net_device *dev);
 +int xdp_router_forward(struct net_device *dev, struct xdp_buff *xdp);
 +#endif
@@ -186,28 +191,14 @@ index f805243..623b2de 100644
  int fib_multipath_hash(const struct fib_info *fi, const struct flowi4 *fl4,
  		       const struct sk_buff *skb);
 diff --git a/net/core/dev.c b/net/core/dev.c
-index dda9d7b..f97818c 100644
+index dda9d7b..4478ebc 100644
 --- a/net/core/dev.c
 +++ b/net/core/dev.c
-@@ -4090,6 +4090,85 @@ int do_xdp_generic(struct bpf_prog *xdp_prog, struct sk_buff *skb)
+@@ -4090,6 +4090,62 @@ int do_xdp_generic(struct bpf_prog *xdp_prog, struct sk_buff *skb)
  }
  EXPORT_SYMBOL_GPL(do_xdp_generic);
  
 +#ifdef CONFIG_XDP_ROUTER
-+
-+bool is_xdp_forwardable(const struct net_device *dev, const struct xdp_buff *xdp)
-+{
-+	unsigned int len;
-+        unsigned int pk_len = xdp->data_end - xdp->data;
-+	if (!(dev->flags & IFF_UP))
-+		return false;
-+
-+	len = dev->mtu + dev->hard_header_len + VLAN_HLEN;
-+	if (pk_len <= len)
-+		return true;
-+
-+	return false;
-+}
 +
 +bool is_forwarding_enabled(struct net_device *dev){
 +        struct in_device *in_dev;
@@ -228,32 +219,23 @@ index dda9d7b..f97818c 100644
 +        bool forwarded = false;
 +        struct fib_result res;       
 +        struct iphdr *iph;
-+        struct ethhdr *ethh;
 +        struct net_device *rcv;
 +        
-+        if(!is_xdp_forwardable(dev, xdp))
-+            return NET_RX_DROP;       
-+        
-+        //Verify the MAC address of xdp_buff    
-+	ethh = eth_hdr_xdp(xdp);
-+        if(!ether_addr_equal_64bits(ethh->h_dest, dev->dev_addr))
++        if(unlikely(xdp->data_end - xdp->data < MIN_PACKET_SIZE))
 +                return NET_RX_DROP;        
-+
-+        iph = ip_hdr_xdp(xdp);
++        
++        iph = (struct iphdr *)(xdp->data+ETH_HLEN);
 +        
 +        preempt_disable();
 +        rcu_read_lock();
 +
 +        err = ip_route_lookup(iph->daddr, iph->saddr, 
 +                iph->tos, dev, &res);
-+        if(err)
-+                goto exit;
-+        
-+        if(res.type == RTN_LOCAL)
-+            goto exit;
++        if(unlikely(err))
++                goto exit;        
 +
 +        rcv = FIB_RES_DEV(res);
-+        if(rcv){
++        if(likely(rcv)){
 +            if (likely(rcv->netdev_ops->ndo_xdp_xmit(rcv, xdp) == NETDEV_TX_OK)) {
 +                    forwarded = true;
 +                    goto exit;                    
@@ -263,7 +245,7 @@ index dda9d7b..f97818c 100644
 +exit:        
 +        rcu_read_unlock();        
 +        preempt_enable();
-+        if(forwarded)
++        if(likely(forwarded))
 +            return NET_RX_SUCCESS;
 +
 +        return NET_RX_DROP;
@@ -276,14 +258,14 @@ index dda9d7b..f97818c 100644
  {
  	int ret;
 diff --git a/net/ipv4/route.c b/net/ipv4/route.c
-index 49cc1c1..58a5adb 100644
+index 49cc1c1..79a05d9 100644
 --- a/net/ipv4/route.c
 +++ b/net/ipv4/route.c
-@@ -1866,6 +1866,38 @@ static int ip_mkroute_input(struct sk_buff *skb,
+@@ -1866,6 +1866,36 @@ static int ip_mkroute_input(struct sk_buff *skb,
  	return __mkroute_input(skb, res, in_dev, daddr, saddr, tos);
  }
  
-+#ifdef CONFIG_XDP_ROUTER
++	#ifdef CONFIG_XDP_ROUTER
 +
 +int ip_route_lookup(__be32 daddr, __be32 saddr,
 +			       u8 tos, struct net_device *dev,
@@ -302,12 +284,10 @@ index 49cc1c1..58a5adb 100644
 +	fl4.daddr = daddr;
 +	fl4.saddr = saddr;
 +        
-+	err = fib_lookup(net, &fl4, res, 0);       
-+	if (err != 0)
-+		return err;
++	err = fib_lookup(net, &fl4, res, 0);
 +	
-+        if(res->type != RTN_UNICAST && res->type != RTN_LOCAL)
-+            return -EINVAL;    
++	if (unlikely(err != 0 || res->type != RTN_UNICAST))
++		return EINVAL;	
 +
 +	return 0;
 +}
