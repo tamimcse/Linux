@@ -1,19 +1,23 @@
 diff --git a/drivers/net/Kconfig b/drivers/net/Kconfig
-index 944ec3c..5d40b88 100644
+index 944ec3c..401c678 100644
 --- a/drivers/net/Kconfig
 +++ b/drivers/net/Kconfig
-@@ -328,6 +328,15 @@ config VETH
+@@ -328,6 +328,19 @@ config VETH
  	  When one end receives the packet it appears on its pair and vice
  	  versa.
  
 +config XDP_ROUTER
-+	bool "IP forwarding on XDP"
++	bool "XDP router for veth"
 +	depends on IP_ADVANCED_ROUTER
 +	depends on VETH
 +	default y
 +	---help---
 +	  This option will enable IP forwarding on incoming xdp_buff.
 +	  Currently it is only supported by veth. Say y or n.
++
++      Currently veth uses slow path for packet forwarding. This option is
++      similar to Generic XDP where it forwards packets as soon as it is
++      received.
 +
  config VIRTIO_NET
  	tristate "Virtio network driver"
@@ -199,10 +203,10 @@ index f805243..623b2de 100644
  int fib_multipath_hash(const struct fib_info *fi, const struct flowi4 *fl4,
  		       const struct sk_buff *skb);
 diff --git a/net/core/dev.c b/net/core/dev.c
-index dda9d7b..3729d1c 100644
+index dda9d7b..18c18f3 100644
 --- a/net/core/dev.c
 +++ b/net/core/dev.c
-@@ -4090,6 +4090,55 @@ int do_xdp_generic(struct bpf_prog *xdp_prog, struct sk_buff *skb)
+@@ -4090,6 +4090,56 @@ int do_xdp_generic(struct bpf_prog *xdp_prog, struct sk_buff *skb)
  }
  EXPORT_SYMBOL_GPL(do_xdp_generic);
  
@@ -232,20 +236,21 @@ index dda9d7b..3729d1c 100644
 +			return NET_RX_DROP;
 +
 +		iph = (struct iphdr *)(xdp->data + ETH_HLEN);
-+		
++
 +		/*currently only supports IPv4
 +		 */
-+		if(unlikely(iph->version != 4))
++		if (unlikely(iph->version != 4))
 +			return NET_RX_DROP;
 +
 +		err = ip_route_lookup(iph->daddr, iph->saddr,
-+							iph->tos, dev, &res);
++				      iph->tos, dev, &res);
 +		if (unlikely(err))
 +			return NET_RX_DROP;
 +
 +		rcv = FIB_RES_DEV(res);
 +		if (likely(rcv)) {
-+			if (likely(rcv->netdev_ops->ndo_xdp_xmit(rcv, xdp) == NETDEV_TX_OK))
++			if (likely(rcv->netdev_ops->ndo_xdp_xmit(rcv, xdp) ==
++					   NETDEV_TX_OK))
 +				return NET_RX_SUCCESS;
 +		}
 +
@@ -259,17 +264,18 @@ index dda9d7b..3729d1c 100644
  {
  	int ret;
 diff --git a/net/ipv4/route.c b/net/ipv4/route.c
-index 49cc1c1..a8112d7 100644
+index 49cc1c1..f92b4a1 100644
 --- a/net/ipv4/route.c
 +++ b/net/ipv4/route.c
-@@ -1866,6 +1866,34 @@ static int ip_mkroute_input(struct sk_buff *skb,
+@@ -1866,6 +1866,35 @@ static int ip_mkroute_input(struct sk_buff *skb,
  	return __mkroute_input(skb, res, in_dev, daddr, saddr, tos);
  }
  
 +#ifdef CONFIG_XDP_ROUTER
 +
 +int ip_route_lookup(__be32 daddr, __be32 saddr,
-+		u8 tos, struct net_device *dev, struct fib_result *res)
++		    u8 tos, struct net_device *dev,
++		    struct fib_result *res);
 +{
 +	struct flowi4	fl4;
 +	int		err;
