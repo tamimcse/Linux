@@ -1,8 +1,8 @@
 diff --git a/drivers/net/Kconfig b/drivers/net/Kconfig
-index 944ec3c..401c678 100644
+index 944ec3c..8474eef 100644
 --- a/drivers/net/Kconfig
 +++ b/drivers/net/Kconfig
-@@ -328,6 +328,19 @@ config VETH
+@@ -328,6 +328,18 @@ config VETH
  	  When one end receives the packet it appears on its pair and vice
  	  versa.
  
@@ -15,9 +15,8 @@ index 944ec3c..401c678 100644
 +	  This option will enable IP forwarding on incoming xdp_buff.
 +	  Currently it is only supported by veth. Say y or n.
 +
-+      Currently veth uses slow path for packet forwarding. This option is
-+      similar to Generic XDP where it forwards packets as soon as it is
-+      received.
++	  Currently veth uses slow path for packet forwarding. This option
++	  forwards packets as soon as it is received (as XDP generic).
 +
  config VIRTIO_NET
  	tristate "Virtio network driver"
