@@ -263,7 +263,7 @@ index dda9d7b..18c18f3 100644
  {
  	int ret;
 diff --git a/net/ipv4/route.c b/net/ipv4/route.c
-index 49cc1c1..f92b4a1 100644
+index 49cc1c1..2333205 100644
 --- a/net/ipv4/route.c
 +++ b/net/ipv4/route.c
 @@ -1866,6 +1866,35 @@ static int ip_mkroute_input(struct sk_buff *skb,
@@ -274,7 +274,7 @@ index 49cc1c1..f92b4a1 100644
 +
 +int ip_route_lookup(__be32 daddr, __be32 saddr,
 +		    u8 tos, struct net_device *dev,
-+		    struct fib_result *res);
++		    struct fib_result *res)
 +{
 +	struct flowi4	fl4;
 +	int		err;
