@@ -4,8 +4,8 @@ sudo echo 0 > /sys/devices/system/cpu/cpu1/online
 sudo echo 0 > /sys/devices/system/cpu/cpu2/online
 
 #disable freqency scaling
-echo 'performance' > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor/
-echo 'performance' > /sys/devices/system/cpu/cpu3/cpufreq/scaling_governor/
+echo 'performance' > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+echo 'performance' > /sys/devices/system/cpu/cpu3/cpufreq/scaling_governor
 
 #disable Turbo mode
 #Does not work on Ubuntu
