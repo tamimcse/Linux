@@ -22,10 +22,10 @@ index 944ec3c..8474eef 100644
  	tristate "Virtio network driver"
  	depends on VIRTIO
 diff --git a/drivers/net/veth.c b/drivers/net/veth.c
-index a69ad39..4ce10c9 100644
+index a69ad39..76112f9 100644
 --- a/drivers/net/veth.c
 +++ b/drivers/net/veth.c
-@@ -111,6 +111,28 @@ static netdev_tx_t veth_xmit(struct sk_buff *skb, struct net_device *dev)
+@@ -111,6 +111,29 @@ static netdev_tx_t veth_xmit(struct sk_buff *skb, struct net_device *dev)
  		goto drop;
  	}
  
@@ -40,6 +40,7 @@ index a69ad39..4ce10c9 100644
 +		xdp->data = skb->data;
 +		xdp->data_end = skb->data + (skb->len - skb->data_len);
 +		xdp->data_meta = skb;
++		prefetch_xdp(xdp);
 +		if (likely(xdp_router_forward(rcv, xdp) == NET_RX_SUCCESS)) {
 +			struct pcpu_vstats *stats = this_cpu_ptr(dev->vstats);
 +
@@ -54,7 +55,7 @@ index a69ad39..4ce10c9 100644
  	if (likely(dev_forward_skb(rcv, skb) == NET_RX_SUCCESS)) {
  		struct pcpu_vstats *stats = this_cpu_ptr(dev->vstats);
  
-@@ -122,6 +144,7 @@ static netdev_tx_t veth_xmit(struct sk_buff *skb, struct net_device *dev)
+@@ -122,6 +145,7 @@ static netdev_tx_t veth_xmit(struct sk_buff *skb, struct net_device *dev)
  drop:
  		atomic64_inc(&priv->dropped);
  	}
@@ -62,7 +63,7 @@ index a69ad39..4ce10c9 100644
  	rcu_read_unlock();
  	return NETDEV_TX_OK;
  }
-@@ -276,6 +299,61 @@ static void veth_set_rx_headroom(struct net_device *dev, int new_hr)
+@@ -276,6 +300,62 @@ static void veth_set_rx_headroom(struct net_device *dev, int new_hr)
  	rcu_read_unlock();
  }
  
@@ -91,6 +92,7 @@ index a69ad39..4ce10c9 100644
 +	 * call xdp_router_forward()
 +	 */
 +	if (is_forwarding_enabled(rcv)) {
++		prefetch_xdp(xdp);
 +		if (likely(xdp_router_forward(rcv, xdp) == NET_RX_SUCCESS)) {
 +			struct pcpu_vstats *stats = this_cpu_ptr(dev->vstats);
 +
@@ -124,7 +126,7 @@ index a69ad39..4ce10c9 100644
  static const struct net_device_ops veth_netdev_ops = {
  	.ndo_init            = veth_dev_init,
  	.ndo_open            = veth_open,
-@@ -290,6 +368,9 @@ static const struct net_device_ops veth_netdev_ops = {
+@@ -290,6 +370,9 @@ static const struct net_device_ops veth_netdev_ops = {
  	.ndo_get_iflink		= veth_get_iflink,
  	.ndo_features_check	= passthru_features_check,
  	.ndo_set_rx_headroom	= veth_set_rx_headroom,
@@ -169,16 +171,17 @@ index 492bc65..025a3ec 100644
  static inline struct iphdr *ip_hdr(const struct sk_buff *skb)
  {
 diff --git a/include/linux/netdevice.h b/include/linux/netdevice.h
-index 4c77f39..8369e5e 100644
+index 4c77f39..e3bf002 100644
 --- a/include/linux/netdevice.h
 +++ b/include/linux/netdevice.h
-@@ -3290,6 +3290,11 @@ static inline void dev_consume_skb_any(struct sk_buff *skb)
+@@ -3290,6 +3290,12 @@ static inline void dev_consume_skb_any(struct sk_buff *skb)
  	__dev_kfree_skb_any(skb, SKB_REASON_CONSUMED);
  }
  
 +#ifdef CONFIG_XDP_ROUTER
 +bool is_forwarding_enabled(struct net_device *dev);
 +int xdp_router_forward(struct net_device *dev, struct xdp_buff *xdp);
++void prefetch_xdp(struct xdp_buff *xdp);
 +#endif
 +
  void generic_xdp_tx(struct sk_buff *skb, struct bpf_prog *xdp_prog);
@@ -202,10 +205,10 @@ index f805243..623b2de 100644
  int fib_multipath_hash(const struct fib_info *fi, const struct flowi4 *fl4,
  		       const struct sk_buff *skb);
 diff --git a/net/core/dev.c b/net/core/dev.c
-index dda9d7b..18c18f3 100644
+index dda9d7b..9d92352 100644
 --- a/net/core/dev.c
 +++ b/net/core/dev.c
-@@ -4090,6 +4090,56 @@ int do_xdp_generic(struct bpf_prog *xdp_prog, struct sk_buff *skb)
+@@ -4090,6 +4090,65 @@ int do_xdp_generic(struct bpf_prog *xdp_prog, struct sk_buff *skb)
  }
  EXPORT_SYMBOL_GPL(do_xdp_generic);
  
@@ -256,6 +259,15 @@ index dda9d7b..18c18f3 100644
 +		return NET_RX_DROP;
 +}
 +EXPORT_SYMBOL_GPL(xdp_router_forward);
++
++inline void prefetch_xdp(struct xdp_buff *xdp)
++{
++		prefetch(xdp);
++		/* prefetch version, tos, saddr and daddr of IP header */
++		prefetch(xdp->data + ETH_HLEN);
++		prefetch(xdp->data + ETH_HLEN + 12);
++}
++EXPORT_SYMBOL_GPL(prefetch_xdp);
 +
 +#endif
 +
