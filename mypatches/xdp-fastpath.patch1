@@ -1,8 +1,8 @@
 diff --git a/drivers/net/Kconfig b/drivers/net/Kconfig
-index 944ec3c..8474eef 100644
+index 944ec3c..093c8ed 100644
 --- a/drivers/net/Kconfig
 +++ b/drivers/net/Kconfig
-@@ -328,6 +328,18 @@ config VETH
+@@ -328,6 +328,20 @@ config VETH
  	  When one end receives the packet it appears on its pair and vice
  	  versa.
  
@@ -10,6 +10,8 @@ index 944ec3c..8474eef 100644
 +	bool "XDP router for veth"
 +	depends on IP_ADVANCED_ROUTER
 +	depends on VETH
++	depends on !IP_ROUTE_MULTIPATH
++	depends on !IP_MULTIPLE_TABLES
 +	default y
 +	---help---
 +	  This option will enable IP forwarding on incoming xdp_buff.
