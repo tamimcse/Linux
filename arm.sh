@@ -142,5 +142,5 @@ Solution: Please look at the README at samples/bpf/. Most probably you need to a
 
 Sometime you cannot log into Linux after modifing kernel.
 
-Solution: Shut down and restart by power button. Chances are it will show you an option to boot into a previous kernel. If it does not, press F9 to select boot option. Then select ..... and Ubuntu and you will  be biven an option to boot into an old kernel.
+Solution: Shut down and restart by power button. Chances are it will show you an option to boot into a previous kernel. If it does not, press F9 to select boot option. Then select ....."EFI" and "Ubuntu" and then "GRUB" and you will be presented with an option to boot into an old kernel.
 
