@@ -1,20 +1,21 @@
 diff --git a/Documentation/printk-formats.txt b/Documentation/printk-formats.txt
-index 361789d..955866c 100644
+index 361789d..d878079 100644
 --- a/Documentation/printk-formats.txt
 +++ b/Documentation/printk-formats.txt
 @@ -14,6 +14,7 @@ Integer types
  	If variable is of Type,		use printk format specifier:
  	------------------------------------------------------------
  		int			%d or %x
-+		unsigned short		%hu or %hx
++		unsigned short		%d or %x
  		unsigned int		%u or %x
  		long			%ld or %lx
  		unsigned long		%lu or %lx
-@@ -22,6 +23,7 @@ Integer types
+@@ -22,6 +23,8 @@ Integer types
  		size_t			%zu or %zx
  		ssize_t			%zd or %zx
  		s32			%d or %x
-+		u16			%hu or %hx
++		u8			%d or %x
++		u16			%d or %x
  		u32			%u or %x
  		s64			%lld or %llx
  		u64			%llu or %llx
