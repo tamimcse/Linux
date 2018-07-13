@@ -1,4 +1,7 @@
 #!/bin/bash
+
+#sudo bash addroutes.sh SAIL_FIB.txt
+
 while IFS='' read -r line || [[ -n "$line" ]]; do
     array=($line)	
     echo "Text read from file: ${array[0]} ${array[1]}"
