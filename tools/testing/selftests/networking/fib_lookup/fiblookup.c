@@ -1,21 +1,4 @@
 /*
- * Copyright 2014 Google Inc.
- * Author: willemb@google.com (Willem de Bruijn)
- *
- * Test software tx timestamping, including
- *
- * - SCHED, SND and ACK timestamps
- * - RAW, UDP and TCP
- * - IPv4 and IPv6
- * - various packet sizes (to test GSO and TSO)
- *
- * Consult the command line arguments for help on running
- * the various testcases.
- *
- * This test requires a dummy TCP server.
- * A simple `nc6 [-u] -l -p $DESTPORT` will do
- *
- *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
  * version 2, as published by the Free Software Foundation.
@@ -416,47 +399,30 @@ static void parse_opt(int argc, char **argv)
 			usage(argv[0]);
 		}
 	}
-
-	if (!cfg_payload_len)
-		error(1, 0, "payload may not be nonzero");
-	if (cfg_proto != SOCK_STREAM && cfg_payload_len > 1472)
-		error(1, 0, "udp packet might exceed expected MTU");
-	if (!do_ipv4 && !do_ipv6)
-		error(1, 0, "pass -4 or -6, not both");
-	if (proto_count > 1)
-		error(1, 0, "pass -r, -R or -u, not multiple");
-
-	if (optind != argc - 1)
-		error(1, 0, "missing required hostname argument");
+	
+	if (!inputfilename)
+		error(1, 0, "missing required filename argument");
 }
 
-static void add_fib(const char *hostname)
+static void add_fib(const char *filename)
 {
-	struct addrinfo *addrs, *cur;
-	int have_ipv4 = 0, have_ipv6 = 0;
+    FILE * fp;
+    char * line = NULL;
+    size_t len = 0;
+    ssize_t read;
 
-	if (getaddrinfo(hostname, NULL, NULL, &addrs))
-		error(1, errno, "getaddrinfo");
+    fp = fopen(filename, "r");
+    if (fp == NULL)
+        exit(EXIT_FAILURE);
 
-	cur = addrs;
-	while (cur && !have_ipv4 && !have_ipv6) {
-		if (!have_ipv4 && cur->ai_family == AF_INET) {
-			memcpy(&daddr, cur->ai_addr, sizeof(daddr));
-			daddr.sin_port = htons(dest_port);
-			have_ipv4 = 1;
-		}
-		else if (!have_ipv6 && cur->ai_family == AF_INET6) {
-			memcpy(&daddr6, cur->ai_addr, sizeof(daddr6));
-			daddr6.sin6_port = htons(dest_port);
-			have_ipv6 = 1;
-		}
-		cur = cur->ai_next;
-	}
-	if (addrs)
-		freeaddrinfo(addrs);
+    while ((read = getline(&line, &len, fp)) != -1) {
+        printf("Retrieved line of length %zu :\n", read);
+        printf("%s", line);
+    }
 
-	do_ipv4 &= have_ipv4;
-	do_ipv6 &= have_ipv6;
+    fclose(fp);
+    if (line)
+        free(line);
 }
 
 static void do_main(int family)
