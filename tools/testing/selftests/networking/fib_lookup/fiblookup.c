@@ -410,14 +410,20 @@ static void add_fib(const char *filename)
     char * line = NULL;
     size_t len = 0;
     ssize_t read;
+	char *prefix, *fib;
 
     fp = fopen(filename, "r");
     if (fp == NULL)
         exit(EXIT_FAILURE);
 
     while ((read = getline(&line, &len, fp)) != -1) {
-        printf("Retrieved line of length %zu :\n", read);
-        printf("%s", line);
+//        printf("string: %s", line);
+		prefix = strsep(&line, "\t");
+		fib = strsep(&line, "\t");
+		printf("prefix:%s fib:%s", prefix, fib);
+		
+		
+//		puts(fib);
     }
 
     fclose(fp);
