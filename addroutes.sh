@@ -3,7 +3,7 @@ sudo ip route add 46.147.84.0/22 table main dev veth1
 sudo ip route add 95.78.8.0/22 table main dev wlo1
 sudo ip route add 95.78.112.0/22 table main dev wlo1
 sudo ip route add 95.78.76.0/22 table main dev wlo1
-sudo ip route add 176.213.96.0/22 table main dev veth0
+sudo ip route add 176.213.96.0/22 table main dev veth7
 sudo ip route add 95.78.80.0/22 table main dev wlo1
 sudo ip route add 95.78.104.0/22 table main dev wlo1
 sudo ip route add 95.78.12.0/22 table main dev wlo1
