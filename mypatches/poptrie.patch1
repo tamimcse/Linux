@@ -1,8 +1,17 @@
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..fdd5f58 100644
+index 81d0f21..e2a7b30 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
-@@ -197,6 +197,44 @@ struct fib_entry_notifier_info {
+@@ -25,6 +25,8 @@
+ #include <linux/percpu.h>
+ #include <linux/notifier.h>
+ #include <linux/refcount.h>
++#include <linux/net.h>
++#include <linux/inet.h>
+ 
+ struct fib_config {
+ 	u8			fc_dst_len;
+@@ -197,6 +199,44 @@ struct fib_entry_notifier_info {
  	u32 tb_id;
  };
  
@@ -47,7 +56,7 @@ index 81d0f21..fdd5f58 100644
  struct fib_nh_notifier_info {
  	struct fib_notifier_info info; /* must be first */
  	struct fib_nh *fib_nh;
-@@ -219,6 +257,7 @@ struct fib_table {
+@@ -219,6 +259,7 @@ struct fib_table {
  	int			tb_num_default;
  	struct rcu_head		rcu;
  	unsigned long 		*tb_data;
@@ -55,37 +64,137 @@ index 81d0f21..fdd5f58 100644
  	unsigned long		__data[0];
  };
  
-@@ -268,8 +307,30 @@ static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
+@@ -259,18 +300,129 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+ 	return fib_get_table(net, id);
+ }
+ 
+-static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
++
++
++static inline int fib_lookup(struct net *net, struct flowi4 *flp,
+ 			     struct fib_result *res, unsigned int flags)
+ {
++	struct net_device *dev;
++	u32 ip_addr, temp;
+ 	struct fib_table *tb;
+ 	int err = -ENETUNREACH;
++	int j = 0;
++	char *wtf[] = {
++		"95.78.8.4",
++		"46.147.83.0",
++		"176.213.96.1",
++		"95.77.104.0",
++		"202.56.53.0",
++		"115.89.96.0",
++		"122.102.24.1",
++		"23.22.111.212",/**/
++		"203.194.49.0",
++		"173.247.112.5",
++		"23.22.144.145",/**/
++		"173.247.48.0",
++		"188.66.48.10",	
++		"27.45.166.74",/**/	
++		"143.3.207.0",
++		"175.146.0.0",
++		"175.146.0.3",
++		"175.145.0.0",
++		"27.146.0.0",
++		"25.176.0.0",
++		"223.32.0.1",
++		"220.32.0.0",
++		"223.16.0.0",
++		"223.0.0.0",
++		"27.160.0.0",
++		"27.128.0.0",
++		"20.128.0.0",
++		"203.226.255.61",
++		"203.226.255.49",
++		"203.226.255.60",
++		"152.99.4.47",
++		"124.137.102.252",
++		"124.137.100.240",
++		"2.94.1.165",
++		"2.52.96.130",		
++		"2.53.103.76",
++	};
+ 
  	rcu_read_lock();
  
  	tb = fib_get_table(net, RT_TABLE_MAIN);
 +
-+	if (tb && tb->pt.root) {
-+		int i;
-+		u64 tsc_begin, tsc_end;
-+		struct net_device *dev;
++
++	for(; j < 36; j++){
++//		inet_aton(ips[j], &some_addr);
++		ip_addr = in_aton(wtf[j]);
++//		pr_err("ip_addr=%u %pI4 !!!!!!!", ip_addr, &ip_addr);
 +		
-+		for(i = 0; i < 5; i++){
-+			tsc_begin = rdtsc();
-+			err = poptrie_lookup(&tb->pt, flp->daddr, &dev);
-+			tsc_end = rdtsc();
-+			pr_info("TSC(%d): %llu !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", i, tsc_end - tsc_begin);			
++		if (tb && tb->pt.root) {
++	//		int i;
++	//		u64 tsc_begin, tsc_end;
++
++	//		for(i = 0; i < 5; i++){
++	//			tsc_begin = rdtsc();
++	//			err = poptrie_lookup(&tb->pt, flp->daddr, &dev);
++	//			tsc_end = rdtsc();
++	//			pr_info("TSC(%d): %llu !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", i, tsc_end - tsc_begin);			
++	//		}
++
++
++			err = poptrie_lookup(&tb->pt, ip_addr, &dev);		
++//			if(dev)
++//				pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
 +		}
 +
-+
-+		err = poptrie_lookup(&tb->pt, flp->daddr, &dev);		
-+		if(dev)
-+			pr_err("sail_lookup %pI4 => %s", &flp->daddr, dev->name);
++		temp = flp->daddr;
++		flp->daddr = ip_addr;
++		flp->flowi4_flags |= FLOWI_FLAG_SKIP_NH_OIF;
++		if (tb)
++			err = fib_table_lookup(tb, flp, res, flags | FIB_LOOKUP_NOREF);	
++//		if(res->fi)
++//			pr_err("fib_lookup: %pI4 => %s", &flp->daddr, res->fi->fib_dev->name);		
++		flp->daddr = temp;
++		
++		if(tb && tb->pt.root && dev && res->fi && strcmp(res->fi->fib_dev->name, dev->name) && strcmp(res->fi->fib_dev->name, "lo")){
++			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
++			pr_err("fib_lookup: %pI4 => %s", &ip_addr, res->fi->fib_dev->name);	
++		}	
 +	}
++	
++	
++	for(j = 0; j < 1000; j++){
++		get_random_bytes(&ip_addr, 4);
++//		ip_addr = rand()%4294967295;;
++//		pr_err("ip_addr=%u %pI4 !!!!!!!", ip_addr, &ip_addr);
++		
++		if (tb && tb->pt.root) {
++			err = poptrie_lookup(&tb->pt, ip_addr, &dev);		
++		}
 +
++		temp = flp->daddr;
++		flp->daddr = ip_addr;
++		flp->flowi4_flags |= FLOWI_FLAG_SKIP_NH_OIF;
++		if (tb)
++			err = fib_table_lookup(tb, flp, res, flags | FIB_LOOKUP_NOREF);	
++		
++		flp->daddr = temp;
++		
++		if(tb && tb->pt.root && dev && res->fi && strcmp(res->fi->fib_dev->name, dev->name) && strcmp(res->fi->fib_dev->name, "lo")){
++			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
++			pr_err("fib_lookup: %pI4 => %s", &ip_addr, res->fi->fib_dev->name);	
++		}			
++	}
++	
  	if (tb)
  		err = fib_table_lookup(tb, flp, res, flags | FIB_LOOKUP_NOREF);
 +	
-+	if(res->fi)
-+		pr_err("fib_lookup: %pI4 => %s", &flp->daddr, res->fi->fib_dev->name);	
++	
++//	if(res->fi)
++//		pr_err("fib_lookup: %pI4 => %s", &flp->daddr, res->fi->fib_dev->name);	
  
++	
  	if (err == -EAGAIN)
  		err = -ENETUNREACH;
+ 
 diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
 index b379520..b1246d2 100644
 --- a/net/ipv4/Makefile
@@ -101,10 +210,10 @@ index b379520..b1246d2 100644
  obj-$(CONFIG_SYSCTL) += sysctl_net_ipv4.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..b76194a
+index 0000000..0306b94
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
-@@ -0,0 +1,231 @@
+@@ -0,0 +1,237 @@
 +/*
 + *This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -264,7 +373,7 @@ index 0000000..b76194a
 +			}
 +
 +			/*Check if hole punching is needed*/
-+			u64 bitmap_hp = (bitmap << 1) << (offset + 6 - prefix_len);										
++			u64 bitmap_hp = bitmap << (1 << (offset + 6 - prefix_len));										
 +			if(!(node->leafvec & bitmap_hp)){
 +				leaf_index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
 +				if(leaf_index_hp == (leaf_index + 1)){
@@ -273,7 +382,9 @@ index 0000000..b76194a
 +						insert_leaf(&node->leaves, leaf_index_hp + 1, arr_size + 1);
 +						insert_leaf(&node->prefixes, leaf_index_hp + 1, arr_size + 1);
 +						node->leafvec |= bitmap_hp;
-+						set_fib_index(node, leaf_index_hp + 1, fib_index, prefix_len);
++						set_fib_index(node, leaf_index_hp + 1,
++								node->leaves[leaf_index_hp - 1],
++								node->prefixes[leaf_index_hp - 1]);
 +					} else {
 +						pr_err("Something is wrong !!!!");
 +					}
@@ -281,10 +392,12 @@ index 0000000..b76194a
 +			}
 +		}
 +
-+		u64 level_pushing_bitmap;
 +		consecutive_leafs = 1 << (offset + 6 - prefix_len);
-+		level_pushing_bitmap = ((1ULL << consecutive_leafs)-1) << index;
-+		node->vector |= level_pushing_bitmap;		
++		if(consecutive_leafs > 1){
++			node->vector |= ((1ULL << consecutive_leafs)-1) << index;
++		} else {
++			node->vector |= bitmap;
++		}	
 +	}
 +
 +	spin_unlock(&pt->lock);
@@ -321,7 +434,9 @@ index 0000000..b76194a
 +
 +		/*Fetch corresponding leaf*/
 +		if(likely(node->vector & bitmap)) {
-+			leaf_index = hweight64(node->leafvec & bitmask);			
++			leaf_index = hweight64(node->leafvec & bitmask);
++			if(!(node->leafvec & bitmap))
++				leaf_index--;
 +			fib_index = node->leaves[leaf_index];
 +		}
 +		
