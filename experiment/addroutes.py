@@ -1,6 +1,6 @@
 from subprocess import call
 
-with open("demofile.txt") as f:
+with open("demofile_wodup.txt") as f:
     for line in f:
         # Do something with 'line'
 	arr = line.replace("\r\n", "").split("\t")
