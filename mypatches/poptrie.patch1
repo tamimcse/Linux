@@ -1,5 +1,5 @@
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..e2a7b30 100644
+index 81d0f21..12fc5ee 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -11,7 +11,7 @@ index 81d0f21..e2a7b30 100644
  
  struct fib_config {
  	u8			fc_dst_len;
-@@ -197,6 +199,44 @@ struct fib_entry_notifier_info {
+@@ -197,6 +199,37 @@ struct fib_entry_notifier_info {
  	u32 tb_id;
  };
  
@@ -19,32 +19,25 @@ index 81d0f21..e2a7b30 100644
 +#define NEXT_HOP_MAX 255
 +
 +struct next_hops {
-+	/*Index of a next-hop is level16, level 24 and level 32 */	
 +	struct net_device	*netdev_arr[NEXT_HOP_MAX];
 +	/*Total number of next-hops*/
 +	u8 count;
 +};
 +
-+/* Internal node; 24-byte data structure */
 +struct poptrie_node {
-+    /* Leafvec */
-+    u64 leafvec;
-+    /* Internalvec */
-+    u64 internalvec;
-+    /* Vector */
 +    u64 vector;
-+    /* Base for descendant internal nodes */
++    u64 leafvec;
++    u64 nodevec;
 +    struct poptrie_node *chield_nodes;
 +	u8 *leaves;
 +	u8 *prefixes;
 +};
 +
-+/*Routes are divided into three levels*/
 +struct poptrie {
 +	char	def_nh;
 +	struct next_hops	nhs;
 +	struct poptrie_node *root;
-+	spinlock_t			lock;	
++	spinlock_t			lock;
 +};
 +
 +void poptrie_insert(struct poptrie *pt, u32 key,
@@ -56,7 +49,7 @@ index 81d0f21..e2a7b30 100644
  struct fib_nh_notifier_info {
  	struct fib_notifier_info info; /* must be first */
  	struct fib_nh *fib_nh;
-@@ -219,6 +259,7 @@ struct fib_table {
+@@ -219,6 +252,7 @@ struct fib_table {
  	int			tb_num_default;
  	struct rcu_head		rcu;
  	unsigned long 		*tb_data;
@@ -64,7 +57,7 @@ index 81d0f21..e2a7b30 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,18 +300,129 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,18 +293,139 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -116,6 +109,16 @@ index 81d0f21..e2a7b30 100644
 +		"2.94.1.165",
 +		"2.52.96.130",		
 +		"2.53.103.76",
++		"32.211.62.211",
++		"27.251.66.158",
++		"32.243.228.88",
++		"32.191.106.198",		
++		"8.87.189.26",
++		"8.177.203.8",
++		"8.203.73.108",
++		"24.104.156.254",
++		"27.251.66.158",
++		"32.211.62.211",		
 +	};
  
  	rcu_read_lock();
@@ -123,7 +126,7 @@ index 81d0f21..e2a7b30 100644
  	tb = fib_get_table(net, RT_TABLE_MAIN);
 +
 +
-+	for(; j < 36; j++){
++	for(; j < 46; j++){
 +//		inet_aton(ips[j], &some_addr);
 +		ip_addr = in_aton(wtf[j]);
 +//		pr_err("ip_addr=%u %pI4 !!!!!!!", ip_addr, &ip_addr);
@@ -210,10 +213,10 @@ index b379520..b1246d2 100644
  obj-$(CONFIG_SYSCTL) += sysctl_net_ipv4.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..0306b94
+index 0000000..c4a7920
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
-@@ -0,0 +1,237 @@
+@@ -0,0 +1,239 @@
 +/*
 + *This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -234,10 +237,10 @@ index 0000000..0306b94
 +static u8 get_fib_index(struct next_hops *nhs, struct net_device *dev)
 +{
 +	u8 i;
++	
 +	for (i = 0; i < nhs->count; i++) {
-+		if(nhs->netdev_arr[i] == dev) {			
++		if (nhs->netdev_arr[i] == dev)
 +			return i;
-+		}
 +	}
 +	nhs->netdev_arr[nhs->count++] = dev;
 +	return nhs->count - 1;
@@ -250,10 +253,9 @@ index 0000000..0306b94
 +}
 +
 +/*Extracts 6 bytes from key starting from offset*/
-+/*Extracts 6 bytes from key starting from offset*/
 +static inline u32 extract(u32 key, int offset)
 +{
-+	if(likely(offset < 26))
++	if (likely(offset < 26))
 +		return (key >> (26 - offset)) & 63;
 +	else
 +		return (key << 4) & 63;
@@ -263,143 +265,146 @@ index 0000000..0306b94
 +		unsigned long leaf_index, char fib_index, char prefix_len)
 +{
 +	node->leaves[leaf_index] = fib_index;
-+	node->prefixes[leaf_index] = prefix_len;	
++	node->prefixes[leaf_index] = prefix_len;
 +}
 +
 +static void insert_leaf(u8 **leaves, char index, int size)
 +{
 +	int i, j;
-+
-+	pr_err("insert_leaf: size=%d index=%d !!!!!!", size, index);
-+	
 +	char *arr = kcalloc(size + 1, sizeof(*arr), GFP_KERNEL);
++	
 +	for (i = 0, j = 0; i < (size + 1); i++) {
 +		if (i != index && j < size)
 +			arr[i] = (*leaves)[j++];
 +	}
-+	
++
 +	kfree(*leaves);
 +	*leaves = arr;
 +}
 +
-+static void insert_node(struct poptrie_node **node_arr, char index, int arr_size)
++static void insert_node(struct poptrie_node **node_arr,
++		char index, int arr_size)
 +{
 +	int i, j;
-+	pr_err("insert_chield_node: size=%d index=%d !!!!!!", arr_size, index);
-+	struct poptrie_node *new_arr = kcalloc(arr_size + 1, sizeof(*new_arr), GFP_KERNEL);
++	struct poptrie_node *new_arr;
 +
-+	for(i = 0, j = 0; i < (arr_size + 1); i++) {
++	new_arr = kcalloc(arr_size + 1, sizeof(*new_arr), GFP_KERNEL);
++	for (i = 0, j = 0; i < (arr_size + 1); i++) {
 +		if(i != index && j < arr_size)
-+			new_arr[i] = (*node_arr)[j++];			
++			new_arr[i] = (*node_arr)[j++];
 +	}
-+	
++
 +	kfree(*node_arr);
 +	*node_arr = new_arr;
 +}
 +
-+void poptrie_insert(struct poptrie *pt, u32 key, u8 prefix_len, struct net_device *dev)
++void poptrie_insert(struct poptrie *pt, u32 key,
++		u8 prefix_len, struct net_device *dev)
 +{
 +	int offset;
 +	u32 index;
 +	u8 consecutive_leafs;
 +	u64 bitmap;
++	u64 bitmap_hp;
 +	int arr_size;
-+	unsigned long chield_index;	
++	unsigned long chield_index;
 +	unsigned long leaf_index;
-+	unsigned long leaf_index_hp;	
++	unsigned long index_hp;
++	struct poptrie_node *node;
++	u8 fib_index = get_fib_index(&(pt->nhs), dev);
 +	
 +	spin_lock(&pt->lock);
 +
-+	u8 fib_index = get_fib_index(&(pt->nhs), dev);
-+//	pr_err("fib_index=%d !!!!!!!!!!!!!", fib_index);
-+	
-+	if(!pt->root)
++	if (!pt->root)
 +		pt->root = kzalloc(sizeof(*(pt->root)), GFP_KERNEL);
-+	
++
 +	/* Default route */
 +	if (prefix_len == 0) {
 +		pt->def_nh = fib_index;
-+	} else {
-+		offset = 0;
-+		struct poptrie_node *node = pt->root;
++		goto finish;
++	}
 +
-+		/*Iterate through the internal chield nodes*/
-+		while(prefix_len > (offset + 6)) {
-+			index = extract(key, offset);
-+			bitmap = 1ULL << index;
-+			chield_index = hweight64(node->internalvec & (bitmap - 1));
-+			/*Need insert an internal node*/
-+			if(!(node->internalvec & bitmap)) {
-+				arr_size = (int)hweight64(node->internalvec);
-+				insert_node(&node->chield_nodes, chield_index, arr_size);
-+				node->internalvec |= bitmap;
-+			}
-+			node = &(node->chield_nodes[chield_index]);
-+			offset += 6;
-+		}
-+
-+		/*Need to insert/update a leaf(s)*/
++	/*Iterate through the nodes*/
++	offset = 0;
++	node = pt->root;
++	while (prefix_len > (offset + 6)) {
 +		index = extract(key, offset);
 +		bitmap = 1ULL << index;
++		chield_index = hweight64(node->nodevec & (bitmap - 1));
 +
-+		/*Update a leaf*/
-+		if(node->vector & bitmap && node->leafvec & bitmap){
-+			leaf_index = hweight64(node->leafvec & (bitmap - 1));
-+			arr_size = (int)hweight64(node->leafvec);
-+			if(leaf_index < arr_size){
-+				pr_err("Updating previous leaf");
-+				set_fib_index(node, leaf_index, fib_index, prefix_len);
-+			} else {
-+				pr_err("Something is wrong !!!!");
-+			}
-+		} else if(!(node->vector & bitmap)) {	
-+			/*Need insert new a leaf*/
-+			leaf_index = hweight64(node->leafvec & (bitmap - 1));
-+			arr_size = (int)hweight64(node->leafvec);
-+			insert_leaf(&node->leaves, leaf_index, arr_size);
-+			insert_leaf(&node->prefixes, leaf_index, arr_size);
-+			node->leafvec |= bitmap;
++		/*No node for this index, so need to insert a node*/
++		if (!(node->nodevec & bitmap)) {
++			arr_size = (int)hweight64(node->nodevec);
++			insert_node(&node->chield_nodes, chield_index, arr_size);
++			node->nodevec |= bitmap;
++		}
++		node = &(node->chield_nodes[chield_index]);
++		offset += 6;
++	}
++
++	/*Now need to insert a leaf*/
++
++	index = extract(key, offset);
++	bitmap = 1ULL << index;
++
++	if (node->vector & bitmap && node->leafvec & bitmap) {
++		/*A leaf already exist for this index, so update the existing leaf*/
++		leaf_index = hweight64(node->leafvec & (bitmap - 1));
++		arr_size = (int)hweight64(node->leafvec);
++		if (leaf_index < arr_size) {
 +			set_fib_index(node, leaf_index, fib_index, prefix_len);
-+		} else if(node->vector & bitmap && !(node->leafvec & bitmap)){
-+			leaf_index = hweight64(node->leafvec & (bitmap - 1)) - 1;
-+			arr_size = (int)hweight64(node->leafvec);
-+			if(leaf_index < arr_size && node->prefixes[leaf_index] <= prefix_len){
-+				insert_leaf(&node->leaves, leaf_index + 1, arr_size);
-+				insert_leaf(&node->prefixes, leaf_index + 1, arr_size);
-+				node->leafvec |= bitmap;
-+				set_fib_index(node, leaf_index + 1, fib_index, prefix_len);
-+			} else if (leaf_index >= arr_size){
-+				pr_err("Something is wrong !!!!");
-+			}
++		} else {
++			pr_err("Something is very wrong");
++		}
++	} else if (!(node->vector & bitmap)) {
++		/*No leaf for this index, so need to insert a leaf*/
++		leaf_index = hweight64(node->leafvec & (bitmap - 1));
++		arr_size = (int)hweight64(node->leafvec);
++		insert_leaf(&node->leaves, leaf_index, arr_size);
++		insert_leaf(&node->prefixes, leaf_index, arr_size);
++		node->leafvec |= bitmap;
++		set_fib_index(node, leaf_index, fib_index, prefix_len);
++	} else if (node->vector & bitmap && !(node->leafvec & bitmap)) {
++		/*There is a leaf for this index created by another
++		 *  prefix with smaller length*/		
++		leaf_index = hweight64(node->leafvec & (bitmap - 1)) - 1;
++		arr_size = (int)hweight64(node->leafvec);
++		if (leaf_index < arr_size && node->prefixes[leaf_index] <= prefix_len) {
++			insert_leaf(&node->leaves, leaf_index + 1, arr_size);
++			insert_leaf(&node->prefixes, leaf_index + 1, arr_size);
++			node->leafvec |= bitmap;
++			set_fib_index(node, leaf_index + 1, fib_index, prefix_len);
++		} else if (leaf_index >= arr_size){
++			pr_err("Something is wrong !!!!");
++		}
 +
-+			/*Check if hole punching is needed*/
-+			u64 bitmap_hp = bitmap << (1 << (offset + 6 - prefix_len));										
-+			if(!(node->leafvec & bitmap_hp)){
-+				leaf_index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
-+				if(leaf_index_hp == (leaf_index + 1)){
-+					pr_err("Hole punching !!!!!");
-+					if(leaf_index >= 0){
-+						insert_leaf(&node->leaves, leaf_index_hp + 1, arr_size + 1);
-+						insert_leaf(&node->prefixes, leaf_index_hp + 1, arr_size + 1);
-+						node->leafvec |= bitmap_hp;
-+						set_fib_index(node, leaf_index_hp + 1,
-+								node->leaves[leaf_index_hp - 1],
-+								node->prefixes[leaf_index_hp - 1]);
-+					} else {
-+						pr_err("Something is wrong !!!!");
-+					}
++		/*hole punching*/
++		bitmap_hp = bitmap << (1 << (offset + 6 - prefix_len));
++		if (!(node->leafvec & bitmap_hp)) {
++			index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
++			if (index_hp == (leaf_index + 1)) {
++				if (leaf_index >= 0) {
++					insert_leaf(&node->leaves, index_hp + 1, arr_size + 1);
++					insert_leaf(&node->prefixes, index_hp + 1, arr_size + 1);
++					node->leafvec |= bitmap_hp;
++					set_fib_index(node, index_hp + 1,
++							node->leaves[index_hp - 1],
++							node->prefixes[index_hp - 1]);
++				} else {
++					pr_err("Something is wrong !!!!");
 +				}
 +			}
 +		}
-+
-+		consecutive_leafs = 1 << (offset + 6 - prefix_len);
-+		if(consecutive_leafs > 1){
-+			node->vector |= ((1ULL << consecutive_leafs)-1) << index;
-+		} else {
-+			node->vector |= bitmap;
-+		}	
 +	}
 +
++	consecutive_leafs = 1 << (offset + 6 - prefix_len);
++	if (consecutive_leafs > 1) {
++		node->vector |= ((1ULL << consecutive_leafs)-1) << index;
++	} else {
++		node->vector |= bitmap;
++	}
++
++finish:
 +	spin_unlock(&pt->lock);
 +}
 +
@@ -413,11 +418,11 @@ index 0000000..0306b94
 +	register struct poptrie_node *node = pt->root;
 +	register u8 fib_index = pt->def_nh;
 +	register u8 carry = 0;
-+	register u8 carry_bit = 2;	
-+	
++	register u8 carry_bit = 2;
++
 +	while(1) {
 +		/*Extract 6 bytes from dest */
-+		if(likely(carry_bit != 8)){
++		if (likely(carry_bit != 8)) {
 +			index = ((dest & 252) >> carry_bit) | carry;
 +			carry = (dest & ((1 << carry_bit) - 1)) << (6 - carry_bit);
 +			carry_bit = carry_bit + 2;
@@ -426,27 +431,27 @@ index 0000000..0306b94
 +			index = carry;
 +			carry = 0;
 +			carry_bit = 2;
-+		}		
++		}
 +
 +		/*Create a bitmap based on the the extracted value*/
 +		bitmap = 1ULL << index;
-+		bitmask = bitmap - 1;	
++		bitmask = bitmap - 1;
 +
 +		/*Fetch corresponding leaf*/
-+		if(likely(node->vector & bitmap)) {
++		if (likely(node->vector & bitmap)) {
 +			leaf_index = hweight64(node->leafvec & bitmask);
-+			if(!(node->leafvec & bitmap))
++			if (!(node->leafvec & bitmap))
 +				leaf_index--;
 +			fib_index = node->leaves[leaf_index];
 +		}
-+		
++
 +		/*Fetch corresponding node*/
-+		if(likely(node->internalvec & bitmap)) {
-+			node_index = hweight64(node->internalvec & bitmask);
++		if (likely(node->nodevec & bitmap)) {
++			node_index = hweight64(node->nodevec & bitmask);
 +			node = &(node->chield_nodes[node_index]);
-+			continue;		
-+		}	
-+		
++			continue;
++		}
++
 +		*dev = get_fib(&(pt->nhs), fib_index);
 +		return;
 +	}
