@@ -1,5 +1,5 @@
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..32acf21 100644
+index 81d0f21..e67c61b 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -57,7 +57,7 @@ index 81d0f21..32acf21 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,18 +293,140 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,18 +293,142 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -116,10 +116,12 @@ index 81d0f21..32acf21 100644
 +		"8.87.189.26",
 +		"8.177.203.8",
 +		"8.203.73.108",
-+		"24.104.156.254",
-+		"24.23.208.190",
-+		"27.251.66.158",
-+		"32.211.62.211",		
++		"24.23.43.245",
++		"24.22.50.154",
++		"24.104.156.0",
++		"24.104.156.1",
++		"24.104.151.2",
++		"60.0.0.3",
 +	};
  
  	rcu_read_lock();
@@ -127,7 +129,7 @@ index 81d0f21..32acf21 100644
  	tb = fib_get_table(net, RT_TABLE_MAIN);
 +
 +
-+	for(; j < 47; j++){
++	for(; j < 49; j++){
 +//		inet_aton(ips[j], &some_addr);
 +		ip_addr = in_aton(wtf[j]);
 +//		pr_err("ip_addr=%u %pI4 !!!!!!!", ip_addr, &ip_addr);
@@ -214,10 +216,10 @@ index b379520..b1246d2 100644
  obj-$(CONFIG_SYSCTL) += sysctl_net_ipv4.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..c4a7920
+index 0000000..6dddb79
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
-@@ -0,0 +1,239 @@
+@@ -0,0 +1,271 @@
 +/*
 + *This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -238,7 +240,7 @@ index 0000000..c4a7920
 +static u8 get_fib_index(struct next_hops *nhs, struct net_device *dev)
 +{
 +	u8 i;
-+	
++
 +	for (i = 0; i < nhs->count; i++) {
 +		if (nhs->netdev_arr[i] == dev)
 +			return i;
@@ -262,6 +264,7 @@ index 0000000..c4a7920
 +		return (key << 4) & 63;
 +}
 +
++/*Set FIB index and prefix length to a leaf*/
 +static void set_fib_index(struct poptrie_node *node,
 +		unsigned long leaf_index, char fib_index, char prefix_len)
 +{
@@ -269,34 +272,55 @@ index 0000000..c4a7920
 +	node->prefixes[leaf_index] = prefix_len;
 +}
 +
-+static void insert_leaf(u8 **leaves, char index, int size)
++/*Insert a leaf at index*/
++static bool insert_leaf(struct poptrie_node *node,
++		char index, char fib_index, char prefix_len)
 +{
 +	int i, j;
-+	char *arr = kcalloc(size + 1, sizeof(*arr), GFP_KERNEL);
-+	
-+	for (i = 0, j = 0; i < (size + 1); i++) {
-+		if (i != index && j < size)
-+			arr[i] = (*leaves)[j++];
++	int size = (int)hweight64(node->leafvec);
++
++	if (index > size) {
++		pr_err("Index needs to be smaller or equal to size");
++		return false;
 +	}
 +
-+	kfree(*leaves);
-+	*leaves = arr;
++	char *leaves = kcalloc(size + 1, sizeof(*leaves), GFP_KERNEL);
++	char *prefixes = kcalloc(size + 1, sizeof(*prefixes), GFP_KERNEL);
++		
++	for (i = 0, j = 0; i < (size + 1); i++) {
++		if (i == index) {
++			leaves[i] = fib_index;
++			prefixes[i] = prefix_len;
++		} else {
++			leaves[i] = node->leaves[j];
++			prefixes[i] = node->prefixes[j];
++			j++;
++		}
++	}
++	
++	kfree(node->leaves);
++	kfree(node->prefixes);
++	node->leaves = leaves;
++	node->prefixes = prefixes;
++	return true;
 +}
 +
-+static void insert_node(struct poptrie_node **node_arr,
-+		char index, int arr_size)
++/*Insert a new node at index*/
++static void insert_chield_node(struct poptrie_node *node,
++		char index)
 +{
 +	int i, j;
-+	struct poptrie_node *new_arr;
++	struct poptrie_node *arr;
++	int arr_size  = (int)hweight64(node->nodevec);
 +
-+	new_arr = kcalloc(arr_size + 1, sizeof(*new_arr), GFP_KERNEL);
++	arr = kcalloc(arr_size + 1, sizeof(*arr), GFP_KERNEL);
 +	for (i = 0, j = 0; i < (arr_size + 1); i++) {
-+		if(i != index && j < arr_size)
-+			new_arr[i] = (*node_arr)[j++];
++		if (i != index && j < arr_size)
++			arr[i] = node->chield_nodes[j++];
 +	}
 +
-+	kfree(*node_arr);
-+	*node_arr = new_arr;
++	kfree(node->chield_nodes);
++	node->chield_nodes = arr;
 +}
 +
 +void poptrie_insert(struct poptrie *pt, u32 key,
@@ -335,8 +359,7 @@ index 0000000..c4a7920
 +
 +		/*No node for this index, so need to insert a node*/
 +		if (!(node->nodevec & bitmap)) {
-+			arr_size = (int)hweight64(node->nodevec);
-+			insert_node(&node->chield_nodes, chield_index, arr_size);
++			insert_chield_node(node, chield_index);
 +			node->nodevec |= bitmap;
 +		}
 +		node = &(node->chield_nodes[chield_index]);
@@ -352,31 +375,42 @@ index 0000000..c4a7920
 +		/*A leaf already exist for this index, so update the existing leaf*/
 +		leaf_index = hweight64(node->leafvec & (bitmap - 1));
 +		arr_size = (int)hweight64(node->leafvec);
-+		if (leaf_index < arr_size) {
++		if(leaf_index >= arr_size)
++			goto error;
++		/*Ignore the prefix*/
++		if(node->prefixes[leaf_index] > prefix_len)
++			goto finish;
++		else if(node->prefixes[leaf_index] == prefix_len)
 +			set_fib_index(node, leaf_index, fib_index, prefix_len);
-+		} else {
-+			pr_err("Something is very wrong");
++		else {
++			/*hole punching*/
++			bitmap_hp = bitmap << (1 << (offset + 6 - prefix_len));
++			if (!(node->leafvec & bitmap_hp)) {
++				index_hp = hweight64(node->leafvec & (bitmap_hp - 1));
++				if (index_hp == leaf_index + 1) {
++					insert_leaf(node, leaf_index, fib_index, prefix_len);
++					node->leafvec |= bitmap_hp;
++				} else {
++					set_fib_index(node, leaf_index, fib_index, prefix_len);
++				}
++			}
 +		}
 +	} else if (!(node->vector & bitmap)) {
 +		/*No leaf for this index, so need to insert a leaf*/
 +		leaf_index = hweight64(node->leafvec & (bitmap - 1));
-+		arr_size = (int)hweight64(node->leafvec);
-+		insert_leaf(&node->leaves, leaf_index, arr_size);
-+		insert_leaf(&node->prefixes, leaf_index, arr_size);
++		insert_leaf(node, leaf_index, fib_index, prefix_len);
 +		node->leafvec |= bitmap;
-+		set_fib_index(node, leaf_index, fib_index, prefix_len);
-+	} else if (node->vector & bitmap && !(node->leafvec & bitmap)) {
++	} else if (node->vector & bitmap && !(node->leafvec & bitmap)) {		
 +		/*There is a leaf for this index created by another
-+		 *  prefix with smaller length*/		
++		 *  prefix with smaller length
++		 */
 +		leaf_index = hweight64(node->leafvec & (bitmap - 1)) - 1;
 +		arr_size = (int)hweight64(node->leafvec);
-+		if (leaf_index < arr_size && node->prefixes[leaf_index] <= prefix_len) {
-+			insert_leaf(&node->leaves, leaf_index + 1, arr_size);
-+			insert_leaf(&node->prefixes, leaf_index + 1, arr_size);
++		if(leaf_index >= arr_size)
++			goto error;
++		if (node->prefixes[leaf_index] <= prefix_len) {
++			insert_leaf(node, leaf_index + 1, fib_index, prefix_len);
 +			node->leafvec |= bitmap;
-+			set_fib_index(node, leaf_index + 1, fib_index, prefix_len);
-+		} else if (leaf_index >= arr_size){
-+			pr_err("Something is wrong !!!!");
 +		}
 +
 +		/*hole punching*/
@@ -384,16 +418,12 @@ index 0000000..c4a7920
 +		if (!(node->leafvec & bitmap_hp)) {
 +			index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
 +			if (index_hp == (leaf_index + 1)) {
-+				if (leaf_index >= 0) {
-+					insert_leaf(&node->leaves, index_hp + 1, arr_size + 1);
-+					insert_leaf(&node->prefixes, index_hp + 1, arr_size + 1);
-+					node->leafvec |= bitmap_hp;
-+					set_fib_index(node, index_hp + 1,
-+							node->leaves[index_hp - 1],
-+							node->prefixes[index_hp - 1]);
-+				} else {
-+					pr_err("Something is wrong !!!!");
-+				}
++				if(leaf_index < 0)
++					goto error;
++				insert_leaf(node, index_hp + 1,
++						node->leaves[index_hp - 1],
++						node->prefixes[index_hp - 1]);				
++				node->leafvec |= bitmap_hp;
 +			}
 +		}
 +	}
@@ -405,6 +435,10 @@ index 0000000..c4a7920
 +		node->vector |= bitmap;
 +	}
 +
++	goto finish;
++
++error:
++	pr_err("Something is very wrong !!!!");
 +finish:
 +	spin_unlock(&pt->lock);
 +}
