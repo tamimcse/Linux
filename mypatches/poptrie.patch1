@@ -228,10 +228,10 @@ index b379520..b1246d2 100644
  obj-$(CONFIG_SYSCTL) += sysctl_net_ipv4.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..6dddb79
+index 0000000..0c7c05b
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
-@@ -0,0 +1,271 @@
+@@ -0,0 +1,272 @@
 +/*
 + *This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -382,6 +382,7 @@ index 0000000..6dddb79
 +
 +	index = extract(key, offset);
 +	bitmap = 1ULL << index;
++	consecutive_leafs = 1 << (offset + 6 - prefix_len);
 +
 +	if (node->vector & bitmap && node->leafvec & bitmap) {
 +		/*A leaf already exist for this index, so update the existing leaf*/
@@ -396,7 +397,7 @@ index 0000000..6dddb79
 +			set_fib_index(node, leaf_index, fib_index, prefix_len);
 +		else {
 +			/*hole punching*/
-+			bitmap_hp = bitmap << (1 << (offset + 6 - prefix_len));
++			bitmap_hp = bitmap << consecutive_leafs;
 +			if (!(node->leafvec & bitmap_hp)) {
 +				index_hp = hweight64(node->leafvec & (bitmap_hp - 1));
 +				if (index_hp == leaf_index + 1) {
@@ -426,7 +427,7 @@ index 0000000..6dddb79
 +		}
 +
 +		/*hole punching*/
-+		bitmap_hp = bitmap << (1 << (offset + 6 - prefix_len));
++		bitmap_hp = bitmap << consecutive_leafs;
 +		if (!(node->leafvec & bitmap_hp)) {
 +			index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
 +			if (index_hp == (leaf_index + 1)) {
@@ -440,7 +441,7 @@ index 0000000..6dddb79
 +		}
 +	}
 +
-+	consecutive_leafs = 1 << (offset + 6 - prefix_len);
++	
 +	if (consecutive_leafs > 1) {
 +		node->vector |= ((1ULL << consecutive_leafs)-1) << index;
 +	} else {
