@@ -1,3 +1,3 @@
-sudo sh veths.sh
+sudo python veths.py
 sudo python addroutes.py
 
