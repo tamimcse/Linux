@@ -228,10 +228,10 @@ index b379520..b1246d2 100644
  obj-$(CONFIG_SYSCTL) += sysctl_net_ipv4.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..0c7c05b
+index 0000000..64d029e
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
-@@ -0,0 +1,272 @@
+@@ -0,0 +1,294 @@
 +/*
 + *This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -338,16 +338,18 @@ index 0000000..0c7c05b
 +void poptrie_insert(struct poptrie *pt, u32 key,
 +		u8 prefix_len, struct net_device *dev)
 +{
-+	int offset;
++	int offset, i;
 +	u32 index;
 +	u8 consecutive_leafs;
 +	u64 bitmap;
 +	u64 bitmap_hp;
 +	int arr_size;
 +	unsigned long chield_index;
-+	unsigned long leaf_index;
++	unsigned long leaf_index, prev_leaf_index;
 +	unsigned long index_hp;
 +	struct poptrie_node *node;
++	u8 prev_fib_index, prev_prefix_len;
++	bool isFound = true;	
 +	u8 fib_index = get_fib_index(&(pt->nhs), dev);
 +	
 +	spin_lock(&pt->lock);
@@ -417,28 +419,48 @@ index 0000000..0c7c05b
 +		/*There is a leaf for this index created by another
 +		 *  prefix with smaller length
 +		 */
-+		leaf_index = hweight64(node->leafvec & (bitmap - 1)) - 1;
++		prev_leaf_index = hweight64(node->leafvec & (bitmap - 1)) - 1;
 +		arr_size = (int)hweight64(node->leafvec);
-+		if(leaf_index >= arr_size)
++		if(prev_leaf_index >= arr_size)
 +			goto error;
-+		if (node->prefixes[leaf_index] <= prefix_len) {
-+			insert_leaf(node, leaf_index + 1, fib_index, prefix_len);
++		if (node->prefixes[prev_leaf_index] <= prefix_len) {
++			insert_leaf(node, prev_leaf_index + 1, fib_index, prefix_len);
 +			node->leafvec |= bitmap;
 +		}
 +
 +		/*hole punching*/
++		
++		prev_fib_index = node->leaves[prev_leaf_index];
++		prev_prefix_len = node->prefixes[prev_leaf_index];	
++
 +		bitmap_hp = bitmap << consecutive_leafs;
 +		if (!(node->leafvec & bitmap_hp)) {
 +			index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
-+			if (index_hp == (leaf_index + 1)) {
-+				if(leaf_index < 0)
++			if (node->prefixes[index_hp] <= prefix_len) {
++				if(prev_leaf_index < 0)
 +					goto error;
 +				insert_leaf(node, index_hp + 1,
-+						node->leaves[index_hp - 1],
-+						node->prefixes[index_hp - 1]);				
++						prev_fib_index, prev_prefix_len);				
 +				node->leafvec |= bitmap_hp;
 +			}
 +		}
++		
++/*		for (i = 1; i < consecutive_leafs; i++) {
++			bitmap_hp = bitmap << i;
++			if (!(node->leafvec & bitmap_hp)) {
++				if (isFound) {
++					index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
++					if (node->prefixes[index_hp] <= prefix_len) {
++						insert_leaf(node, index_hp + 1,
++								prev_fib_index, prev_prefix_len);
++						node->leafvec |= bitmap_hp;
++					}
++					isFound = false;
++				}
++			} else {
++				isFound = true;
++			}
++		}		*/
 +	}
 +
 +	
