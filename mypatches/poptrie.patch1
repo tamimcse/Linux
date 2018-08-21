@@ -1,5 +1,5 @@
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..86676d8 100644
+index 81d0f21..1660489 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -57,7 +57,7 @@ index 81d0f21..86676d8 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,18 +293,154 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,18 +293,153 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -126,14 +126,13 @@ index 81d0f21..86676d8 100644
 +		"16.251.110.31",
 +		"16.76.252.91",
 +		"16.102.86.234",
-+		"24.123.93.189",
-+		"24.123.91.191",
 +		"60.194.233.156",
 +		"58.68.133.37",		
 +		"14.66.147.199",
 +		"15.63.7.51",
 +		"15.18.35.189",
-+		
++		"24.123.93.189",
++		"24.123.91.191",		
 +	};
  
  	rcu_read_lock();
@@ -228,10 +227,10 @@ index b379520..b1246d2 100644
  obj-$(CONFIG_SYSCTL) += sysctl_net_ipv4.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..64d029e
+index 0000000..4d7d876
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
-@@ -0,0 +1,294 @@
+@@ -0,0 +1,286 @@
 +/*
 + *This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -348,8 +347,7 @@ index 0000000..64d029e
 +	unsigned long leaf_index, prev_leaf_index;
 +	unsigned long index_hp;
 +	struct poptrie_node *node;
-+	u8 prev_fib_index, prev_prefix_len;
-+	bool isFound = true;	
++	u8 prev_fib_index, prev_prefix_len;	
 +	u8 fib_index = get_fib_index(&(pt->nhs), dev);
 +	
 +	spin_lock(&pt->lock);
@@ -402,7 +400,7 @@ index 0000000..64d029e
 +			bitmap_hp = bitmap << consecutive_leafs;
 +			if (!(node->leafvec & bitmap_hp)) {
 +				index_hp = hweight64(node->leafvec & (bitmap_hp - 1));
-+				if (index_hp == leaf_index + 1) {
++				if (node->prefixes[index_hp] <= prefix_len) {
 +					insert_leaf(node, leaf_index, fib_index, prefix_len);
 +					node->leafvec |= bitmap_hp;
 +				} else {
@@ -445,22 +443,15 @@ index 0000000..64d029e
 +			}
 +		}
 +		
-+/*		for (i = 1; i < consecutive_leafs; i++) {
-+			bitmap_hp = bitmap << i;
-+			if (!(node->leafvec & bitmap_hp)) {
-+				if (isFound) {
-+					index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
-+					if (node->prefixes[index_hp] <= prefix_len) {
-+						insert_leaf(node, index_hp + 1,
-+								prev_fib_index, prev_prefix_len);
-+						node->leafvec |= bitmap_hp;
-+					}
-+					isFound = false;
-+				}
-+			} else {
-+				isFound = true;
++		for (i = 2; i < consecutive_leafs; i++) {
++			bitmap_hp = bitmap << (i - 1);
++			if (node->leafvec & bitmap_hp) {
++				index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
++				insert_leaf(node, index_hp + 1,
++						fib_index, prefix_len);
++				node->leafvec |= bitmap_hp;
 +			}
-+		}		*/
++		}
 +	}
 +
 +	
