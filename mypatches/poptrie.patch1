@@ -1,5 +1,5 @@
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..1660489 100644
+index 81d0f21..60a1f8f 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -42,7 +42,7 @@ index 81d0f21..1660489 100644
 +
 +void poptrie_insert(struct poptrie *pt, u32 key,
 +		u8 prefix_len, struct net_device *dev);
-+int poptrie_lookup(struct poptrie *pt, __be32 dest,
++void poptrie_lookup(struct poptrie *pt, __be32 dest,
 +		struct net_device **dev);
 +
 +
@@ -57,7 +57,7 @@ index 81d0f21..1660489 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,18 +293,153 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,18 +293,173 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -131,8 +131,28 @@ index 81d0f21..1660489 100644
 +		"14.66.147.199",
 +		"15.63.7.51",
 +		"15.18.35.189",
++		"64.254.27.242",
++		"64.254.27.8",
++		"64.254.27.234",
++		"64.87.55.185",
 +		"24.123.93.189",
-+		"24.123.91.191",		
++		"24.123.91.191",
++		"24.106.95.125",		
++		"24.106.95.243",
++		"24.106.95.192",
++		"24.106.95.90",
++		"66.243.187.157",
++		"66.243.187.197",
++		"66.199.31.185",
++		"66.199.31.140",
++		"66.147.219.46",
++		"78.24.215.246",
++		"78.24.214.248",
++		"90.188.31.245",
++		"144.243.215.191",
++		"144.243.215.127",
++		"169.254.221.211",
++		"169.254.231.253",
 +	};
  
  	rcu_read_lock();
@@ -140,7 +160,7 @@ index 81d0f21..1660489 100644
  	tb = fib_get_table(net, RT_TABLE_MAIN);
 +
 +
-+	for(; j < 60; j++){
++	for(; j < 80; j++){
 +//		inet_aton(ips[j], &some_addr);
 +		ip_addr = in_aton(wtf[j]);
 +//		pr_err("ip_addr=%u %pI4 !!!!!!!", ip_addr, &ip_addr);
@@ -157,7 +177,7 @@ index 81d0f21..1660489 100644
 +	//		}
 +
 +
-+			err = poptrie_lookup(&tb->pt, ip_addr, &dev);		
++			poptrie_lookup(&tb->pt, ip_addr, &dev);		
 +//			if(dev)
 +//				pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
 +		}
@@ -184,7 +204,7 @@ index 81d0f21..1660489 100644
 +//		pr_err("ip_addr=%u %pI4 !!!!!!!", ip_addr, &ip_addr);
 +		
 +		if (tb && tb->pt.root) {
-+			err = poptrie_lookup(&tb->pt, ip_addr, &dev);		
++			poptrie_lookup(&tb->pt, ip_addr, &dev);		
 +		}
 +
 +		temp = flp->daddr;
@@ -227,10 +247,10 @@ index b379520..b1246d2 100644
  obj-$(CONFIG_SYSCTL) += sysctl_net_ipv4.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..4d7d876
+index 0000000..2457ce0
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
-@@ -0,0 +1,286 @@
+@@ -0,0 +1,296 @@
 +/*
 + *This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -288,6 +308,8 @@ index 0000000..4d7d876
 +		char index, char fib_index, char prefix_len)
 +{
 +	int i, j;
++	char *leaves;
++	char *prefixes;
 +	int size = (int)hweight64(node->leafvec);
 +
 +	if (index > size) {
@@ -295,8 +317,8 @@ index 0000000..4d7d876
 +		return false;
 +	}
 +
-+	char *leaves = kcalloc(size + 1, sizeof(*leaves), GFP_KERNEL);
-+	char *prefixes = kcalloc(size + 1, sizeof(*prefixes), GFP_KERNEL);
++	leaves = kcalloc(size + 1, sizeof(*leaves), GFP_KERNEL);
++	prefixes = kcalloc(size + 1, sizeof(*prefixes), GFP_KERNEL);
 +		
 +	for (i = 0, j = 0; i < (size + 1); i++) {
 +		if (i == index) {
@@ -397,16 +419,24 @@ index 0000000..4d7d876
 +			set_fib_index(node, leaf_index, fib_index, prefix_len);
 +		else {
 +			/*hole punching*/
-+			bitmap_hp = bitmap << consecutive_leafs;
++			bitmap_hp = bitmap << consecutive_leafs;			
 +			if (!(node->leafvec & bitmap_hp)) {
-+				index_hp = hweight64(node->leafvec & (bitmap_hp - 1));
++				index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
 +				if (node->prefixes[index_hp] <= prefix_len) {
-+					insert_leaf(node, leaf_index, fib_index, prefix_len);
++					insert_leaf(node, index_hp, fib_index, prefix_len);
 +					node->leafvec |= bitmap_hp;
-+				} else {
-+					set_fib_index(node, leaf_index, fib_index, prefix_len);
 +				}
++				
++				for (i = leaf_index; i <= index_hp - 1 ; i++ ) {
++					if (node->prefixes[i] <= prefix_len)
++						set_fib_index(node, i, fib_index, prefix_len);
++				}				
++				
++			} else {
++				pr_err("TODO");
++				//TODO
 +			}
++
 +		}
 +	} else if (!(node->vector & bitmap)) {
 +		/*No leaf for this index, so need to insert a leaf*/
@@ -470,7 +500,7 @@ index 0000000..4d7d876
 +}
 +
 +/*We assume that pt->root is not NULL*/
-+int poptrie_lookup(struct poptrie *pt, __be32 dest, struct net_device **dev)
++void poptrie_lookup(struct poptrie *pt, __be32 dest, struct net_device **dev)
 +{
 +	register u32 index;
 +	register u64 bitmap, bitmask;
