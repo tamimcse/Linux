@@ -1,5 +1,5 @@
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..60a1f8f 100644
+index 81d0f21..e2f9a49 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -151,8 +151,8 @@ index 81d0f21..60a1f8f 100644
 +		"90.188.31.245",
 +		"144.243.215.191",
 +		"144.243.215.127",
-+		"169.254.221.211",
-+		"169.254.231.253",
++//		"169.254.221.211",
++//		"169.254.231.253",
 +	};
  
  	rcu_read_lock();
@@ -160,7 +160,7 @@ index 81d0f21..60a1f8f 100644
  	tb = fib_get_table(net, RT_TABLE_MAIN);
 +
 +
-+	for(; j < 80; j++){
++	for(; j < 78; j++){
 +//		inet_aton(ips[j], &some_addr);
 +		ip_addr = in_aton(wtf[j]);
 +//		pr_err("ip_addr=%u %pI4 !!!!!!!", ip_addr, &ip_addr);
@@ -247,10 +247,10 @@ index b379520..b1246d2 100644
  obj-$(CONFIG_SYSCTL) += sysctl_net_ipv4.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..2457ce0
+index 0000000..f20c60f
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
-@@ -0,0 +1,296 @@
+@@ -0,0 +1,299 @@
 +/*
 + *This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -433,8 +433,11 @@ index 0000000..2457ce0
 +				}				
 +				
 +			} else {
-+				pr_err("TODO");
-+				//TODO
++				index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
++				for (i = leaf_index; i <= index_hp ; i++ ) {
++					if (node->prefixes[i] <= prefix_len)
++						set_fib_index(node, i, fib_index, prefix_len);
++				}
 +			}
 +
 +		}
