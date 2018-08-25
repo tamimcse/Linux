@@ -251,7 +251,7 @@ index b379520..b1246d2 100644
  obj-$(CONFIG_SYSCTL) += sysctl_net_ipv4.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..f20c60f
+index 0000000..9bf9d5b
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
 @@ -0,0 +1,299 @@
@@ -431,7 +431,7 @@ index 0000000..f20c60f
 +					node->leafvec |= bitmap_hp;
 +				}
 +				
-+				for (i = leaf_index; i <= index_hp - 1 ; i++ ) {
++				for (i = leaf_index; i < index_hp ; i++ ) {
 +					if (node->prefixes[i] <= prefix_len)
 +						set_fib_index(node, i, fib_index, prefix_len);
 +				}				
