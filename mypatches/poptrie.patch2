@@ -1,0 +1,364 @@
+diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
+index 81d0f21..56246e2 100644
+--- a/include/net/ip_fib.h
++++ b/include/net/ip_fib.h
+@@ -197,6 +197,37 @@ struct fib_entry_notifier_info {
+ 	u32 tb_id;
+ };
+ 
++/*Maximum number of next-hop*/
++#define NEXT_HOP_MAX 255
++
++struct next_hops {
++	struct net_device	*netdev_arr[NEXT_HOP_MAX];
++	/*Total number of next-hops*/
++	u8 count;
++};
++
++struct poptrie_node {
++	u64 vector;
++	u64 leafvec;
++	u64 nodevec;
++	struct poptrie_node *chield_nodes;
++	u8 *leaves;
++	u8 *prefixes;
++};
++
++struct poptrie {
++	char	def_nh;
++	struct next_hops	nhs;
++	struct poptrie_node *root;
++	spinlock_t			lock;
++};
++
++void poptrie_insert(struct poptrie *pt, u32 key,
++		u8 prefix_len, struct net_device *dev);
++void poptrie_lookup(struct poptrie *pt, __be32 dest,
++		struct net_device **dev);
++
++
+ struct fib_nh_notifier_info {
+ 	struct fib_notifier_info info; /* must be first */
+ 	struct fib_nh *fib_nh;
+@@ -219,6 +250,7 @@ struct fib_table {
+ 	int			tb_num_default;
+ 	struct rcu_head		rcu;
+ 	unsigned long 		*tb_data;
++	struct poptrie	pt;
+ 	unsigned long		__data[0];
+ };
+ 
+diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
+index b379520..b1246d2 100644
+--- a/net/ipv4/Makefile
++++ b/net/ipv4/Makefile
+@@ -14,7 +14,7 @@ obj-y     := route.o inetpeer.o protocol.o \
+ 	     udp_offload.o arp.o icmp.o devinet.o af_inet.o igmp.o \
+ 	     fib_frontend.o fib_semantics.o fib_trie.o fib_notifier.o \
+ 	     inet_fragment.o ping.o ip_tunnel_core.o gre_offload.o \
+-	     metrics.o
++	     metrics.o fib_poptrie.o
+ 
+ obj-$(CONFIG_NET_IP_TUNNEL) += ip_tunnel.o
+ obj-$(CONFIG_SYSCTL) += sysctl_net_ipv4.o
+diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
+new file mode 100644
+index 0000000..b8dcd18
+--- /dev/null
++++ b/net/ipv4/fib_poptrie.c
+@@ -0,0 +1,295 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ *This program is free software; you can redistribute it and/or
++ *   modify it under the terms of the GNU General Public License
++ *   as published by the Free Software Foundation; either version
++ *   2 of the License, or (at your option) any later version.
++ *
++ * Author: MD Iftakharul Islam (Tamim) <mislam4@kent.edu>.
++ *
++ * Asai, Hirochika, and Yasuhiro Ohara. "Poptrie: A compressed trie
++ * with population count for fast and scalable software IP routing
++ * table lookup." ACM SIGCOMM Computer Communication Review. 2015.
++ *
++ */
++
++#include <net/ip_fib.h>
++
++/*Get next-hop index from next-hop*/
++static u8 get_fib_index(struct next_hops *nhs, struct net_device *dev)
++{
++	u8 i;
++
++	for (i = 0; i < nhs->count; i++) {
++		if (nhs->netdev_arr[i] == dev)
++			return i;
++	}
++	nhs->netdev_arr[nhs->count++] = dev;
++	return nhs->count - 1;
++}
++
++/*Converts next-hop index into actual next-hop*/
++static struct net_device *get_fib(struct next_hops *nhs, u8 fib_index)
++{
++	return nhs->netdev_arr[fib_index];
++}
++
++/*Extracts 6 bytes from key starting from offset*/
++static inline u32 extract(u32 key, int offset)
++{
++	if (likely(offset < 26))
++		return (key >> (26 - offset)) & 63;
++	else
++		return (key << 4) & 63;
++}
++
++/*Set FIB index and prefix length to a leaf*/
++static void set_fib_index(struct poptrie_node *node,
++		unsigned long leaf_index, char fib_index, char prefix_len)
++{
++	node->leaves[leaf_index] = fib_index;
++	node->prefixes[leaf_index] = prefix_len;
++}
++
++/*Insert a leaf at index*/
++static bool insert_leaf(struct poptrie_node *node,
++		char index, char fib_index, char prefix_len)
++{
++	int i, j;
++	char *leaves;
++	char *prefixes;
++	int size = (int)hweight64(node->leafvec);
++
++	if (index > size) {
++		pr_err("Index needs to be smaller or equal to size");
++		return false;
++	}
++
++	leaves = kcalloc(size + 1, sizeof(*leaves), GFP_KERNEL);
++	prefixes = kcalloc(size + 1, sizeof(*prefixes), GFP_KERNEL);
++
++	for (i = 0, j = 0; i < (size + 1); i++) {
++		if (i == index) {
++			leaves[i] = fib_index;
++			prefixes[i] = prefix_len;
++		} else {
++			leaves[i] = node->leaves[j];
++			prefixes[i] = node->prefixes[j];
++			j++;
++		}
++	}
++
++	kfree(node->leaves);
++	kfree(node->prefixes);
++	node->leaves = leaves;
++	node->prefixes = prefixes;
++	return true;
++}
++
++/*Insert a new node at index*/
++static void insert_chield_node(struct poptrie_node *node,
++		char index)
++{
++	int i, j;
++	struct poptrie_node *arr;
++	int arr_size  = (int)hweight64(node->nodevec);
++
++	arr = kcalloc(arr_size + 1, sizeof(*arr), GFP_KERNEL);
++	for (i = 0, j = 0; i < (arr_size + 1); i++) {
++		if (i != index && j < arr_size)
++			arr[i] = node->chield_nodes[j++];
++	}
++
++	kfree(node->chield_nodes);
++	node->chield_nodes = arr;
++}
++
++void poptrie_insert(struct poptrie *pt, u32 key,
++		u8 prefix_len, struct net_device *dev)
++{
++	int offset, i;
++	u32 index;
++	u8 consecutive_leafs;
++	u64 bitmap;
++	u64 bitmap_hp;
++	int arr_size;
++	unsigned long chield_index;
++	unsigned long leaf_index, prev_leaf_index;
++	unsigned long index_hp;
++	struct poptrie_node *node;
++	u8 prev_fib_index, prev_prefix_len;
++	u8 fib_index = get_fib_index(&pt->nhs, dev);
++
++	spin_lock(&pt->lock);
++
++	if (!pt->root)
++		pt->root = kzalloc(sizeof(*pt->root), GFP_KERNEL);
++
++	/* Default route */
++	if (prefix_len == 0) {
++		pt->def_nh = fib_index;
++		goto finish;
++	}
++
++	/*Iterate through the nodes*/
++	offset = 0;
++	node = pt->root;
++	while (prefix_len > (offset + 6)) {
++		index = extract(key, offset);
++		bitmap = 1ULL << index;
++		chield_index = hweight64(node->nodevec & (bitmap - 1));
++
++		/*No node for this index, so need to insert a node*/
++		if (!(node->nodevec & bitmap)) {
++			insert_chield_node(node, chield_index);
++			node->nodevec |= bitmap;
++		}
++		node = &node->chield_nodes[chield_index];
++		offset += 6;
++	}
++
++	/*Now need to insert a leaf*/
++
++	index = extract(key, offset);
++	bitmap = 1ULL << index;
++	consecutive_leafs = 1 << (offset + 6 - prefix_len);
++
++	if (node->vector & bitmap && node->leafvec & bitmap) {
++		/*A leaf already exist for this index, so update the existing leaf*/
++		leaf_index = hweight64(node->leafvec & (bitmap - 1));
++		arr_size = (int)hweight64(node->leafvec);
++		if (leaf_index >= arr_size)
++			goto error;
++		/*Ignore the prefix*/
++		if (node->prefixes[leaf_index] > prefix_len) {
++			goto finish;
++		} else if (node->prefixes[leaf_index] == prefix_len) {
++			set_fib_index(node, leaf_index, fib_index, prefix_len);
++		} else {
++			/*hole punching*/
++			bitmap_hp = bitmap << consecutive_leafs;
++			if (!(node->leafvec & bitmap_hp)) {
++				index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
++				if (node->prefixes[index_hp] <= prefix_len) {
++					insert_leaf(node, index_hp, fib_index, prefix_len);
++					node->leafvec |= bitmap_hp;
++				}
++
++				for (i = leaf_index; i < index_hp ; i++) {
++					if (node->prefixes[i] <= prefix_len)
++						set_fib_index(node, i, fib_index, prefix_len);
++				}
++			} else {
++				index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
++				for (i = leaf_index; i <= index_hp ; i++) {
++					if (node->prefixes[i] <= prefix_len)
++						set_fib_index(node, i, fib_index, prefix_len);
++				}
++			}
++		}
++	} else if (!(node->vector & bitmap)) {
++		/*No leaf for this index, so need to insert a leaf*/
++		leaf_index = hweight64(node->leafvec & (bitmap - 1));
++		insert_leaf(node, leaf_index, fib_index, prefix_len);
++		node->leafvec |= bitmap;
++	} else if (node->vector & bitmap && !(node->leafvec & bitmap)) {
++		/*There is a leaf for this index created by another
++		 *  prefix with smaller length
++		 */
++		prev_leaf_index = hweight64(node->leafvec & (bitmap - 1)) - 1;
++		arr_size = (int)hweight64(node->leafvec);
++		if (prev_leaf_index >= arr_size)
++			goto error;
++		if (node->prefixes[prev_leaf_index] <= prefix_len) {
++			insert_leaf(node, prev_leaf_index + 1, fib_index, prefix_len);
++			node->leafvec |= bitmap;
++		}
++
++		/*hole punching*/
++		prev_fib_index = node->leaves[prev_leaf_index];
++		prev_prefix_len = node->prefixes[prev_leaf_index];
++
++		bitmap_hp = bitmap << consecutive_leafs;
++		if (!(node->leafvec & bitmap_hp)) {
++			index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
++			if (node->prefixes[index_hp] <= prefix_len) {
++				if (prev_leaf_index < 0)
++					goto error;
++				insert_leaf(node, index_hp + 1,
++						prev_fib_index, prev_prefix_len);
++				node->leafvec |= bitmap_hp;
++			}
++		}
++
++		for (i = 2; i < consecutive_leafs; i++) {
++			bitmap_hp = bitmap << (i - 1);
++			if (node->leafvec & bitmap_hp) {
++				index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
++				insert_leaf(node, index_hp + 1,
++						fib_index, prefix_len);
++				node->leafvec |= bitmap_hp;
++			}
++		}
++	}
++
++	if (consecutive_leafs > 1)
++		node->vector |= ((1ULL << consecutive_leafs) - 1) << index;
++	else
++		node->vector |= bitmap;
++
++	goto finish;
++
++error:
++	pr_err("Something is very wrong !!!!");
++finish:
++	spin_unlock(&pt->lock);
++}
++
++/*We assume that pt->root is not NULL*/
++void poptrie_lookup(struct poptrie *pt, __be32 dest, struct net_device **dev)
++{
++	register u32 index;
++	register u64 bitmap, bitmask;
++	register unsigned long leaf_index;
++	register unsigned long node_index;
++	register struct poptrie_node *node = pt->root;
++	register u8 fib_index = pt->def_nh;
++	register u8 carry = 0;
++	register u8 carry_bit = 2;
++
++	while (1) {
++		/*Extract 6 bytes from dest */
++		if (likely(carry_bit != 8)) {
++			index = ((dest & 252) >> carry_bit) | carry;
++			carry = (dest & ((1 << carry_bit) - 1)) << (6 - carry_bit);
++			carry_bit = carry_bit + 2;
++			dest = dest >> 8;
++		} else {
++			index = carry;
++			carry = 0;
++			carry_bit = 2;
++		}
++
++		/*Create a bitmap based on the the extracted value*/
++		bitmap = 1ULL << index;
++		bitmask = bitmap - 1;
++
++		/*Find corresponding leaf*/
++		if (likely(node->vector & bitmap)) {
++			leaf_index = hweight64(node->leafvec & bitmask);
++			if (!(node->leafvec & bitmap))
++				leaf_index--;
++			fib_index = node->leaves[leaf_index];
++		}
++
++		/*Find corresponding node*/
++		if (likely(node->nodevec & bitmap)) {
++			node_index = hweight64(node->nodevec & bitmask);
++			node = &node->chield_nodes[node_index];
++			continue;
++		}
++
++		*dev = get_fib(&pt->nhs, fib_index);
++		return;
++	}
++}
