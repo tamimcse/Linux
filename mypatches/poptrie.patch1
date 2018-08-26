@@ -251,10 +251,11 @@ index b379520..b1246d2 100644
  obj-$(CONFIG_SYSCTL) += sysctl_net_ipv4.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..9bf9d5b
+index 0000000..b8dcd18
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
-@@ -0,0 +1,299 @@
+@@ -0,0 +1,295 @@
++// SPDX-License-Identifier: GPL-2.0
 +/*
 + *This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -323,7 +324,7 @@ index 0000000..9bf9d5b
 +
 +	leaves = kcalloc(size + 1, sizeof(*leaves), GFP_KERNEL);
 +	prefixes = kcalloc(size + 1, sizeof(*prefixes), GFP_KERNEL);
-+		
++
 +	for (i = 0, j = 0; i < (size + 1); i++) {
 +		if (i == index) {
 +			leaves[i] = fib_index;
@@ -334,7 +335,7 @@ index 0000000..9bf9d5b
 +			j++;
 +		}
 +	}
-+	
++
 +	kfree(node->leaves);
 +	kfree(node->prefixes);
 +	node->leaves = leaves;
@@ -373,13 +374,13 @@ index 0000000..9bf9d5b
 +	unsigned long leaf_index, prev_leaf_index;
 +	unsigned long index_hp;
 +	struct poptrie_node *node;
-+	u8 prev_fib_index, prev_prefix_len;	
-+	u8 fib_index = get_fib_index(&(pt->nhs), dev);
-+	
++	u8 prev_fib_index, prev_prefix_len;
++	u8 fib_index = get_fib_index(&pt->nhs, dev);
++
 +	spin_lock(&pt->lock);
 +
 +	if (!pt->root)
-+		pt->root = kzalloc(sizeof(*(pt->root)), GFP_KERNEL);
++		pt->root = kzalloc(sizeof(*pt->root), GFP_KERNEL);
 +
 +	/* Default route */
 +	if (prefix_len == 0) {
@@ -400,7 +401,7 @@ index 0000000..9bf9d5b
 +			insert_chield_node(node, chield_index);
 +			node->nodevec |= bitmap;
 +		}
-+		node = &(node->chield_nodes[chield_index]);
++		node = &node->chield_nodes[chield_index];
 +		offset += 6;
 +	}
 +
@@ -414,49 +415,47 @@ index 0000000..9bf9d5b
 +		/*A leaf already exist for this index, so update the existing leaf*/
 +		leaf_index = hweight64(node->leafvec & (bitmap - 1));
 +		arr_size = (int)hweight64(node->leafvec);
-+		if(leaf_index >= arr_size)
++		if (leaf_index >= arr_size)
 +			goto error;
 +		/*Ignore the prefix*/
-+		if(node->prefixes[leaf_index] > prefix_len)
++		if (node->prefixes[leaf_index] > prefix_len) {
 +			goto finish;
-+		else if(node->prefixes[leaf_index] == prefix_len)
++		} else if (node->prefixes[leaf_index] == prefix_len) {
 +			set_fib_index(node, leaf_index, fib_index, prefix_len);
-+		else {
++		} else {
 +			/*hole punching*/
-+			bitmap_hp = bitmap << consecutive_leafs;			
++			bitmap_hp = bitmap << consecutive_leafs;
 +			if (!(node->leafvec & bitmap_hp)) {
 +				index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
 +				if (node->prefixes[index_hp] <= prefix_len) {
 +					insert_leaf(node, index_hp, fib_index, prefix_len);
 +					node->leafvec |= bitmap_hp;
 +				}
-+				
-+				for (i = leaf_index; i < index_hp ; i++ ) {
++
++				for (i = leaf_index; i < index_hp ; i++) {
 +					if (node->prefixes[i] <= prefix_len)
 +						set_fib_index(node, i, fib_index, prefix_len);
-+				}				
-+				
++				}
 +			} else {
 +				index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
-+				for (i = leaf_index; i <= index_hp ; i++ ) {
++				for (i = leaf_index; i <= index_hp ; i++) {
 +					if (node->prefixes[i] <= prefix_len)
 +						set_fib_index(node, i, fib_index, prefix_len);
 +				}
 +			}
-+
 +		}
 +	} else if (!(node->vector & bitmap)) {
 +		/*No leaf for this index, so need to insert a leaf*/
 +		leaf_index = hweight64(node->leafvec & (bitmap - 1));
 +		insert_leaf(node, leaf_index, fib_index, prefix_len);
 +		node->leafvec |= bitmap;
-+	} else if (node->vector & bitmap && !(node->leafvec & bitmap)) {		
++	} else if (node->vector & bitmap && !(node->leafvec & bitmap)) {
 +		/*There is a leaf for this index created by another
 +		 *  prefix with smaller length
 +		 */
 +		prev_leaf_index = hweight64(node->leafvec & (bitmap - 1)) - 1;
 +		arr_size = (int)hweight64(node->leafvec);
-+		if(prev_leaf_index >= arr_size)
++		if (prev_leaf_index >= arr_size)
 +			goto error;
 +		if (node->prefixes[prev_leaf_index] <= prefix_len) {
 +			insert_leaf(node, prev_leaf_index + 1, fib_index, prefix_len);
@@ -464,22 +463,21 @@ index 0000000..9bf9d5b
 +		}
 +
 +		/*hole punching*/
-+		
 +		prev_fib_index = node->leaves[prev_leaf_index];
-+		prev_prefix_len = node->prefixes[prev_leaf_index];	
++		prev_prefix_len = node->prefixes[prev_leaf_index];
 +
 +		bitmap_hp = bitmap << consecutive_leafs;
 +		if (!(node->leafvec & bitmap_hp)) {
 +			index_hp = hweight64(node->leafvec & (bitmap_hp - 1)) - 1;
 +			if (node->prefixes[index_hp] <= prefix_len) {
-+				if(prev_leaf_index < 0)
++				if (prev_leaf_index < 0)
 +					goto error;
 +				insert_leaf(node, index_hp + 1,
-+						prev_fib_index, prev_prefix_len);				
++						prev_fib_index, prev_prefix_len);
 +				node->leafvec |= bitmap_hp;
 +			}
 +		}
-+		
++
 +		for (i = 2; i < consecutive_leafs; i++) {
 +			bitmap_hp = bitmap << (i - 1);
 +			if (node->leafvec & bitmap_hp) {
@@ -491,12 +489,10 @@ index 0000000..9bf9d5b
 +		}
 +	}
 +
-+	
-+	if (consecutive_leafs > 1) {
-+		node->vector |= ((1ULL << consecutive_leafs)-1) << index;
-+	} else {
++	if (consecutive_leafs > 1)
++		node->vector |= ((1ULL << consecutive_leafs) - 1) << index;
++	else
 +		node->vector |= bitmap;
-+	}
 +
 +	goto finish;
 +
@@ -518,7 +514,7 @@ index 0000000..9bf9d5b
 +	register u8 carry = 0;
 +	register u8 carry_bit = 2;
 +
-+	while(1) {
++	while (1) {
 +		/*Extract 6 bytes from dest */
 +		if (likely(carry_bit != 8)) {
 +			index = ((dest & 252) >> carry_bit) | carry;
@@ -546,11 +542,11 @@ index 0000000..9bf9d5b
 +		/*Fetch corresponding node*/
 +		if (likely(node->nodevec & bitmap)) {
 +			node_index = hweight64(node->nodevec & bitmask);
-+			node = &(node->chield_nodes[node_index]);
++			node = &node->chield_nodes[node_index];
 +			continue;
 +		}
 +
-+		*dev = get_fib(&(pt->nhs), fib_index);
++		*dev = get_fib(&pt->nhs, fib_index);
 +		return;
 +	}
 +}
