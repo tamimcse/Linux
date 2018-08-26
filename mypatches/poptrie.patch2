@@ -1,5 +1,5 @@
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..56246e2 100644
+index 81d0f21..c4374a1 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -197,6 +197,37 @@ struct fib_entry_notifier_info {
@@ -16,10 +16,10 @@ index 81d0f21..56246e2 100644
 +};
 +
 +struct poptrie_node {
-+	u64 vector;
-+	u64 leafvec;
-+	u64 nodevec;
-+	struct poptrie_node *chield_nodes;
++    u64 vector;
++    u64 leafvec;
++    u64 nodevec;
++    struct poptrie_node *chield_nodes;
 +	u8 *leaves;
 +	u8 *prefixes;
 +};
@@ -48,6 +48,21 @@ index 81d0f21..56246e2 100644
  	unsigned long		__data[0];
  };
  
+@@ -268,6 +300,14 @@ static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
+ 	rcu_read_lock();
+ 
+ 	tb = fib_get_table(net, RT_TABLE_MAIN);
++
++	/*Testing poptrie_lookup*/
++	if (tb && tb->pt.root) {
++		struct net_device *dev;
++
++		poptrie_lookup(&tb->pt, flp->daddr, &dev);
++	}
++
+ 	if (tb)
+ 		err = fib_table_lookup(tb, flp, res, flags | FIB_LOOKUP_NOREF);
+ 
 diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
 index b379520..b1246d2 100644
 --- a/net/ipv4/Makefile
@@ -63,7 +78,7 @@ index b379520..b1246d2 100644
  obj-$(CONFIG_SYSCTL) += sysctl_net_ipv4.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..b8dcd18
+index 0000000..b3a88ab
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
 @@ -0,0 +1,295 @@
@@ -362,3 +377,17 @@ index 0000000..b8dcd18
 +		return;
 +	}
 +}
+diff --git a/net/ipv4/fib_trie.c b/net/ipv4/fib_trie.c
+index 3dcffd3..0509a24 100644
+--- a/net/ipv4/fib_trie.c
++++ b/net/ipv4/fib_trie.c
+@@ -1280,6 +1280,9 @@ int fib_table_insert(struct net *net, struct fib_table *tb,
+ 	if (err)
+ 		goto out_fib_notif;
+ 
++	/*This should be done when Poptrie is enabled from CONFIG*/
++	poptrie_insert(&tb->pt, key, plen, fi->fib_dev);
++
+ 	if (!plen)
+ 		tb->tb_num_default++;
+ 
