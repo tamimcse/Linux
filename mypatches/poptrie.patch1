@@ -251,7 +251,7 @@ index b379520..b1246d2 100644
  obj-$(CONFIG_SYSCTL) += sysctl_net_ipv4.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..b8dcd18
+index 0000000..0fe420f
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
 @@ -0,0 +1,295 @@
@@ -322,8 +322,8 @@ index 0000000..b8dcd18
 +		return false;
 +	}
 +
-+	leaves = kcalloc(size + 1, sizeof(*leaves), GFP_KERNEL);
-+	prefixes = kcalloc(size + 1, sizeof(*prefixes), GFP_KERNEL);
++	leaves = kcalloc(size + 1, sizeof(*leaves), GFP_ATOMIC);
++	prefixes = kcalloc(size + 1, sizeof(*prefixes), GFP_ATOMIC);
 +
 +	for (i = 0, j = 0; i < (size + 1); i++) {
 +		if (i == index) {
@@ -351,7 +351,7 @@ index 0000000..b8dcd18
 +	struct poptrie_node *arr;
 +	int arr_size  = (int)hweight64(node->nodevec);
 +
-+	arr = kcalloc(arr_size + 1, sizeof(*arr), GFP_KERNEL);
++	arr = kcalloc(arr_size + 1, sizeof(*arr), GFP_ATOMIC);
 +	for (i = 0, j = 0; i < (arr_size + 1); i++) {
 +		if (i != index && j < arr_size)
 +			arr[i] = node->chield_nodes[j++];
@@ -380,7 +380,7 @@ index 0000000..b8dcd18
 +	spin_lock(&pt->lock);
 +
 +	if (!pt->root)
-+		pt->root = kzalloc(sizeof(*pt->root), GFP_KERNEL);
++		pt->root = kzalloc(sizeof(*pt->root), GFP_ATOMIC);
 +
 +	/* Default route */
 +	if (prefix_len == 0) {
@@ -531,7 +531,7 @@ index 0000000..b8dcd18
 +		bitmap = 1ULL << index;
 +		bitmask = bitmap - 1;
 +
-+		/*Fetch corresponding leaf*/
++		/*Find corresponding leaf*/
 +		if (likely(node->vector & bitmap)) {
 +			leaf_index = hweight64(node->leafvec & bitmask);
 +			if (!(node->leafvec & bitmap))
@@ -539,7 +539,7 @@ index 0000000..b8dcd18
 +			fib_index = node->leaves[leaf_index];
 +		}
 +
-+		/*Fetch corresponding node*/
++		/*Find corresponding node*/
 +		if (likely(node->nodevec & bitmap)) {
 +			node_index = hweight64(node->nodevec & bitmask);
 +			node = &node->chield_nodes[node_index];

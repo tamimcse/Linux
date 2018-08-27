@@ -163,8 +163,8 @@ index 0000000..b3a88ab
 +		return false;
 +	}
 +
-+	leaves = kcalloc(size + 1, sizeof(*leaves), GFP_KERNEL);
-+	prefixes = kcalloc(size + 1, sizeof(*prefixes), GFP_KERNEL);
++	leaves = kcalloc(size + 1, sizeof(*leaves), GFP_ATOMIC);
++	prefixes = kcalloc(size + 1, sizeof(*prefixes), GFP_ATOMIC);
 +
 +	for (i = 0, j = 0; i < (size + 1); i++) {
 +		if (i == index) {
@@ -192,7 +192,7 @@ index 0000000..b3a88ab
 +	struct poptrie_node *arr;
 +	int arr_size  = (int)hweight64(node->nodevec);
 +
-+	arr = kcalloc(arr_size + 1, sizeof(*arr), GFP_KERNEL);
++	arr = kcalloc(arr_size + 1, sizeof(*arr), GFP_ATOMIC);
 +	for (i = 0, j = 0; i < (arr_size + 1); i++) {
 +		if (i != index && j < arr_size)
 +			arr[i] = node->chield_nodes[j++];
@@ -221,7 +221,7 @@ index 0000000..b3a88ab
 +	spin_lock(&pt->lock);
 +
 +	if (!pt->root)
-+		pt->root = kzalloc(sizeof(*pt->root), GFP_KERNEL);
++		pt->root = kzalloc(sizeof(*pt->root), GFP_ATOMIC);
 +
 +	/* Default route */
 +	if (prefix_len == 0) {
