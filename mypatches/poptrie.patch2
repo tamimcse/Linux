@@ -1,3 +1,17 @@
+From c5e05ea66b06eb9313749bc8969b4c2798fcf96a Mon Sep 17 00:00:00 2001
+From: tamimcse <tamim@csebuet.org>
+Date: Sun, 26 Aug 2018 21:12:38 -0400
+Subject: [PATCH] Implented Poptrie
+
+Signed-off-by: tamimcse <tamim@csebuet.org>
+---
+ include/net/ip_fib.h   |  40 +++++++
+ net/ipv4/Makefile      |   2 +-
+ net/ipv4/fib_poptrie.c | 295 +++++++++++++++++++++++++++++++++++++++++++++++++
+ net/ipv4/fib_trie.c    |   3 +
+ 4 files changed, 339 insertions(+), 1 deletion(-)
+ create mode 100644 net/ipv4/fib_poptrie.c
+
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
 index 81d0f21..c4374a1 100644
 --- a/include/net/ip_fib.h
@@ -391,3 +405,6 @@ index 3dcffd3..0509a24 100644
  	if (!plen)
  		tb->tb_num_default++;
  
+-- 
+2.7.4
+
