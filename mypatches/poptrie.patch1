@@ -1,5 +1,5 @@
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..113a4eee 100644
+index 81d0f21..60c3b202 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -11,7 +11,7 @@ index 81d0f21..113a4eee 100644
  
  struct fib_config {
  	u8			fc_dst_len;
-@@ -197,6 +199,38 @@ struct fib_entry_notifier_info {
+@@ -197,6 +199,41 @@ struct fib_entry_notifier_info {
  	u32 tb_id;
  };
  
@@ -41,16 +41,19 @@ index 81d0f21..113a4eee 100644
 +	spinlock_t			lock;
 +};
 +
-+void poptrie_insert(struct poptrie *pt, u32 key,
++int poptrie_insert(struct poptrie *pt, u32 key,
 +		u8 prefix_len, struct net_device *dev);
-+void poptrie_lookup(struct poptrie *pt, __be32 dest,
++int poptrie_delete(struct poptrie *pt, u32 key,
++		u8 prefix_len);
++int poptrie_flush(struct poptrie *pt);
++int poptrie_lookup(struct poptrie *pt, __be32 dest,
 +		struct net_device **dev);
 +#endif
 +
  struct fib_nh_notifier_info {
  	struct fib_notifier_info info; /* must be first */
  	struct fib_nh *fib_nh;
-@@ -219,6 +253,9 @@ struct fib_table {
+@@ -219,6 +256,9 @@ struct fib_table {
  	int			tb_num_default;
  	struct rcu_head		rcu;
  	unsigned long 		*tb_data;
@@ -60,7 +63,7 @@ index 81d0f21..113a4eee 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,18 +296,177 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,18 +299,177 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -268,10 +271,10 @@ index b379520..fae4bd4 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..ea5b199
+index 0000000..417c92b
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
-@@ -0,0 +1,295 @@
+@@ -0,0 +1,309 @@
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
 + *   as published by the Free Software Foundation; either version
@@ -378,7 +381,7 @@ index 0000000..ea5b199
 +	node->chield_nodes = arr;
 +}
 +
-+void poptrie_insert(struct poptrie *pt, u32 key,
++int poptrie_insert(struct poptrie *pt, u32 key,
 +		u8 prefix_len, struct net_device *dev)
 +{
 +	int offset, i;
@@ -517,10 +520,24 @@ index 0000000..ea5b199
 +	pr_err("Something is very wrong !!!!");
 +finish:
 +	spin_unlock(&pt->lock);
++	return 0;
++}
++
++int poptrie_delete(struct poptrie *pt, u32 key,
++		u8 prefix_len)
++{
++	pr_err("In poptrie_delete");
++	return 0;
++}
++
++int poptrie_flush(struct poptrie *pt)
++{
++	pr_err("In poptrie_flush");
++	return 0;
 +}
 +
 +/*We assume that pt->root is not NULL*/
-+void poptrie_lookup(struct poptrie *pt, __be32 dest, struct net_device **dev)
++int poptrie_lookup(struct poptrie *pt, __be32 dest, struct net_device **dev)
 +{
 +	register u32 index;
 +	register u64 bitmap, bitmask;
@@ -564,11 +581,11 @@ index 0000000..ea5b199
 +		}
 +
 +		*dev = get_fib(&pt->nhs, fib_index);
-+		return;
++		return 0;
 +	}
 +}
 diff --git a/net/ipv4/fib_trie.c b/net/ipv4/fib_trie.c
-index 3dcffd3..b62f584 100644
+index 3dcffd3..a34998c 100644
 --- a/net/ipv4/fib_trie.c
 +++ b/net/ipv4/fib_trie.c
 @@ -1280,6 +1280,10 @@ int fib_table_insert(struct net *net, struct fib_table *tb,
@@ -582,3 +599,25 @@ index 3dcffd3..b62f584 100644
  	if (!plen)
  		tb->tb_num_default++;
  
+@@ -1564,6 +1568,10 @@ int fib_table_delete(struct net *net, struct fib_table *tb,
+ 
+ 	pr_debug("Deleting %08x/%d tos=%d t=%p\n", key, plen, tos, t);
+ 
++#if IS_ENABLED(CONFIG_FIB_POPTRIE)
++	poptrie_delete(&tb->pt, key, plen);
++#endif
++
+ 	fa_to_delete = NULL;
+ 	hlist_for_each_entry_from(fa, fa_list) {
+ 		struct fib_info *fi = fa->fa_info;
+@@ -1925,6 +1933,10 @@ int fib_table_flush(struct net *net, struct fib_table *tb)
+ 		}
+ 	}
+ 
++#if IS_ENABLED(CONFIG_FIB_POPTRIE)
++	poptrie_flush(&tb->pt);
++#endif
++
+ 	pr_debug("trie_flush found=%d\n", found);
+ 	return found;
+ }
