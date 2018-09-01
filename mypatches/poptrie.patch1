@@ -1,5 +1,5 @@
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..474c6b2 100644
+index 81d0f21..113a4eee 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -11,10 +11,11 @@ index 81d0f21..474c6b2 100644
  
  struct fib_config {
  	u8			fc_dst_len;
-@@ -197,6 +199,37 @@ struct fib_entry_notifier_info {
+@@ -197,6 +199,38 @@ struct fib_entry_notifier_info {
  	u32 tb_id;
  };
  
++#if IS_ENABLED(CONFIG_FIB_POPTRIE)
 +/*Maximum number of next-hop*/
 +#define NEXT_HOP_MAX 255
 +
@@ -44,20 +45,22 @@ index 81d0f21..474c6b2 100644
 +		u8 prefix_len, struct net_device *dev);
 +void poptrie_lookup(struct poptrie *pt, __be32 dest,
 +		struct net_device **dev);
-+
++#endif
 +
  struct fib_nh_notifier_info {
  	struct fib_notifier_info info; /* must be first */
  	struct fib_nh *fib_nh;
-@@ -219,6 +252,7 @@ struct fib_table {
+@@ -219,6 +253,9 @@ struct fib_table {
  	int			tb_num_default;
  	struct rcu_head		rcu;
  	unsigned long 		*tb_data;
++#if IS_ENABLED(CONFIG_FIB_POPTRIE)	
 +	struct poptrie	pt;
++#endif	
  	unsigned long		__data[0];
  };
  
-@@ -259,18 +293,177 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,18 +296,177 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -236,28 +239,40 @@ index 81d0f21..474c6b2 100644
  	if (err == -EAGAIN)
  		err = -ENETUNREACH;
  
+diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
+index 80dad30..34a390b 100644
+--- a/net/ipv4/Kconfig
++++ b/net/ipv4/Kconfig
+@@ -52,6 +52,10 @@ config IP_ADVANCED_ROUTER
+ 
+ 	  If unsure, say N here.
+ 
++config FIB_POPTRIE
++	bool
++	default y
++
+ config IP_FIB_TRIE_STATS
+ 	bool "FIB TRIE statistics"
+ 	depends on IP_ADVANCED_ROUTER
 diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
-index b379520..b1246d2 100644
+index b379520..fae4bd4 100644
 --- a/net/ipv4/Makefile
 +++ b/net/ipv4/Makefile
-@@ -14,7 +14,7 @@ obj-y     := route.o inetpeer.o protocol.o \
- 	     udp_offload.o arp.o icmp.o devinet.o af_inet.o igmp.o \
- 	     fib_frontend.o fib_semantics.o fib_trie.o fib_notifier.o \
- 	     inet_fragment.o ping.o ip_tunnel_core.o gre_offload.o \
--	     metrics.o
-+	     metrics.o fib_poptrie.o
+@@ -62,6 +62,7 @@ obj-$(CONFIG_TCP_CONG_LP) += tcp_lp.o
+ obj-$(CONFIG_TCP_CONG_YEAH) += tcp_yeah.o
+ obj-$(CONFIG_TCP_CONG_ILLINOIS) += tcp_illinois.o
+ obj-$(CONFIG_NETLABEL) += cipso_ipv4.o
++obj-$(CONFIG_FIB_POPTRIE) += fib_poptrie.o
  
- obj-$(CONFIG_NET_IP_TUNNEL) += ip_tunnel.o
- obj-$(CONFIG_SYSCTL) += sysctl_net_ipv4.o
+ obj-$(CONFIG_XFRM) += xfrm4_policy.o xfrm4_state.o xfrm4_input.o \
+ 		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..0fe420f
+index 0000000..ea5b199
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
 @@ -0,0 +1,295 @@
-+// SPDX-License-Identifier: GPL-2.0
-+/*
-+ *This program is free software; you can redistribute it and/or
++/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
 + *   as published by the Free Software Foundation; either version
 + *   2 of the License, or (at your option) any later version.
@@ -302,7 +317,8 @@ index 0000000..0fe420f
 +
 +/*Set FIB index and prefix length to a leaf*/
 +static void set_fib_index(struct poptrie_node *node,
-+		unsigned long leaf_index, char fib_index, char prefix_len)
++			  unsigned long leaf_index,
++			  char fib_index, char prefix_len)
 +{
 +	node->leaves[leaf_index] = fib_index;
 +	node->prefixes[leaf_index] = prefix_len;
@@ -310,7 +326,8 @@ index 0000000..0fe420f
 +
 +/*Insert a leaf at index*/
 +static bool insert_leaf(struct poptrie_node *node,
-+		char index, char fib_index, char prefix_len)
++					    char index, char fib_index,
++					    char prefix_len)
 +{
 +	int i, j;
 +	char *leaves;
@@ -551,17 +568,17 @@ index 0000000..0fe420f
 +	}
 +}
 diff --git a/net/ipv4/fib_trie.c b/net/ipv4/fib_trie.c
-index 3dcffd3..746c5e3 100644
+index 3dcffd3..b62f584 100644
 --- a/net/ipv4/fib_trie.c
 +++ b/net/ipv4/fib_trie.c
-@@ -1279,6 +1279,10 @@ int fib_table_insert(struct net *net, struct fib_table *tb,
- 	err = fib_insert_alias(t, tp, l, new_fa, fa, key);
+@@ -1280,6 +1280,10 @@ int fib_table_insert(struct net *net, struct fib_table *tb,
  	if (err)
  		goto out_fib_notif;
-+  
-+
-+	pr_info("multilevel_map_insert: tab_id=%u %pI4/%d slen=%d default=%d %s\n", tb->tb_id, &cfg->fc_dst, plen, slen, new_fa->fa_default, fi->fib_dev->name);   
-+	poptrie_insert(&tb->pt, key, plen, fi->fib_dev);
  
++#if IS_ENABLED(CONFIG_FIB_POPTRIE)
++	poptrie_insert(&tb->pt, key, plen, fi->fib_dev);
++#endif
++
  	if (!plen)
  		tb->tb_num_default++;
+ 
