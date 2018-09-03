@@ -1,5 +1,5 @@
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..60c3b202 100644
+index 81d0f21..5321542 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -11,12 +11,15 @@ index 81d0f21..60c3b202 100644
  
  struct fib_config {
  	u8			fc_dst_len;
-@@ -197,6 +199,41 @@ struct fib_entry_notifier_info {
+@@ -197,6 +199,45 @@ struct fib_entry_notifier_info {
  	u32 tb_id;
  };
  
 +#if IS_ENABLED(CONFIG_FIB_POPTRIE)
-+/*Maximum number of next-hop*/
++/*
++ * The router can have upto 255 ports. This limitation
++ * allows us to represent fib_index as u8 
++ */
 +#define NEXT_HOP_MAX 255
 +
 +struct next_hops {
@@ -29,15 +32,16 @@ index 81d0f21..60c3b202 100644
 +    u64 vector;
 +    u64 leafvec;
 +    u64 nodevec;
-+    struct poptrie_node *chield_nodes;
++    struct poptrie_node *child_nodes;
 +	u8 *leaves;
 +	u8 *prefixes;
++	struct rcu_head		rcu;	
 +};
 +
 +struct poptrie {
 +	char	def_nh;
 +	struct next_hops	nhs;
-+	struct poptrie_node *root;
++	struct poptrie_node __rcu *root;
 +	spinlock_t			lock;
 +};
 +
@@ -53,7 +57,7 @@ index 81d0f21..60c3b202 100644
  struct fib_nh_notifier_info {
  	struct fib_notifier_info info; /* must be first */
  	struct fib_nh *fib_nh;
-@@ -219,6 +256,9 @@ struct fib_table {
+@@ -219,6 +260,9 @@ struct fib_table {
  	int			tb_num_default;
  	struct rcu_head		rcu;
  	unsigned long 		*tb_data;
@@ -63,7 +67,7 @@ index 81d0f21..60c3b202 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,18 +299,177 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,18 +303,177 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -170,7 +174,7 @@ index 81d0f21..60c3b202 100644
  	tb = fib_get_table(net, RT_TABLE_MAIN);
 +
 +
-+	for(; j < 82; j++){
++	for(j = 0; j < 82; j++){
 +//		inet_aton(ips[j], &some_addr);
 +		ip_addr = in_aton(wtf[j]);
 +//		pr_err("ip_addr=%u %pI4 !!!!!!!", ip_addr, &ip_addr);
@@ -271,10 +275,10 @@ index b379520..fae4bd4 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..417c92b
+index 0000000..48bfc96
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
-@@ -0,0 +1,309 @@
+@@ -0,0 +1,351 @@
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
 + *   as published by the Free Software Foundation; either version
@@ -303,14 +307,8 @@ index 0000000..417c92b
 +	return nhs->count - 1;
 +}
 +
-+/*Converts next-hop index into actual next-hop*/
-+static struct net_device *get_fib(struct next_hops *nhs, u8 fib_index)
-+{
-+	return nhs->netdev_arr[fib_index];
-+}
-+
 +/*Extracts 6 bytes from key starting from offset*/
-+static inline u32 extract(u32 key, int offset)
++static u32 extract(u32 key, int offset)
 +{
 +	if (likely(offset < 26))
 +		return (key >> (26 - offset)) & 63;
@@ -374,11 +372,11 @@ index 0000000..417c92b
 +	arr = kcalloc(arr_size + 1, sizeof(*arr), GFP_ATOMIC);
 +	for (i = 0, j = 0; i < (arr_size + 1); i++) {
 +		if (i != index && j < arr_size)
-+			arr[i] = node->chield_nodes[j++];
++			arr[i] = node->child_nodes[j++];
 +	}
 +
-+	kfree(node->chield_nodes);
-+	node->chield_nodes = arr;
++	kfree(node->child_nodes);
++	node->child_nodes = arr;
 +}
 +
 +int poptrie_insert(struct poptrie *pt, u32 key,
@@ -398,9 +396,12 @@ index 0000000..417c92b
 +	u8 fib_index = get_fib_index(&pt->nhs, dev);
 +
 +	spin_lock(&pt->lock);
-+
-+	if (!pt->root)
-+		pt->root = kzalloc(sizeof(*pt->root), GFP_ATOMIC);
++	
++	node = rcu_dereference(pt->root);
++	if (!node) {
++		node = kzalloc(sizeof(*node), GFP_ATOMIC);
++		rcu_assign_pointer(pt->root, node);
++	}
 +
 +	/* Default route */
 +	if (prefix_len == 0) {
@@ -410,7 +411,6 @@ index 0000000..417c92b
 +
 +	/*Iterate through the nodes*/
 +	offset = 0;
-+	node = pt->root;
 +	while (prefix_len > (offset + 6)) {
 +		index = extract(key, offset);
 +		bitmap = 1ULL << index;
@@ -421,7 +421,7 @@ index 0000000..417c92b
 +			insert_chield_node(node, chield_index);
 +			node->nodevec |= bitmap;
 +		}
-+		node = &node->chield_nodes[chield_index];
++		node = &node->child_nodes[chield_index];
 +		offset += 6;
 +	}
 +
@@ -530,23 +530,68 @@ index 0000000..417c92b
 +	return 0;
 +}
 +
-+int poptrie_flush(struct poptrie *pt)
++static int poptrie_node_free(struct poptrie_node *node)
 +{
-+	pr_err("In poptrie_flush");
++	int i;
++	int child_count;
++
++	if (!node)
++		return 0;
++	child_count = hweight64(node->nodevec);
++	if (node->child_nodes) {
++		for (i = 0; i < child_count; i++) {
++			poptrie_node_free(&node->child_nodes[i]);
++		}
++	}
++
++	kfree(node->leaves);
++	kfree(node->prefixes);
++	kfree(node->child_nodes);
++
++	node->leaves = NULL;
++	node->prefixes = NULL;
++	node->child_nodes = NULL;
++
++	node->vector = 0;
++	node->leafvec = 0;
++	node->nodevec = 0;
++
 +	return 0;
 +}
 +
-+/*We assume that pt->root is not NULL*/
++static void poptrie_rcu_free(struct rcu_head *rcu)
++{
++	poptrie_node_free(container_of(rcu, struct poptrie_node, rcu));
++}
++
++int poptrie_flush(struct poptrie *pt)
++{
++	struct poptrie_node *rt = rcu_dereference(pt->root);
++	if(!rt)
++		return 0;
++
++	RCU_INIT_POINTER(pt->root, NULL);
++	call_rcu(&rt->rcu, poptrie_rcu_free);
++	return 0;
++}
++
 +int poptrie_lookup(struct poptrie *pt, __be32 dest, struct net_device **dev)
 +{
 +	register u32 index;
 +	register u64 bitmap, bitmask;
 +	register unsigned long leaf_index;
 +	register unsigned long node_index;
-+	register struct poptrie_node *node = pt->root;
++	register struct poptrie_node *node;
 +	register u8 fib_index = pt->def_nh;
 +	register u8 carry = 0;
-+	register u8 carry_bit = 2;
++	register u8 carry_bit = 2;	
++	
++	rcu_read_lock();
++	
++	node = rcu_dereference(pt->root);	
++	
++	if (!node)
++		goto finish;
 +
 +	while (1) {
 +		/*Extract 6 bytes from dest */
@@ -576,11 +621,12 @@ index 0000000..417c92b
 +		/*Find corresponding node*/
 +		if (likely(node->nodevec & bitmap)) {
 +			node_index = hweight64(node->nodevec & bitmask);
-+			node = &node->chield_nodes[node_index];
++			node = &node->child_nodes[node_index];
 +			continue;
 +		}
-+
-+		*dev = get_fib(&pt->nhs, fib_index);
++finish:
++		*dev = pt->nhs.netdev_arr[fib_index];
++		rcu_read_unlock();
 +		return 0;
 +	}
 +}
