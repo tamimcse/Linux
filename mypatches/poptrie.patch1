@@ -275,10 +275,10 @@ index b379520..fae4bd4 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..48bfc96
+index 0000000..8e749eb
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
-@@ -0,0 +1,351 @@
+@@ -0,0 +1,356 @@
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
 + *   as published by the Free Software Foundation; either version
@@ -530,6 +530,10 @@ index 0000000..48bfc96
 +	return 0;
 +}
 +
++/*
++ * This recursive function frees all the nodes in
++ * depth-first-search fashion
++ */
 +static int poptrie_node_free(struct poptrie_node *node)
 +{
 +	int i;
@@ -571,6 +575,7 @@ index 0000000..48bfc96
 +		return 0;
 +
 +	RCU_INIT_POINTER(pt->root, NULL);
++	/* Wait for all references to be released */
 +	call_rcu(&rt->rcu, poptrie_rcu_free);
 +	return 0;
 +}
