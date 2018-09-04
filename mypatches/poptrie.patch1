@@ -1,5 +1,5 @@
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..5321542 100644
+index 81d0f21..119fbbf 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -67,7 +67,7 @@ index 81d0f21..5321542 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,18 +303,177 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,18 +303,179 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -107,6 +107,7 @@ index 81d0f21..5321542 100644
 +		"220.32.0.0",
 +		"223.16.0.0",
 +		"223.0.0.0",
++		"203.33.186.250",
 +		"27.160.0.0",
 +		"27.128.0.0",
 +		"20.128.0.0",
@@ -165,6 +166,7 @@ index 81d0f21..5321542 100644
 +		"90.188.31.245",
 +		"144.243.215.191",
 +		"144.243.215.127",
++		"2.91.97.138",
 +//		"169.254.221.211",
 +//		"169.254.231.253",
 +	};
@@ -174,7 +176,7 @@ index 81d0f21..5321542 100644
  	tb = fib_get_table(net, RT_TABLE_MAIN);
 +
 +
-+	for(j = 0; j < 82; j++){
++	for(j = 0; j < 84; j++){
 +//		inet_aton(ips[j], &some_addr);
 +		ip_addr = in_aton(wtf[j]);
 +//		pr_err("ip_addr=%u %pI4 !!!!!!!", ip_addr, &ip_addr);
@@ -275,10 +277,10 @@ index b379520..fae4bd4 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..8e749eb
+index 0000000..e762ac8
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
-@@ -0,0 +1,356 @@
+@@ -0,0 +1,474 @@
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
 + *   as published by the Free Software Foundation; either version
@@ -377,6 +379,38 @@ index 0000000..8e749eb
 +
 +	kfree(node->child_nodes);
 +	node->child_nodes = arr;
++}
++
++/*Delete a leaf at index*/
++static bool delete_leaf(struct poptrie_node *node,
++					    char index)
++{
++	int i, j;
++	char *leaves;
++	char *prefixes;
++	int size = (int)hweight64(node->leafvec);
++
++	if (index >= size) {
++		pr_err("Index needs to be smaller or equal to size");
++		return false;
++	}
++
++	leaves = kcalloc(size - 1, sizeof(*leaves), GFP_ATOMIC);
++	prefixes = kcalloc(size - 1, sizeof(*prefixes), GFP_ATOMIC);
++
++	for (i = 0, j = 0; i < size; i++) {
++		if (i != index) {
++			leaves[j] = node->leaves[i];
++			prefixes[j] = node->prefixes[i];
++			j++;
++		}
++	}
++
++	kfree(node->leaves);
++	kfree(node->prefixes);
++	node->leaves = leaves;
++	node->prefixes = prefixes;
++	return true;
 +}
 +
 +int poptrie_insert(struct poptrie *pt, u32 key,
@@ -526,7 +560,93 @@ index 0000000..8e749eb
 +int poptrie_delete(struct poptrie *pt, u32 key,
 +		u8 prefix_len)
 +{
-+	pr_err("In poptrie_delete");
++	int offset, i;
++	u32 index;
++	u8 consecutive_leafs;
++	u64 bitmap;
++	int arr_size;
++	unsigned long chield_index;
++	unsigned long leaf_index;
++	struct poptrie_node *node;
++	bool update_vector = true;
++
++	spin_lock(&pt->lock);
++
++	node = rcu_dereference(pt->root);
++
++	if (!node || prefix_len == 0)
++		goto finish;
++
++	/*Iterate through the nodes*/
++	offset = 0;
++	while (prefix_len > (offset + 6)) {
++		index = extract(key, offset);
++		bitmap = 1ULL << index;
++		chield_index = hweight64(node->nodevec & (bitmap - 1));
++		/*No node for this index*/
++		if (!(node->nodevec & bitmap))
++			goto finish;
++		node = &node->child_nodes[chield_index];
++		offset += 6;
++	}
++
++	/*Now need to delete the leaf*/
++
++	index = extract(key, offset);
++	bitmap = 1ULL << index;
++	consecutive_leafs = 1 << (offset + 6 - prefix_len);
++
++	/*The prefix does not exist*/
++	if (!(node->vector & bitmap) || !(node->leafvec & bitmap))
++		goto finish;
++
++	leaf_index = hweight64(node->leafvec & (bitmap - 1));
++	arr_size = (int)hweight64(node->leafvec);
++	if (leaf_index >= arr_size)
++		goto error;
++
++	/*The prefix-length does not match*/
++	if(node->prefixes[leaf_index] != prefix_len)
++		goto finish;
++
++	/*
++	 * Check if this prefix will replaced
++	 * by another prefix with smaller length
++	 */
++	for (i = leaf_index - 1; i >= 0; i-- ) {
++		if (node->prefixes[leaf_index] < prefix_len) {
++			update_vector = false;
++			break;
++		}
++	}
++
++	if (update_vector) {
++		if (consecutive_leafs > 1)
++			node->vector &= ~(((1ULL << consecutive_leafs) - 1) << index);
++		else
++			node->vector &= ~bitmap;
++	}
++
++	if (consecutive_leafs > 1) {
++		for (i = 0; i < consecutive_leafs; i++) {
++			if ((node->leafvec & bitmap) &&
++					(node->prefixes[leaf_index] == prefix_len)) {
++				delete_leaf(node, leaf_index);
++				node->leafvec &= ~bitmap;
++			}
++			bitmap <<= 1;
++			leaf_index = hweight64(node->leafvec & (bitmap - 1));
++		}
++	} else {
++		delete_leaf(node, leaf_index);
++		node->leafvec &= ~bitmap;
++	}
++
++	goto finish;
++error:
++	pr_err("Something is very wrong !!!!");
++finish:
++	spin_unlock(&pt->lock);
 +	return 0;
 +}
 +
