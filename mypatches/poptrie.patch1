@@ -9,7 +9,7 @@ index 0f7a27f..f9a1e7b 100644
 -
 +CONFIG_FIB_POPTRIE=y
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..f0c2199 100644
+index 81d0f21..9f6b715 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -28,7 +28,7 @@ index 81d0f21..f0c2199 100644
 +#if IS_ENABLED(CONFIG_FIB_POPTRIE)
 +/*
 + * The router can have upto 255 ports. This limitation
-+ * allows us to represent fib_index as u8 
++ * allows us to represent fib_index as u8
 + */
 +#define NEXT_HOP_MAX 255
 +
@@ -39,13 +39,13 @@ index 81d0f21..f0c2199 100644
 +};
 +
 +struct poptrie_node {
-+    u64 vector;
-+    u64 leafvec;
-+    u64 nodevec;
-+    struct poptrie_node *child_nodes;
++	u64 vector;
++	u64 leafvec;
++	u64 nodevec;
++	struct poptrie_node *child_nodes;
 +	u8 *leaves;
 +	u8 *prefixes;
-+	struct rcu_head		rcu;	
++	struct rcu_head		rcu;
 +};
 +
 +struct poptrie {
@@ -71,9 +71,9 @@ index 81d0f21..f0c2199 100644
  	int			tb_num_default;
  	struct rcu_head		rcu;
  	unsigned long 		*tb_data;
-+#if IS_ENABLED(CONFIG_FIB_POPTRIE)	
++#if IS_ENABLED(CONFIG_FIB_POPTRIE)
 +	struct poptrie	pt;
-+#endif	
++#endif
  	unsigned long		__data[0];
  };
  
@@ -281,10 +281,10 @@ index b379520..fae4bd4 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..3f231e7
+index 0000000..331db1a
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
-@@ -0,0 +1,483 @@
+@@ -0,0 +1,487 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -497,14 +497,18 @@ index 0000000..3f231e7
 +
 +				for (i = leaf_index; i < index_hp ; i++) {
 +					if (node->prefixes[i] <= prefix_len)
-+						set_fib_index(node, i, fib_index, prefix_len);
++						set_fib_index(node, i,
++							      fib_index,
++							      prefix_len);
 +				}
 +			} else {
 +				index_hp = hweight64(node->leafvec &
 +						     (bitmap_hp - 1)) - 1;
 +				for (i = leaf_index; i <= index_hp ; i++) {
 +					if (node->prefixes[i] <= prefix_len)
-+						set_fib_index(node, i, fib_index, prefix_len);
++						set_fib_index(node, i,
++							      fib_index,
++							      prefix_len);
 +				}
 +			}
 +		}
