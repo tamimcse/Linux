@@ -249,7 +249,7 @@ index 81d0f21..119fbbf 100644
  		err = -ENETUNREACH;
  
 diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
-index 80dad30..34a390b 100644
+index 80dad30..75e9c9a 100644
 --- a/net/ipv4/Kconfig
 +++ b/net/ipv4/Kconfig
 @@ -52,6 +52,10 @@ config IP_ADVANCED_ROUTER
@@ -258,7 +258,7 @@ index 80dad30..34a390b 100644
  
 +config FIB_POPTRIE
 +	bool
-+	default y
++	default n
 +
  config IP_FIB_TRIE_STATS
  	bool "FIB TRIE statistics"
