@@ -1,20 +1,20 @@
-From 3dc9683298ed896dd3080733503c35d68f05370e Mon Sep 17 00:00:00 2001
+From 0c56ab18e8031ed7468bc46c1c743000dc01eb1e Mon Sep 17 00:00:00 2001
 From: tamimcse <tamim@csebuet.org>
-Date: Mon, 3 Sep 2018 23:56:43 -0400
+Date: Wed, 5 Sep 2018 01:13:55 -0400
 Subject: [PATCH] Poptrie based routing table lookup
 
 Signed-off-by: tamimcse <tamim@csebuet.org>
 ---
  include/net/ip_fib.h   |  42 +++++
- net/ipv4/Kconfig       |   4 +
+ net/ipv4/Kconfig       |   9 +
  net/ipv4/Makefile      |   1 +
- net/ipv4/fib_poptrie.c | 483 +++++++++++++++++++++++++++++++++++++++++++++++++
+ net/ipv4/fib_poptrie.c | 496 +++++++++++++++++++++++++++++++++++++++++++++++++
  net/ipv4/fib_trie.c    |  12 ++
- 5 files changed, 542 insertions(+)
+ 5 files changed, 560 insertions(+)
  create mode 100644 net/ipv4/fib_poptrie.c
 
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..76be548 100644
+index 81d0f21..9f07760 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -197,6 +197,45 @@ struct fib_entry_notifier_info {
@@ -24,7 +24,7 @@ index 81d0f21..76be548 100644
 +#if IS_ENABLED(CONFIG_FIB_POPTRIE)
 +/*
 + * The router can have upto 255 ports. This limitation
-+ * allows us to represent fib_index as u8 
++ * allows us to represent fib_index as u8
 + */
 +#define NEXT_HOP_MAX 255
 +
@@ -35,13 +35,13 @@ index 81d0f21..76be548 100644
 +};
 +
 +struct poptrie_node {
-+    u64 vector;
-+    u64 leafvec;
-+    u64 nodevec;
-+    struct poptrie_node *child_nodes;
++	u64 vector;
++	u64 leafvec;
++	u64 nodevec;
++	struct poptrie_node *child_nodes;
 +	u8 *leaves;
 +	u8 *prefixes;
-+	struct rcu_head		rcu;	
++	struct rcu_head		rcu;
 +};
 +
 +struct poptrie {
@@ -67,23 +67,28 @@ index 81d0f21..76be548 100644
  	int			tb_num_default;
  	struct rcu_head		rcu;
  	unsigned long 		*tb_data;
-+#if IS_ENABLED(CONFIG_FIB_POPTRIE)	
++#if IS_ENABLED(CONFIG_FIB_POPTRIE)
 +	struct poptrie	pt;
-+#endif	
++#endif
  	unsigned long		__data[0];
  };
  
 diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
-index 80dad30..75e9c9a 100644
+index 80dad30..aac1431 100644
 --- a/net/ipv4/Kconfig
 +++ b/net/ipv4/Kconfig
-@@ -52,6 +52,10 @@ config IP_ADVANCED_ROUTER
+@@ -52,6 +52,15 @@ config IP_ADVANCED_ROUTER
  
  	  If unsure, say N here.
  
 +config FIB_POPTRIE
-+	bool
-+	default n
++	bool "FIB POPTRIE"
++	help
++	  This will store FIB table as a Poptrie (along with LC-trie). This is
++	  useful if you want fast routing table lookup in XDP forwarding.
++	  XDP along with fast routing table lookup will enable Linux to work as
++	  a carrier router (similar to DPDK/VPP based routers).
++	  Currently this option only supports up to 255 ports.
 +
  config IP_FIB_TRIE_STATS
  	bool "FIB TRIE statistics"
@@ -102,10 +107,10 @@ index b379520..fae4bd4 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..3f231e7
+index 0000000..4fce766
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
-@@ -0,0 +1,483 @@
+@@ -0,0 +1,496 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -318,14 +323,18 @@ index 0000000..3f231e7
 +
 +				for (i = leaf_index; i < index_hp ; i++) {
 +					if (node->prefixes[i] <= prefix_len)
-+						set_fib_index(node, i, fib_index, prefix_len);
++						set_fib_index(node, i,
++							      fib_index,
++							      prefix_len);
 +				}
 +			} else {
 +				index_hp = hweight64(node->leafvec &
 +						     (bitmap_hp - 1)) - 1;
 +				for (i = leaf_index; i <= index_hp ; i++) {
 +					if (node->prefixes[i] <= prefix_len)
-+						set_fib_index(node, i, fib_index, prefix_len);
++						set_fib_index(node, i,
++							      fib_index,
++							      prefix_len);
 +				}
 +			}
 +		}
@@ -535,24 +544,27 @@ index 0000000..3f231e7
 +
 +int poptrie_lookup(struct poptrie *pt, __be32 dest, struct net_device **dev)
 +{
-+	register u32 index;
-+	register u64 bitmap, bitmask;
-+	register unsigned long leaf_index;
-+	register unsigned long node_index;
-+	register struct poptrie_node *node;
-+	register u8 fib_index = pt->def_nh;
-+	register u8 carry = 0;
-+	register u8 carry_bit = 2;
++	u32 index;
++	u64 bitmap, bitmask;
++	unsigned long leaf_index;
++	unsigned long node_index;
++	struct poptrie_node *node;
++	u8 fib_index = pt->def_nh;
++	u8 carry = 0;
++	u8 carry_bit = 2;
 +
 +	rcu_read_lock();
 +
 +	node = rcu_dereference(pt->root);
 +
-+	if (!node)
++	if (unlikely(!node))
 +		goto finish;
 +
 +	while (1) {
-+		/*Extract 6 bytes from dest */
++		/*Extract 6 bytes from dest without converting
++		 * from network to host format (via ntohl). This requires
++		 * fewer CPU cycles
++		 */
 +		if (likely(carry_bit != 8)) {
 +			index = ((dest & 252) >> carry_bit) | carry;
 +			carry = (dest & ((1 << carry_bit) - 1))
@@ -571,6 +583,9 @@ index 0000000..3f231e7
 +
 +		/*Find corresponding leaf*/
 +		if (likely(node->vector & bitmap)) {
++			/*hweight64 == popcnt. It counts
++			 * the number of bits set to 1
++			 */
 +			leaf_index = hweight64(node->leafvec & bitmask);
 +			if (!(node->leafvec & bitmap))
 +				leaf_index--;
@@ -579,6 +594,9 @@ index 0000000..3f231e7
 +
 +		/*Find corresponding node*/
 +		if (likely(node->nodevec & bitmap)) {
++			/*hweight64 == popcnt. It counts
++			 * the number of bits set to 1
++			 */
 +			node_index = hweight64(node->nodevec & bitmask);
 +			node = &node->child_nodes[node_index];
 +			continue;
