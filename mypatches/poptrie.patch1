@@ -253,15 +253,21 @@ index 81d0f21..9f6b715 100644
  		err = fib_table_lookup(tb, flp, res, flags | FIB_LOOKUP_NOREF);
  
 diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
-index 80dad30..5897098 100644
+index 80dad30..aac1431 100644
 --- a/net/ipv4/Kconfig
 +++ b/net/ipv4/Kconfig
-@@ -52,6 +52,9 @@ config IP_ADVANCED_ROUTER
+@@ -52,6 +52,15 @@ config IP_ADVANCED_ROUTER
  
  	  If unsure, say N here.
  
 +config FIB_POPTRIE
 +	bool "FIB POPTRIE"
++	help
++	  This will store FIB table as a Poptrie (along with LC-trie). This is
++	  useful if you want fast routing table lookup in XDP forwarding.
++	  XDP along with fast routing table lookup will enable Linux to work as
++	  a carrier router (similar to DPDK/VPP based routers).
++	  Currently this option only supports up to 255 ports.
 +
  config IP_FIB_TRIE_STATS
  	bool "FIB TRIE statistics"
