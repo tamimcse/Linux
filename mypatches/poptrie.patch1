@@ -281,10 +281,10 @@ index b379520..fae4bd4 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..331db1a
+index 0000000..255b871
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
-@@ -0,0 +1,487 @@
+@@ -0,0 +1,496 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -731,11 +731,14 @@ index 0000000..331db1a
 +
 +	node = rcu_dereference(pt->root);
 +
-+	if (!node)
++	if (unlikely(!node))
 +		goto finish;
 +
 +	while (1) {
-+		/*Extract 6 bytes from dest */
++		/*Extract 6 bytes from dest without converting
++		 * from network to host format (via ntohl). This requires
++		 * fewer CPU cycles
++		 */
 +		if (likely(carry_bit != 8)) {
 +			index = ((dest & 252) >> carry_bit) | carry;
 +			carry = (dest & ((1 << carry_bit) - 1))
@@ -754,6 +757,9 @@ index 0000000..331db1a
 +
 +		/*Find corresponding leaf*/
 +		if (likely(node->vector & bitmap)) {
++			/*hweight64 == popcnt. It counts
++			 * the number of bits set to 1
++			 */
 +			leaf_index = hweight64(node->leafvec & bitmask);
 +			if (!(node->leafvec & bitmap))
 +				leaf_index--;
@@ -762,6 +768,9 @@ index 0000000..331db1a
 +
 +		/*Find corresponding node*/
 +		if (likely(node->nodevec & bitmap)) {
++			/*hweight64 == popcnt. It counts
++			 * the number of bits set to 1
++			 */
 +			node_index = hweight64(node->nodevec & bitmask);
 +			node = &node->child_nodes[node_index];
 +			continue;
