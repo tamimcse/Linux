@@ -280,7 +280,7 @@ index b379520..fae4bd4 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_poptrie.c b/net/ipv4/fib_poptrie.c
 new file mode 100644
-index 0000000..255b871
+index 0000000..4fce766
 --- /dev/null
 +++ b/net/ipv4/fib_poptrie.c
 @@ -0,0 +1,496 @@
@@ -717,14 +717,14 @@ index 0000000..255b871
 +
 +int poptrie_lookup(struct poptrie *pt, __be32 dest, struct net_device **dev)
 +{
-+	register u32 index;
-+	register u64 bitmap, bitmask;
-+	register unsigned long leaf_index;
-+	register unsigned long node_index;
-+	register struct poptrie_node *node;
-+	register u8 fib_index = pt->def_nh;
-+	register u8 carry = 0;
-+	register u8 carry_bit = 2;
++	u32 index;
++	u64 bitmap, bitmask;
++	unsigned long leaf_index;
++	unsigned long node_index;
++	struct poptrie_node *node;
++	u8 fib_index = pt->def_nh;
++	u8 carry = 0;
++	u8 carry_bit = 2;
 +
 +	rcu_read_lock();
 +
