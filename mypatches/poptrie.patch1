@@ -253,16 +253,15 @@ index 81d0f21..9f6b715 100644
  		err = fib_table_lookup(tb, flp, res, flags | FIB_LOOKUP_NOREF);
  
 diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
-index 80dad30..75e9c9a 100644
+index 80dad30..5897098 100644
 --- a/net/ipv4/Kconfig
 +++ b/net/ipv4/Kconfig
-@@ -52,6 +52,10 @@ config IP_ADVANCED_ROUTER
+@@ -52,6 +52,9 @@ config IP_ADVANCED_ROUTER
  
  	  If unsure, say N here.
  
 +config FIB_POPTRIE
-+	bool
-+	default n
++	bool "FIB POPTRIE"
 +
  config IP_FIB_TRIE_STATS
  	bool "FIB TRIE statistics"
