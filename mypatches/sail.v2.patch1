@@ -712,7 +712,7 @@ index 0f7a27f..eb58c12 100644
 -
 +CONFIG_FIB_SAIL_ML=y
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..f18d7cd 100644
+index 81d0f21..35fcc24 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -785,7 +785,7 @@ index 81d0f21..f18d7cd 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +308,172 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +308,176 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -892,6 +892,10 @@ index 81d0f21..f18d7cd 100644
 +		"2.91.97.138",
 +		"1.22.184.78",
 +		"2.94.1.165",
++		"153.7.226.249",
++		"153.43.248.144",
++		"155.6.105.118",
++
 +		/*
 +		 *"169.254.221.211",
 +		 *"169.254.231.253",
@@ -900,7 +904,7 @@ index 81d0f21..f18d7cd 100644
 +	struct net_device *dev;
 +	u64 tsc_begin, tsc_end;
 +
-+	for (j = 0; j < 85; j++) {
++	for (j = 0; j < 88; j++) {
 +		/*inet_aton(ips[j], &some_addr);*/
 +		ip_addr = in_aton(wtf[j]);
 +//		pr_err("ip_addr=%u %pI4 !!!!!!!", ip_addr, &ip_addr);
@@ -994,10 +998,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..8571224
+index 0000000..31589a1
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,541 @@
+@@ -0,0 +1,540 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1014,6 +1018,9 @@ index 0000000..8571224
 +#define LEVEL20_SIZE 1048576
 +/*chunk size is 2^6*/
 +#define CHUNK_SIZE 64
++
++#define LEVEL26_ARR_SIZE(S) S->level26_chunk_count * CHUNK_SIZE
++#define LEVEL32_ARR_SIZE(S) S->level32_chunk_count * CHUNK_SIZE
 +
 +/*Insert net_device to the net-device array.
 + *This function returns the index to the net_device array
@@ -1032,16 +1039,6 @@ index 0000000..8571224
 +	/*If the net_device is not previously seen, then add it to the array*/
 +	s->netdevs[s->netdev_count++] = dev;
 +	return s->netdev_count - 1;
-+}
-+
-+static inline u32 get_level26_arr_size(struct sail_ml *s)
-+{
-+	return s->level26_chunk_count * CHUNK_SIZE;
-+}
-+
-+static inline u32 get_level32_arr_size(struct sail_ml *s)
-+{
-+	return s->level32_chunk_count * CHUNK_SIZE;
 +}
 +
 +/* Insert a chunk at index. Note that chunk_id starts from 1, not 0 */
@@ -1098,8 +1095,8 @@ index 0000000..8571224
 +
 +	/* Wait for all readers to be finished */
 +	synchronize_rcu();
-+	
-+	/*Increment the counter after chunk has been inserted*/	
++
++	/*Increment the counter after chunk has been inserted*/
 +	++s->level26_chunk_count;
 +
 +	/*Remove old arrays*/
@@ -1118,14 +1115,14 @@ index 0000000..8571224
 +	u8 *p32;
 +	u64 arrsize, i, a, b, c;
 +	u32 chunk_count = s->level32_chunk_count + 1;
-+	
++
 +	if (chunk_id > chunk_count) {
 +		pr_err("Something Index needs to be smaller or equal to size");
 +		return -EINVAL;
 +	}
-+	
++
 +	arrsize = chunk_count * CHUNK_SIZE;
-+	
++
 +	n = kcalloc(arrsize, sizeof(*n), GFP_ATOMIC);
 +	p32 = kcalloc(arrsize, sizeof(*p32), GFP_ATOMIC);
 +
@@ -1174,7 +1171,7 @@ index 0000000..8571224
 +	}
 +
 +	/*Find the first chunk_no > 0 to the left*/
-+	for (i = (long long int)index - 1; i >= 0; i--) {		
++	for (i = (long long int)index - 1; i >= 0; i--) {
 +		if (chunk_ids[i] > 0) {
 +			chunk_ids[index] = chunk_ids[i] + 1;
 +			break;
@@ -1190,13 +1187,13 @@ index 0000000..8571224
 +		if (chunk_ids[i] > 0)
 +			chunk_ids[i]++;
 +	}
-+	
++
 +	*chunk_id = chunk_ids[index];
 +	return 0;
 +}
 +
-+int sail_insert(struct sail_ml *s, u32 key,
-+		   u8 prefix_len, struct net_device *dev)
++int sail_insert(struct sail_ml *s, u32 key, u8 prefix_len,
++	        struct net_device *dev)
 +{
 +	int i, j;
 +	u8 *n20, *p20;
@@ -1215,7 +1212,7 @@ index 0000000..8571224
 +		s->def_nh = netdev_index;
 +		goto finish;
 +	}
-+	
++
 +	if (!s->nh20) {
 +		n20 = kcalloc(LEVEL20_SIZE, sizeof(*n20), GFP_ATOMIC);
 +		p20 = kcalloc(LEVEL20_SIZE, sizeof(*p20), GFP_ATOMIC);
@@ -1225,13 +1222,13 @@ index 0000000..8571224
 +		RCU_INIT_POINTER(s->ci20, c20);
 +		synchronize_rcu();
 +	}
-+        
++
 +        /* To make sure level 20 arrays are created before using it */
 +        smp_mb();
 +
 +	/*Eextract 20 bits from LSB.*/
 +	index = key >> 12;
-+	
++
 +	if (prefix_len == 20) {
 +		s->nh20[index] = netdev_index;
 +		s->pl20[index] = 20;
@@ -1249,11 +1246,13 @@ index 0000000..8571224
 +		goto finish;
 +	}
 +
-+	/* The prefix_len is 21-32. So we need to check if if there is any chunk
-+	 * for this index in level 26
++	/* The prefix_len is 21-32. So we need to check if if there is any
++	 * chunk for this index in level 26
 +	 */
 +	if (s->ci20[index] == 0) {
-+		/*Update the chunk ids in level20 array and get the chunk ID for this index*/
++		/*Update the chunk ids in level20 array and get the
++		 *chunk ID for this index
++		 */
 +		err = get_chunk_id(s->ci20, LEVEL20_SIZE, index, &chunk_id);
 +                if(err)
 +                    goto error;
@@ -1289,16 +1288,19 @@ index 0000000..8571224
 +		}
 +		goto finish;
 +	}
-+	
++
 +	/* To make sure level 26 is updated before level 32 */
 +	smp_mb();
 +
-+	/* The prefix_len is 27-32. So we need to check if if there is any chunk
-+	 * for this index in level 32
++	/* The prefix_len is 27-32. So we need to check if if there is any
++	 * chunk for this index in level 32
 +	 */
 +	if (s->ci26[idx26] == 0) {
-+		/*Update the chunk ids in level20 array and get the chunk ID for this index*/
-+		err = get_chunk_id(s->ci26, get_level26_arr_size(s), idx26, &chunk_id);
++		/*Update the chunk ids in level20 array and get 
++		 *the chunk ID for this index
++		 */
++		err = get_chunk_id(s->ci26, LEVEL26_ARR_SIZE(s),
++				   idx26, &chunk_id);
 +                if(err)
 +                    goto error;
 +		smp_mb();
@@ -1334,7 +1336,7 @@ index 0000000..8571224
 +		}
 +		goto finish;
 +	}
-+	
++
 +error:
 +	pr_err("Something is very wrong");
 +finish:
@@ -1342,8 +1344,7 @@ index 0000000..8571224
 +	return err;
 +}
 +
-+int sail_delete(struct sail_ml *s, u32 key,
-+		   u8 prefix_len)
++int sail_delete(struct sail_ml *s, u32 key, u8 prefix_len)
 +{
 +    return 1;
 +//	int offset, i;
@@ -1440,7 +1441,7 @@ index 0000000..8571224
 +{
 +	u8 *n20, *p20, *n26, *p26, *n32, *p32;
 +	u32 *c20, *c26, *c32;
-+	    
++
 +	spin_lock(&s->lock);
 +
 +	/*Save old pointers*/
@@ -1453,12 +1454,12 @@ index 0000000..8571224
 +	c26 = s->ci26;
 +
 +	n32 = s->nh32;
-+	p32 = s->pl32;    
++	p32 = s->pl32;
 +
-+	/*Set the counter before the chunk are deleted*/    
++	/*Set the counter before the chunk are deleted*/
 +	s->level32_chunk_count = 0;
 +	s->level26_chunk_count = 0;
-+        
++
 +	/*Set the pointers to NULL*/
 +	rcu_assign_pointer(s->nh20, NULL);
 +	rcu_assign_pointer(s->pl20, NULL);
@@ -1487,7 +1488,8 @@ index 0000000..8571224
 +	return 0;
 +}
 +
-+int sail_lookup(const struct sail_ml *s, const __be32 dest, struct net_device **dev)
++int sail_lookup(const struct sail_ml *s,
++	        const __be32 dest, struct net_device **dev)
 +{
 +	u8 *n20, *n26, *n32;
 +	u32 *c20, *c26;
@@ -1500,7 +1502,7 @@ index 0000000..8571224
 +	rcu_read_lock();
 +
 +	/*Find corresponding next-hop in level 20*/
-+	n20 = rcu_dereference(s->nh20);	
++	n20 = rcu_dereference(s->nh20);
 +	if (unlikely(!n20))
 +		goto finish;
 +
@@ -1515,7 +1517,7 @@ index 0000000..8571224
 +		index_up = (c20[index] - 1) * CHUNK_SIZE + ((key & 4032) >> 6);
 +	else
 +		goto finish;
-+	
++
 +	/*Find corresponding next-hop in level 26*/
 +	n26 = rcu_dereference(s->nh26);
 +	if (likely(n26[index_up] != 0))
@@ -1539,6 +1541,7 @@ index 0000000..8571224
 +	rcu_read_unlock();
 +	return 0;
 +}
++
 diff --git a/net/ipv4/fib_trie.c b/net/ipv4/fib_trie.c
 index 3dcffd3..0cda3b8 100644
 --- a/net/ipv4/fib_trie.c
