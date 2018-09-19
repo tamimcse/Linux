@@ -712,7 +712,7 @@ index 0f7a27f..eb58c12 100644
 -
 +CONFIG_FIB_SAIL_ML=y
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..35fcc24 100644
+index 81d0f21..9cac863 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -904,7 +904,7 @@ index 81d0f21..35fcc24 100644
 +	struct net_device *dev;
 +	u64 tsc_begin, tsc_end;
 +
-+	for (j = 0; j < 88; j++) {
++	for (j = 88; j < 88; j++) {
 +		/*inet_aton(ips[j], &some_addr);*/
 +		ip_addr = in_aton(wtf[j]);
 +//		pr_err("ip_addr=%u %pI4 !!!!!!!", ip_addr, &ip_addr);
@@ -936,7 +936,7 @@ index 81d0f21..35fcc24 100644
 +		}
 +	}
 +
-+	for (j = 0; j < 1000; j++) {
++	for (j = 1000; j < 1000; j++) {
 +		get_random_bytes(&ip_addr, 4);
 +
 +		if (tb)
@@ -998,10 +998,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..31589a1
+index 0000000..e90bd56
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,540 @@
+@@ -0,0 +1,546 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1053,8 +1053,10 @@ index 0000000..31589a1
 +	u64 arr_size, i, j, k, l;
 +	u32 chunk_count = s->level26_chunk_count + 1;
 +
++	pr_err("chunk_id=%d chunk_count=%d", chunk_id, chunk_count);
++
 +	if (chunk_id > chunk_count) {
-+		pr_err("Index needs to be smaller or equal to size");
++		pr_err("Invalid chunk_id or chunk_count in level 26");
 +		return -EINVAL;
 +	}
 +
@@ -1063,8 +1065,12 @@ index 0000000..31589a1
 +	c = kcalloc(arr_size, sizeof(*c), GFP_ATOMIC);
 +	p = kcalloc(arr_size, sizeof(*p), GFP_ATOMIC);
 +
-+	if (unlikely(!n || !c || !p))
++	if (!n || !c || !p) {
++		kfree(n);
++		kfree(c);
++		kfree(p);		
 +		return -ENOMEM;
++	}
 +
 +	/*Copy everything from chunk-1 to chunk-chunk_id-1*/
 +	if (chunk_id > 1) {
@@ -1109,32 +1115,34 @@ index 0000000..31589a1
 +/* Insert a chunk at index. Note that chunk_id starts from 1, not 0 */
 +static int chunk_level32_insert(struct sail_ml *s, u32 chunk_id)
 +{
-+	u8 *n32 = s->nh32;
-+	u8 *p31 = s->pl32;
-+	u8 *n;
-+	u8 *p32;
++	u8 *nh_old = s->nh32;
++	u8 *pl_old = s->pl32;
++	u8 *n, *p;
 +	u64 arrsize, i, a, b, c;
 +	u32 chunk_count = s->level32_chunk_count + 1;
 +
 +	if (chunk_id > chunk_count) {
-+		pr_err("Something Index needs to be smaller or equal to size");
++		pr_err("Invalid chunk_id or chunk_count in level 32");
 +		return -EINVAL;
 +	}
 +
 +	arrsize = chunk_count * CHUNK_SIZE;
 +
 +	n = kcalloc(arrsize, sizeof(*n), GFP_ATOMIC);
-+	p32 = kcalloc(arrsize, sizeof(*p32), GFP_ATOMIC);
++	p = kcalloc(arrsize, sizeof(*p), GFP_ATOMIC);
 +
-+	if (unlikely(!n || !p32))
++	if (!n || !p) {
++		kfree(n);
++		kfree(p);		
 +		return -ENOMEM;
++	}
 +
 +	/*Copy everything from chunk-1 to chunk-chunk_id-1*/
 +	if (chunk_id > 1) {
 +		c = (chunk_id - 1) * CHUNK_SIZE;
 +		for (i = 0 ; i < c ; i++) {
-+			n[i] = n32[i];
-+			p32[i] = p31[i];
++			n[i] = nh_old[i];
++			p[i] = pl_old[i];
 +		}
 +	}
 +
@@ -1144,23 +1152,23 @@ index 0000000..31589a1
 +		b = (chunk_id - 1) * CHUNK_SIZE;
 +		c = (chunk_count - chunk_id) * CHUNK_SIZE;
 +		for (i = 0 ; i < c ; i++) {
-+			n[a + i] = n32[b + i];
-+			p32[a + i] = p31[b + i];
++			n[a + i] = nh_old[b + i];
++			p[a + i] = pl_old[b + i];
 +		}
 +	}
 +
 +	rcu_assign_pointer(s->nh32, n);
-+	rcu_assign_pointer(s->pl32, p32);
++	rcu_assign_pointer(s->pl32, p);
 +	/* Wait for all references to be released */
 +	synchronize_rcu();
 +	/*Increment the counter after chunk has been inserted*/
 +	++s->level32_chunk_count;
-+	kfree(n32);
-+	kfree(p31);
++	kfree(nh_old);
++	kfree(pl_old);
 +        return 0;
 +}
 +
-+/*This function takes index, update chunk IDs and retruns chunk index*/
++/*Finds the chunk ID for the index*/
 +static int get_chunk_id(u32 *chunk_ids, u32 arr_size, u32 index, u32 *chunk_id)
 +{
 +	long long int i;
@@ -1173,14 +1181,37 @@ index 0000000..31589a1
 +	/*Find the first chunk_no > 0 to the left*/
 +	for (i = (long long int)index - 1; i >= 0; i--) {
 +		if (chunk_ids[i] > 0) {
-+			chunk_ids[index] = chunk_ids[i] + 1;
-+			break;
++			*chunk_id = chunk_ids[i] + 1;
++			return 0;
 +		}
 +	}
 +
 +	/*If there is no chunk to the left, then this is the first chunk*/
-+	if (chunk_ids[index] == 0)
-+		chunk_ids[index] = 1;
++	*chunk_id = 1;
++	return 0;
++}
++
++static int update_chunk_ids(u32 *chunk_ids, u32 arr_size, u32 index, u32 chunk_id)
++{
++	long long int i;
++
++	if (index >= arr_size) {
++		pr_err("Index needs to be smaller than arr_size");
++		return -EINVAL;
++	}
++
++	/*Check if the chunk ID already exists*/
++	for (i = (long long int)index - 1; i >= 0; i--) {
++		if (chunk_ids[i] > 0) {
++			if (chunk_ids[i] >= chunk_id) {
++				pr_err("The chunk ID is already present in the array");
++				return -EINVAL;
++			}
++			break;
++		}
++	}
++
++	chunk_ids[index] = chunk_id;
 +
 +	/* Increment chunk ID to the right */
 +	for (i = index + 1; i < arr_size; i++) {
@@ -1188,7 +1219,6 @@ index 0000000..31589a1
 +			chunk_ids[i]++;
 +	}
 +
-+	*chunk_id = chunk_ids[index];
 +	return 0;
 +}
 +
@@ -1223,9 +1253,6 @@ index 0000000..31589a1
 +		synchronize_rcu();
 +	}
 +
-+        /* To make sure level 20 arrays are created before using it */
-+        smp_mb();
-+
 +	/*Eextract 20 bits from LSB.*/
 +	index = key >> 12;
 +
@@ -1250,26 +1277,17 @@ index 0000000..31589a1
 +	 * chunk for this index in level 26
 +	 */
 +	if (s->ci20[index] == 0) {
-+		/*Update the chunk ids in level20 array and get the
-+		 *chunk ID for this index
-+		 */
 +		err = get_chunk_id(s->ci20, LEVEL20_SIZE, index, &chunk_id);
-+                if(err)
-+                    goto error;
-+		smp_mb();
++                if(err)	goto error;
 +		err = chunk_level26_insert(s, chunk_id);
-+                if(err)
-+                    goto error;
++                if(err)	goto error;
++		err = update_chunk_ids(s->ci20, LEVEL20_SIZE, index, chunk_id);
++                if(err)	goto error;
 +	}
 +
-+	/* To make sure chunk is inserted before using it */
-+	smp_mb();
-+
 +	chunk_id = s->ci20[index];
-+
 +	/*Extract 21-26 bit*/
 +	index = (key & 4032) >> 6;
-+
 +	idx26 = (chunk_id - 1) * CHUNK_SIZE + index;
 +
 +	if (prefix_len == 26) {
@@ -1289,35 +1307,23 @@ index 0000000..31589a1
 +		goto finish;
 +	}
 +
-+	/* To make sure level 26 is updated before level 32 */
-+	smp_mb();
-+
 +	/* The prefix_len is 27-32. So we need to check if if there is any
 +	 * chunk for this index in level 32
 +	 */
 +	if (s->ci26[idx26] == 0) {
-+		/*Update the chunk ids in level20 array and get 
-+		 *the chunk ID for this index
-+		 */
 +		err = get_chunk_id(s->ci26, LEVEL26_ARR_SIZE(s),
 +				   idx26, &chunk_id);
-+                if(err)
-+                    goto error;
-+		smp_mb();
-+
++                if(err) goto error;
 +		err = chunk_level32_insert(s, chunk_id);
-+                if(err)
-+                    goto error;
++                if(err) goto error;
++		err = update_chunk_ids(s->ci26, LEVEL26_ARR_SIZE(s),
++				       idx26, chunk_id);
++                if(err) goto error;
 +	}
 +
-+	/* To make sure chunk is inserted before using it */
-+	smp_mb();
-+
 +	chunk_id = s->ci26[idx26];
-+
 +	/*Extract 6 bit from MSB*/
 +	index = key & 63;
-+
 +	idx32 = (chunk_id - 1) * CHUNK_SIZE + index;
 +
 +	if (prefix_len == 32) {
