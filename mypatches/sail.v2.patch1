@@ -998,10 +998,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..e90bd56
+index 0000000..2e27b69
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,546 @@
+@@ -0,0 +1,553 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1053,8 +1053,6 @@ index 0000000..e90bd56
 +	u64 arr_size, i, j, k, l;
 +	u32 chunk_count = s->level26_chunk_count + 1;
 +
-+	pr_err("chunk_id=%d chunk_count=%d", chunk_id, chunk_count);
-+
 +	if (chunk_id > chunk_count) {
 +		pr_err("Invalid chunk_id or chunk_count in level 26");
 +		return -EINVAL;
@@ -1068,7 +1066,7 @@ index 0000000..e90bd56
 +	if (!n || !c || !p) {
 +		kfree(n);
 +		kfree(c);
-+		kfree(p);		
++		kfree(p);
 +		return -ENOMEM;
 +	}
 +
@@ -1247,6 +1245,15 @@ index 0000000..e90bd56
 +		n20 = kcalloc(LEVEL20_SIZE, sizeof(*n20), GFP_ATOMIC);
 +		p20 = kcalloc(LEVEL20_SIZE, sizeof(*p20), GFP_ATOMIC);
 +		c20 = kcalloc(LEVEL20_SIZE, sizeof(*c20), GFP_ATOMIC);
++
++		if (!n20 || !c20 || !p20) {
++			kfree(n20);
++			kfree(c20);
++			kfree(p20);
++			pr_err("Out of memory while allocating level 20");
++			goto error;
++		}
++
 +		RCU_INIT_POINTER(s->nh20, n20);
 +		RCU_INIT_POINTER(s->pl20, p20);
 +		RCU_INIT_POINTER(s->ci20, c20);
