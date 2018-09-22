@@ -712,7 +712,7 @@ index 0f7a27f..eb58c12 100644
 -
 +CONFIG_FIB_SAIL_ML=y
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..9cac863 100644
+index 81d0f21..84c4aa0 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -785,7 +785,7 @@ index 81d0f21..9cac863 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +308,176 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +308,177 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -895,6 +895,7 @@ index 81d0f21..9cac863 100644
 +		"153.7.226.249",
 +		"153.43.248.144",
 +		"155.6.105.118",
++		"2.78.35.60",
 +
 +		/*
 +		 *"169.254.221.211",
@@ -904,7 +905,7 @@ index 81d0f21..9cac863 100644
 +	struct net_device *dev;
 +	u64 tsc_begin, tsc_end;
 +
-+	for (j = 88; j < 88; j++) {
++	for (j = 0; j < 89; j++) {
 +		/*inet_aton(ips[j], &some_addr);*/
 +		ip_addr = in_aton(wtf[j]);
 +//		pr_err("ip_addr=%u %pI4 !!!!!!!", ip_addr, &ip_addr);
@@ -936,7 +937,7 @@ index 81d0f21..9cac863 100644
 +		}
 +	}
 +
-+	for (j = 1000; j < 1000; j++) {
++	for (j = 0; j < 1000; j++) {
 +		get_random_bytes(&ip_addr, 4);
 +
 +		if (tb)
@@ -998,10 +999,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..2e27b69
+index 0000000..ad3a1a6
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,553 @@
+@@ -0,0 +1,583 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1010,12 +1011,40 @@ index 0000000..2e27b69
 + *
 + * Author: MD Iftakharul Islam (Tamim) <mislam4@kent.edu>.
 + *
++ * This work is based on the SAIL_L which is originally described in:
++ * 
++ * Yang, Tong, Gaogang Xie, YanBiao Li, Qiaobin Fu, Alex X. Liu, Qi Li,
++ * and Laurent Mathy. "Guarantee IP lookup performance with FIB explosion."
++ * In ACM SIGCOMM Computer Communication Review, vol. 44, no. 4, pp. 39-50.
++ * ACM, 2014.
++ * 
++ * This patch however deviates from the original SAIL_L. In original SAIL_L, 
++ * a routing table is divided into level 16, level 24 and level 32. A 14-bit
++ * long prefix can be pushed to upper levels such as level 24 and level 32.
++ * However in this patch, a 1-20 bit long prefix will be pushed to level 20.
++ * 21-26 bit long prefix will be pushed to level 26 and prefixes with
++ * length 26-32 will be pushed to level 32. A 18-bit long prefix will not be
++ * pushed to upper level such level 26 and level 32 (unlike SAIL_L). Let's name
++ * this approach "Multilevel SAIL (SAIL_ML)". Lookup process in SAIL_ML is as
++ * following:
++ * 
++ * We look up in level 20 first. Then chunk_id array indicates if we need to
++ * lookup in the upper level. In this way, a lookup in SAIL_ML may need upto
++ * three lookups whereas original SAIL_L just need one lookup.    
++ * However one benefit of SAIL_ML over SAIL_L is that SAIL_ML consumes less
++ * memory. In SAIL_L, when a prefix of length 14 is pushed to level 24, it
++ * consumes significant amount of memory space. If the prefix is pushed to
++ * level 32, it will require much more memory space. In SAIL_ML, a prefix will
++ * not be pushed to upper level. This is why is consumes lot less memory than
++ * SAIL_L.
++ * 
 + */
 +
 +#include <net/ip_fib.h>
 +
 +/*The length of level 20 is 2^20*/
 +#define LEVEL20_SIZE 1048576
++
 +/*chunk size is 2^6*/
 +#define CHUNK_SIZE 64
 +
@@ -1339,7 +1368,7 @@ index 0000000..2e27b69
 +		goto finish;
 +	} else if (prefix_len < 32) {
 +		/*Level pushing*/
-+		consecutive_leafs = 1U << (32 - prefix_len);		
++		consecutive_leafs = 1U << (32 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Longer prefix exists*/
 +			if (s->pl32[idx32 + i] > prefix_len)
@@ -1359,95 +1388,98 @@ index 0000000..2e27b69
 +
 +int sail_delete(struct sail_ml *s, u32 key, u8 prefix_len)
 +{
-+    return 1;
-+//	int offset, i;
-+//	u32 index;
-+//	u8 consecutive_leafs;
-+//	u64 bitmap;
-+//	int arr_size;
-+//	unsigned long chield_index;
-+//	unsigned long leaf_index;
-+//	struct sail_ml_node *node;
-+//	bool update_vector = true;
-+//
-+//	spin_lock(&s->lock);
-+//
-+//	node = rcu_dereference(s->root);
-+//
-+//	if (!node || prefix_len == 0)
-+//		goto finish;
-+//
-+//	/*Iterate through the nodes*/
-+//	offset = 0;
-+//	while (prefix_len > (offset + 6)) {
-+//		index = extract(key, offset);
-+//		bitmap = 1ULL << index;
-+//		chield_index = hweight64(node->nodevec & (bitmap - 1));
-+//		/*No node for this index*/
-+//		if (!(node->nodevec & bitmap))
-+//			goto finish;
-+//		node = &node->child_nodes[chield_index];
-+//		offset += 6;
-+//	}
-+//
-+//	/*Now need to delete the leaf*/
-+//
-+//	index = extract(key, offset);
-+//	bitmap = 1ULL << index;
-+//	consecutive_leafs = 1 << (offset + 6 - prefix_len);
-+//
-+//	/*The prefix does not exist*/
-+//	if (!(node->vector & bitmap) || !(node->leafvec & bitmap))
-+//		goto finish;
-+//
-+//	leaf_index = hweight64(node->leafvec & (bitmap - 1));
-+//	arr_size = (int)hweight64(node->leafvec);
-+//	if (leaf_index >= arr_size)
-+//		goto error;
-+//
-+//	/*The prefix-length does not match*/
-+//	if (node->prefixes[leaf_index] != prefix_len)
-+//		goto finish;
-+//
-+//	/*Check if this prefix will replaced
-+//	 * by another prefix with smaller length
-+//	 */
-+//	for (i = leaf_index - 1; i >= 0; i--) {
-+//		if (node->prefixes[leaf_index] < prefix_len) {
-+//			update_vector = false;
-+//			break;
-+//		}
-+//	}
-+//
-+//	if (update_vector) {
-+//		if (consecutive_leafs > 1)
-+//			node->vector &=
-+//				 ~(((1ULL << consecutive_leafs) - 1) << index);
-+//		else
-+//			node->vector &= ~bitmap;
-+//	}
-+//
-+//	if (consecutive_leafs > 1) {
-+//		for (i = 0; i < consecutive_leafs; i++) {
-+//			if ((node->leafvec & bitmap) &&
-+//			    node->prefixes[leaf_index] == prefix_len) {
-+//				delete_leaf(node, leaf_index);
-+//				node->leafvec &= ~bitmap;
-+//			}
-+//			bitmap <<= 1;
-+//			leaf_index = hweight64(node->leafvec & (bitmap - 1));
-+//		}
-+//	} else {
-+//		delete_leaf(node, leaf_index);
-+//		node->leafvec &= ~bitmap;
-+//	}
-+//
-+//	goto finish;
-+//error:
-+//	pr_err("Something is very wrong !!!!");
-+//finish:
-+//	spin_unlock(&s->lock);
-+//	return 0;
++	int i, j;
++	u32 index;
++	/*Array index in level 26 and level 32*/
++	u64 idx26, idx32;
++	u32 consecutive_leafs;
++        int err = 0;
++
++	spin_lock(&s->lock);
++
++	/* Simply ignore */
++	if (prefix_len == 0 || !s->nh20) {
++		err = -EPERM;
++		goto finish;
++	}
++
++	/*Eextract 20 bits from LSB.*/
++	index = key >> 12;
++
++	if (prefix_len == 20 && s->pl20[index] ==  20) {
++		s->nh20[index] = 0;
++		s->pl20[index] = 0;
++		goto finish;
++	} else if (prefix_len < 20) {
++		/*Level pushing*/
++		consecutive_leafs = 1U << (20 - prefix_len);
++		for (i = 0; i < consecutive_leafs; i++) {
++			/*Prefix len doesn't match*/            
++			if (s->pl20[index + i] != prefix_len)
++				continue;
++			s->nh20[index + i] = 0;
++			s->pl20[index + i] = 0;
++		}
++		goto finish;
++	}
++
++	/* The prefix_len is 21-32 but no chunk for the prefix*/
++	if (s->ci20[index] == 0) {
++ 		err = -ENOENT;
++ 		goto finish;
++	}
++
++	/*Extract 21-26 bit*/
++	index = (key & 4032) >> 6;
++	idx26 = (s->ci20[index] - 1) * CHUNK_SIZE + index;
++
++	if (prefix_len == 26 && s->pl26[idx26] ==  26) {
++		s->nh26[idx26] = 0;
++		s->pl26[idx26] = 0;
++		goto finish;
++	} else if (prefix_len < 26) {
++		/*Level pushing*/
++		consecutive_leafs = 1U << (26 - prefix_len);
++		for (i = 0; i < consecutive_leafs; i++) {
++			/*Prefix len doesn't match*/        
++			if (s->pl26[idx26 + i] != prefix_len)
++				continue;
++			s->nh26[idx26 + i] = 0;
++			s->pl26[idx26 + i] = 0;
++		}
++		goto finish;
++	}
++
++	/* The prefix_len is 27-32. but no chunk for the prefix */
++	if (s->ci26[idx26] == 0) {
++ 		err = -ENOENT;
++ 		goto finish;
++	}
++
++	/*Extract 6 bit from MSB*/
++	index = key & 63;
++	idx32 = (s->ci26[idx26] - 1) * CHUNK_SIZE + index;
++
++	if (prefix_len == 32 && s->pl26[idx32] ==  32) {
++		s->nh32[idx32] = 0;
++		s->pl32[idx32] = 0;
++		goto finish;
++	} else if (prefix_len < 32) {
++		/*Level pushing*/
++		consecutive_leafs = 1U << (32 - prefix_len);	
++		for (i = 0; i < consecutive_leafs; i++) {
++			/*Prefix len doesn't match*/
++			if (s->pl32[idx32 + i] != prefix_len)
++				continue;
++			s->nh32[idx32 + i] = 0;
++			s->pl32[idx32 + i] = 0;
++		}
++		goto finish;
++	}
++
++finish:
++	spin_unlock(&s->lock);
++	return err;
 +}
 +
 +int sail_flush(struct sail_ml *s)
@@ -1554,9 +1586,8 @@ index 0000000..2e27b69
 +	rcu_read_unlock();
 +	return 0;
 +}
-+
 diff --git a/net/ipv4/fib_trie.c b/net/ipv4/fib_trie.c
-index 3dcffd3..0cda3b8 100644
+index 3dcffd3..9618e57 100644
 --- a/net/ipv4/fib_trie.c
 +++ b/net/ipv4/fib_trie.c
 @@ -1280,6 +1280,10 @@ int fib_table_insert(struct net *net, struct fib_table *tb,
@@ -1575,7 +1606,7 @@ index 3dcffd3..0cda3b8 100644
  	pr_debug("Deleting %08x/%d tos=%d t=%p\n", key, plen, tos, t);
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+//	sail_delete(&tb->sail, key, plen);
++	sail_delete(&tb->sail, key, plen);
 +#endif
 +
  	fa_to_delete = NULL;
