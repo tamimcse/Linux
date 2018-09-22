@@ -999,10 +999,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..ad3a1a6
+index 0000000..a55100d
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,583 @@
+@@ -0,0 +1,588 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1024,19 +1024,24 @@ index 0000000..ad3a1a6
 + * However in this patch, a 1-20 bit long prefix will be pushed to level 20.
 + * 21-26 bit long prefix will be pushed to level 26 and prefixes with
 + * length 26-32 will be pushed to level 32. A 18-bit long prefix will not be
-+ * pushed to upper level such level 26 and level 32 (unlike SAIL_L). Let's name
-+ * this approach "Multilevel SAIL (SAIL_ML)". Lookup process in SAIL_ML is as
-+ * following:
++ * pushed to upper level such as level 26 and level 32 (unlike SAIL_L). 
++ * Let's name this approach "Multilevel SAIL (SAIL_ML)". The lookup process
++ * in SAIL_ML is as following:
 + * 
 + * We look up in level 20 first. Then chunk_id array indicates if we need to
 + * lookup in the upper level. In this way, a lookup in SAIL_ML may need upto
-+ * three lookups whereas original SAIL_L just need one lookup.    
-+ * However one benefit of SAIL_ML over SAIL_L is that SAIL_ML consumes less
-+ * memory. In SAIL_L, when a prefix of length 14 is pushed to level 24, it
-+ * consumes significant amount of memory space. If the prefix is pushed to
-+ * level 32, it will require much more memory space. In SAIL_ML, a prefix will
-+ * not be pushed to upper level. This is why is consumes lot less memory than
-+ * SAIL_L.
++ * three lookups in array whereas original SAIL_L just needs one lookup.
++ * 
++ * However the main benefit of SAIL_ML over SAIL_L is that it consumes
++ * significantly less memory than SAIL_L. In SAIL_L, when a prefix of length 14
++ * is pushed to level 24, it increases the memory requirement to a great
++ * extent. If the same prefix is pushed to level 32, it makes the situation
++ * even worse. SAIL_ML avoids the problem by not pushing a prefix to the upper
++ * level. Here a prefix with length 18 will always be pushed to level 20, not
++ * to the upper levels (level 26 and level 32). This is why SAIL_ML
++ * requires much less memory than SAIL_L (which is critical because CPU cache
++ * is limited in size), but it may requires upto three lookups
++ * whereas SAIL_L only needs one lookup.
 + * 
 + */
 +
