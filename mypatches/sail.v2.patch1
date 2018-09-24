@@ -999,10 +999,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..c7444c9
+index 0000000..118252a
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,590 @@
+@@ -0,0 +1,594 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1018,21 +1018,27 @@ index 0000000..c7444c9
 + * In ACM SIGCOMM Computer Communication Review, vol. 44, no. 4, pp. 39-50.
 + * ACM, 2014.
 + * 
-+ * This patch however deviates from the original SAIL_L. In original SAIL_L, 
++ * This patch however deviates from the original SAIL_L. In original SAIL_L,
 + * a routing table is divided into level 16, level 24 and level 32. A 14-bit
-+ * long prefix can be pushed to upper levels such as level 24 and level 32.
-+ * However in this patch, a 1-20 bit long prefix will be pushed to level 20.
-+ * 21-26 bit long prefix will be pushed to level 26 and prefixes with
-+ * length 26-32 will be pushed to level 32. A 18-bit long prefix will not be
-+ * pushed to upper level such as level 26 and level 32 (unlike SAIL_L). 
-+ * Let's name this approach "Multilevel SAIL (SAIL_ML)". The lookup process
-+ * in SAIL_ML is as following:
++ * long prefix can be pushed to level 16 as well as upper levels such as
++ * level 24 and level 32. However in this patch, the routing table is divided
++ * into four levels (level 0, level 20, level 26 and level 32). Here level 0
++ * is the default route. Again a 1-20 bit long prefix will be always be
++ * pushed to level 20. It will never be pushed to higher levels (level 26
++ * and level 32). Again 21-26 bit long prefixes will be pushed to level 26 and
++ * prefixes with length 26-32 will be pushed to level 32.
++ * The main difference from SAIL_L is that a prefix will not be pushed to
++ * the upper levels (unlike SAIL_L). This reduces the memory requiement
++ * significantly compared to SAIL_L. Let's name this approach
++ * "Multilevel SAIL (SAIL_ML)". The lookup process in SAIL_ML is as following:
 + * 
 + * We look up in level 20 first. Then chunk_id array indicates if we need to
-+ * lookup in the upper level. In this way, a lookup in SAIL_ML may need upto
-+ * three lookups in array whereas original SAIL_L just needs one lookup.
++ * lookup further in the upper level; if yes, then we look up in level 26.
++ * Then chunk id array of level 26 indicates if we need to lookup further; if
++ * yes, then we look up in level 32. In this way, a lookup in SAIL_ML may
++ * need upto three lookups.
 + * 
-+ * However the main benefit of SAIL_ML over SAIL_L is that it consumes
++ * The main benefit of SAIL_ML over SAIL_L is that it consumes
 + * significantly less memory than SAIL_L. In SAIL_L, when a prefix of length 14
 + * is pushed to level 24, it increases the memory requirement to a great
 + * extent. If the same prefix is pushed to level 32, it makes the situation
@@ -1040,8 +1046,7 @@ index 0000000..c7444c9
 + * level. Here a prefix with length 18 will always be pushed to level 20, not
 + * to the upper levels (level 26 and level 32). This is why SAIL_ML
 + * requires much less memory than SAIL_L (which is critical because CPU cache
-+ * is limited in size), but it may requires upto three lookups
-+ * whereas SAIL_L only needs one lookup.
++ * is limited in size).
 + * 
 + */
 +
@@ -1237,8 +1242,7 @@ index 0000000..c7444c9
 +	for (i = (long long int)index - 1; i >= 0; i--) {
 +		if (chunk_ids[i] > 0) {
 +			if (chunk_ids[i] >= chunk_id) {
-+				pr_err("The chunk ID is already\
-+				       present in the array");
++				pr_err("The chunk ID is already exist");
 +				return -EINVAL;
 +			}
 +			break;
@@ -1400,7 +1404,7 @@ index 0000000..c7444c9
 +	/*Array index in level 26 and level 32*/
 +	u64 idx26, idx32;
 +	u32 consecutive_leafs;
-+        int err = 0;
++	int err = 0;
 +
 +	spin_lock(&s->lock);
 +
@@ -1421,7 +1425,7 @@ index 0000000..c7444c9
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (20 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
-+			/*Prefix len doesn't match*/            
++			/*Prefix len doesn't match*/
 +			if (s->pl20[index + i] != prefix_len)
 +				continue;
 +			s->nh20[index + i] = 0;
@@ -1432,8 +1436,8 @@ index 0000000..c7444c9
 +
 +	/* The prefix_len is 21-32 but no chunk for the prefix*/
 +	if (s->ci20[index] == 0) {
-+ 		err = -ENOENT;
-+ 		goto finish;
++		err = -ENOENT;
++		goto finish;
 +	}
 +
 +	/*Extract 21-26 bit*/
@@ -1448,7 +1452,7 @@ index 0000000..c7444c9
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (26 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
-+			/*Prefix len doesn't match*/        
++			/*Prefix len doesn't match*/
 +			if (s->pl26[idx26 + i] != prefix_len)
 +				continue;
 +			s->nh26[idx26 + i] = 0;
@@ -1459,8 +1463,8 @@ index 0000000..c7444c9
 +
 +	/* The prefix_len is 27-32. but no chunk for the prefix */
 +	if (s->ci26[idx26] == 0) {
-+ 		err = -ENOENT;
-+ 		goto finish;
++		err = -ENOENT;
++		goto finish;
 +	}
 +
 +	/*Extract 6 bit from MSB*/
@@ -1473,7 +1477,7 @@ index 0000000..c7444c9
 +		goto finish;
 +	} else if (prefix_len < 32) {
 +		/*Level pushing*/
-+		consecutive_leafs = 1U << (32 - prefix_len);	
++		consecutive_leafs = 1U << (32 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Prefix len doesn't match*/
 +			if (s->pl32[idx32 + i] != prefix_len)
@@ -1541,7 +1545,7 @@ index 0000000..c7444c9
 +}
 +
 +int sail_lookup(const struct sail_ml *s,
-+	        const __be32 dest, struct net_device **dev)
++		const __be32 dest, struct net_device **dev)
 +{
 +	u8 *n20, *n26, *n32;
 +	u32 *c20, *c26;
