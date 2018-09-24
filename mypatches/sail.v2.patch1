@@ -999,10 +999,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..118252a
+index 0000000..59296e7
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,594 @@
+@@ -0,0 +1,596 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1018,15 +1018,15 @@ index 0000000..118252a
 + * In ACM SIGCOMM Computer Communication Review, vol. 44, no. 4, pp. 39-50.
 + * ACM, 2014.
 + * 
-+ * This patch however deviates from the original SAIL_L. In original SAIL_L,
++ * This file however deviates from the original SAIL_L. In original SAIL_L,
 + * a routing table is divided into level 16, level 24 and level 32. A 14-bit
 + * long prefix can be pushed to level 16 as well as upper levels such as
-+ * level 24 and level 32. However in this patch, the routing table is divided
++ * level 24 and level 32. However in this file, the routing table is divided
 + * into four levels (level 0, level 20, level 26 and level 32). Here level 0
-+ * is the default route. Again a 1-20 bit long prefix will be always be
++ * is the default route. Again a 1~20-bit long prefix will be always be
 + * pushed to level 20. It will never be pushed to higher levels (level 26
-+ * and level 32). Again 21-26 bit long prefixes will be pushed to level 26 and
-+ * prefixes with length 26-32 will be pushed to level 32.
++ * and level 32). Again 21~26-bit long prefixes will be pushed to level 26 and
++ * prefixes with length 26~32 will be pushed to level 32.
 + * The main difference from SAIL_L is that a prefix will not be pushed to
 + * the upper levels (unlike SAIL_L). This reduces the memory requiement
 + * significantly compared to SAIL_L. Let's name this approach
@@ -1266,8 +1266,10 @@ index 0000000..118252a
 +	int i, j;
 +	u8 *n20, *p20;
 +	u32 *c20;
-+	u32 index, chunk_id;
-+	/*Array index in level 26 and level 32*/
++        u32 chunk_id;
++        /*Index to level 20*/
++	u32 idx20;
++	/*Index to level 26 and level 32*/
 +	u64 idx26, idx32;
 +	u32 consecutive_leafs;
 +	u8 netdev_index = get_netdev_index(s, dev);
@@ -1301,21 +1303,21 @@ index 0000000..118252a
 +	}
 +
 +	/*Eextract 20 bits from LSB.*/
-+	index = key >> 12;
++	idx20 = key >> 12;
 +
 +	if (prefix_len == 20) {
-+		s->nh20[index] = netdev_index;
-+		s->pl20[index] = 20;
++		s->nh20[idx20] = netdev_index;
++		s->pl20[idx20] = 20;
 +		goto finish;
 +	} else if (prefix_len < 20) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (20 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Longer prefix exists*/
-+			if (s->pl20[index + i] > prefix_len)
++			if (s->pl20[idx20 + i] > prefix_len)
 +				continue;
-+			s->nh20[index + i] = netdev_index;
-+			s->pl20[index + i] = prefix_len;
++			s->nh20[idx20 + i] = netdev_index;
++			s->pl20[idx20 + i] = prefix_len;
 +		}
 +		goto finish;
 +	}
@@ -1323,19 +1325,19 @@ index 0000000..118252a
 +	/* The prefix_len is 21-32. So we need to check if if there is any
 +	 * chunk for this index in level 26
 +	 */
-+	if (s->ci20[index] == 0) {
-+		err = get_chunk_id(s->ci20, LEVEL20_SIZE, index, &chunk_id);
++	if (s->ci20[idx20] == 0) {
++		err = get_chunk_id(s->ci20, LEVEL20_SIZE, idx20, &chunk_id);
 +		if(err)	goto error;
 +		err = chunk_level26_insert(s, chunk_id);
 +		if(err)	goto error;
-+		err = update_chunk_ids(s->ci20, LEVEL20_SIZE, index, chunk_id);
++		err = update_chunk_ids(s->ci20, LEVEL20_SIZE, idx20, chunk_id);
 +		if(err)	goto error;
 +	}
 +
-+	chunk_id = s->ci20[index];
++	chunk_id = s->ci20[idx20];
 +	/*Extract 21-26 bit*/
-+	index = (key & 4032) >> 6;
-+	idx26 = (chunk_id - 1) * CHUNK_SIZE + index;
++	idx20 = (key & 4032) >> 6;
++	idx26 = (chunk_id - 1) * CHUNK_SIZE + idx20;
 +
 +	if (prefix_len == 26) {
 +		s->nh26[idx26] = netdev_index;
@@ -1370,8 +1372,8 @@ index 0000000..118252a
 +
 +	chunk_id = s->ci26[idx26];
 +	/*Extract 6 bit from MSB*/
-+	index = key & 63;
-+	idx32 = (chunk_id - 1) * CHUNK_SIZE + index;
++	idx20 = key & 63;
++	idx32 = (chunk_id - 1) * CHUNK_SIZE + idx20;
 +
 +	if (prefix_len == 32) {
 +		s->nh32[idx32] = netdev_index;
@@ -1399,9 +1401,10 @@ index 0000000..118252a
 +
 +int sail_delete(struct sail_ml *s, u32 key, u8 prefix_len)
 +{
-+	int i, j;
-+	u32 index;
-+	/*Array index in level 26 and level 32*/
++	int i;
++	/*Index to level 20*/
++        u32 idx20;
++	/*Index to level 26 and level 32*/
 +	u64 idx26, idx32;
 +	u32 consecutive_leafs;
 +	int err = 0;
@@ -1415,34 +1418,33 @@ index 0000000..118252a
 +	}
 +
 +	/*Eextract 20 bits from LSB.*/
-+	index = key >> 12;
++	idx20 = key >> 12;
 +
-+	if (prefix_len == 20 && s->pl20[index] ==  20) {
-+		s->nh20[index] = 0;
-+		s->pl20[index] = 0;
++	if (prefix_len == 20 && s->pl20[idx20] ==  20) {
++		s->nh20[idx20] = 0;
++		s->pl20[idx20] = 0;
 +		goto finish;
 +	} else if (prefix_len < 20) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (20 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Prefix len doesn't match*/
-+			if (s->pl20[index + i] != prefix_len)
++			if (s->pl20[idx20 + i] != prefix_len)
 +				continue;
-+			s->nh20[index + i] = 0;
-+			s->pl20[index + i] = 0;
++			s->nh20[idx20 + i] = 0;
++			s->pl20[idx20 + i] = 0;
 +		}
 +		goto finish;
 +	}
 +
 +	/* The prefix_len is 21-32 but no chunk for the prefix*/
-+	if (s->ci20[index] == 0) {
++	if (s->ci20[idx20] == 0) {
 +		err = -ENOENT;
 +		goto finish;
 +	}
 +
 +	/*Extract 21-26 bit*/
-+	index = (key & 4032) >> 6;
-+	idx26 = (s->ci20[index] - 1) * CHUNK_SIZE + index;
++	idx26 = (s->ci20[idx20] - 1) * CHUNK_SIZE + ((key & 4032U) >> 6);
 +
 +	if (prefix_len == 26 && s->pl26[idx26] ==  26) {
 +		s->nh26[idx26] = 0;
@@ -1468,8 +1470,7 @@ index 0000000..118252a
 +	}
 +
 +	/*Extract 6 bit from MSB*/
-+	index = key & 63;
-+	idx32 = (s->ci26[idx26] - 1) * CHUNK_SIZE + index;
++	idx32 = (s->ci26[idx26] - 1) * CHUNK_SIZE + (key & 63U);
 +
 +	if (prefix_len == 32 && s->pl26[idx32] ==  32) {
 +		s->nh32[idx32] = 0;
@@ -1495,22 +1496,22 @@ index 0000000..118252a
 +
 +int sail_flush(struct sail_ml *s)
 +{
-+	u8 *n20, *p20, *n26, *p26, *n32, *p32;
-+	u32 *c20, *c26, *c32;
++	u8 *n20_old, *p20_old, *n26_old, *p26_old, *n32_old, *p32_old;
++	u32 *c20_old, *c26_old, *c32;
 +
 +	spin_lock(&s->lock);
 +
 +	/*Save old pointers*/
-+	n20 = s->nh20;
-+	p20 = s->pl20;
-+	c20 = s->ci20;
++	n20_old = s->nh20;
++	p20_old = s->pl20;
++	c20_old = s->ci20;
 +
-+	n26 = s->nh26;
-+	p26 = s->pl26;
-+	c26 = s->ci26;
++	n26_old = s->nh26;
++	p26_old = s->pl26;
++	c26_old = s->ci26;
 +
-+	n32 = s->nh32;
-+	p32 = s->pl32;
++	n32_old = s->nh32;
++	p32_old = s->pl32;
 +
 +	/*Set the counter before the chunk are deleted*/
 +	s->level32_chunk_count = 0;
@@ -1531,14 +1532,15 @@ index 0000000..118252a
 +	/* Wait for all references to be released */
 +	synchronize_rcu();
 +
-+	kfree(n20);
-+	kfree(p20);
-+	kfree(c20);
-+	kfree(n26);
-+	kfree(p26);
-+	kfree(c26);
-+	kfree(n32);
-+	kfree(p32);
++	/* Deallocate old references after setting them NULL*/
++	kfree(n20_old);
++	kfree(p20_old);
++	kfree(c20_old);
++	kfree(n26_old);
++	kfree(p26_old);
++	kfree(c26_old);
++	kfree(n32_old);
++	kfree(p32_old);
 +
 +	spin_unlock(&s->lock);
 +	return 0;
@@ -1598,7 +1600,7 @@ index 0000000..118252a
 +	return 0;
 +}
 diff --git a/net/ipv4/fib_trie.c b/net/ipv4/fib_trie.c
-index 3dcffd3..9618e57 100644
+index 3dcffd3..0cda3b8 100644
 --- a/net/ipv4/fib_trie.c
 +++ b/net/ipv4/fib_trie.c
 @@ -1280,6 +1280,10 @@ int fib_table_insert(struct net *net, struct fib_table *tb,
@@ -1617,7 +1619,7 @@ index 3dcffd3..9618e57 100644
  	pr_debug("Deleting %08x/%d tos=%d t=%p\n", key, plen, tos, t);
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+	sail_delete(&tb->sail, key, plen);
++//	sail_delete(&tb->sail, key, plen);
 +#endif
 +
  	fa_to_delete = NULL;
