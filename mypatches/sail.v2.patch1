@@ -999,10 +999,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..a6023e9
+index 0000000..1ddabc5
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,612 @@
+@@ -0,0 +1,771 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1109,7 +1109,7 @@ index 0000000..a6023e9
 +		return -ENOMEM;
 +	}
 +
-+	/*Copy everything from chunk-1 to chunk-chunk_id-1*/
++	/*Copy everything from chunk-{1} to chunk-{chunk_id-1}*/
 +	if (chunk_id > 1) {
 +		l = (chunk_id - 1) * CHUNK_SIZE;
 +		for (i = 0 ; i < l ; i++) {
@@ -1119,7 +1119,7 @@ index 0000000..a6023e9
 +		}
 +	}
 +
-+	/*Copy everything from chunk-chunk_id to chunk-end*/
++	/*Copy everything from chunk-{chunk_id} to chunk-{end}*/
 +	if (chunk_count > chunk_id) {
 +		j = chunk_id * CHUNK_SIZE;
 +		k = (chunk_id - 1) * CHUNK_SIZE;
@@ -1174,7 +1174,7 @@ index 0000000..a6023e9
 +		return -ENOMEM;
 +	}
 +
-+	/*Copy everything from chunk-1 to chunk-chunk_id-1*/
++	/*Copy everything from chunk-{1} to chunk-{chunk_id-1}*/
 +	if (chunk_id > 1) {
 +		c = (chunk_id - 1) * CHUNK_SIZE;
 +		for (i = 0 ; i < c ; i++) {
@@ -1183,7 +1183,7 @@ index 0000000..a6023e9
 +		}
 +	}
 +
-+	/*Copy everything from chunk-chunk_id to chunk-end*/
++	/*Copy everything from chunk-{chunk_id} to chunk-{end}*/
 +	if (chunk_count > chunk_id) {
 +		a = chunk_id * CHUNK_SIZE;
 +		b = (chunk_id - 1) * CHUNK_SIZE;
@@ -1200,6 +1200,111 @@ index 0000000..a6023e9
 +	synchronize_rcu();
 +	/*Increment the counter after chunk has been inserted*/
 +	++s->level32_chunk_count;
++	kfree(nh_old);
++	kfree(pl_old);
++	return 0;
++}
++
++static int chunk_level26_delete(struct sail_ml *s, u32 chunk_id)
++{
++	u8 *nh_old = s->nh26;
++	u8 *pl_old = s->pl26;
++	u32 *ci_old = s->ci26;
++	/*New next-hop, prefix-length and chunk ID array*/
++	u8 *n, *p;
++	u32 *c;
++	u64 arr_size, i, j, k, chunk_start;
++
++	if (chunk_id > s->level26_chunk_count) {
++		pr_err("Invalid chunk_id or chunk_count in level 26");
++		return -EINVAL;
++	}
++
++	arr_size = (s->level26_chunk_count - 1) * CHUNK_SIZE;
++	n = kcalloc(arr_size, sizeof(*n), GFP_ATOMIC);
++	c = kcalloc(arr_size, sizeof(*c), GFP_ATOMIC);
++	p = kcalloc(arr_size, sizeof(*p), GFP_ATOMIC);
++
++	if (!n || !c || !p) {
++		kfree(n);
++		kfree(c);
++		kfree(p);
++		return -ENOMEM;
++	}
++
++	for (i = 1, j = 0; i <= s->level26_chunk_count; i++) {
++		if (i != chunk_id) {
++			chunk_start = (i - 1) * CHUNK_SIZE;
++			for (k = 0; k < CHUNK_SIZE; k++, j++) {
++				n[j] = nh_old[chunk_start + k];
++				c[j] = ci_old[chunk_start + k];
++				p[j] = pl_old[chunk_start + k];
++			}
++		}
++	}
++
++	/*Update the pointers with new pointer*/
++	rcu_assign_pointer(s->nh26, n);
++	rcu_assign_pointer(s->pl26, p);
++	rcu_assign_pointer(s->ci26, c);
++
++	/* Wait for all readers to be finished */
++	synchronize_rcu();
++
++	/*Decrement the counter after chunk has been inserted*/
++	--s->level26_chunk_count;
++
++	/*Remove old arrays*/
++	kfree(nh_old);
++	kfree(ci_old);
++	kfree(pl_old);
++	return 0;
++}
++
++static int chunk_level32_delete(struct sail_ml *s, u32 chunk_id)
++{
++	u8 *nh_old = s->nh32;
++	u8 *pl_old = s->pl32;
++	/*New next-hop, prefix-length and chunk ID array*/
++	u8 *n, *p;
++	u64 arr_size, i, j, k, chunk_start;
++
++	if (chunk_id > s->level32_chunk_count) {
++		pr_err("Invalid chunk_id or chunk_count in level 32");
++		return -EINVAL;
++	}
++
++	arr_size = (s->level32_chunk_count - 1) * CHUNK_SIZE;
++	n = kcalloc(arr_size, sizeof(*n), GFP_ATOMIC);
++	p = kcalloc(arr_size, sizeof(*p), GFP_ATOMIC);
++
++	if (!n || !p) {
++		kfree(n);
++		kfree(p);
++		return -ENOMEM;
++	}
++
++	for (i = 1, j = 0; i <= s->level32_chunk_count; i++) {
++		if (i != chunk_id) {
++			chunk_start = (i - 1) * CHUNK_SIZE;
++			for (k = 0; k < CHUNK_SIZE; k++, j++) {
++				n[j] = nh_old[chunk_start + k];
++				p[j] = pl_old[chunk_start + k];
++			}
++		}
++	}
++
++	/*Update the pointers with new pointer*/
++	rcu_assign_pointer(s->nh32, n);
++	rcu_assign_pointer(s->pl32, p);
++
++	/* Wait for all readers to be finished */
++	synchronize_rcu();
++
++	/*Decrement the counter after chunk has been inserted*/
++	--s->level32_chunk_count;
++
++	/*Remove old arrays*/
 +	kfree(nh_old);
 +	kfree(pl_old);
 +	return 0;
@@ -1258,6 +1363,46 @@ index 0000000..a6023e9
 +	}
 +
 +	return 0;
++}
++
++static int remove_chunk_ids(u32 *chunk_ids, u32 arr_size, u32 chunk_id)
++{
++	long long int i;
++	bool found = false;        
++
++	/*Check if the chunk ID already exists*/
++	for (i = 0; i < arr_size; i++) {
++		if (found && chunk_ids[i] > 0)
++			chunk_ids[i]--;     
++		else if (chunk_ids[i] == chunk_id) {
++			chunk_ids[i] = 0;
++			found = true;
++		}
++	}
++
++	return 0;
++}
++
++/*Check if a chunk is being used by looking at its nh array*/
++static bool is_chunk_being_used(u8 *nh, u32 chunk_id)
++{
++	long long int i;
++        long long int start_index, end_index;
++
++	if (chunk_id < 1) {
++		pr_err("Invalid chunk ID");
++		return -EINVAL;
++	}
++
++	start_index = (long long int)(chunk_id - 1) * CHUNK_SIZE;
++	end_index = (long long int)chunk_id * CHUNK_SIZE;
++	for (i = start_index; i <= end_index; i++) {
++		/*The chunk is being used*/
++		if (nh[i] > 0)
++                    return false;
++	}
++
++	return true;
 +}
 +
 +int sail_insert(struct sail_ml *s, u32 key, u8 prefix_len,
@@ -1456,6 +1601,10 @@ index 0000000..a6023e9
 +		if (s->pl26[idx26] ==  26) {
 +			s->nh26[idx26] = 0;
 +			s->pl26[idx26] = 0;
++			if (!is_chunk_being_used(s->nh26, s->ci20[idx20])) {
++				chunk_level26_delete(s, s->ci20[idx20]);
++                                remove_chunk_ids(s->ci20, LEVEL20_SIZE, s->ci20[idx20]);
++			}
 +		}
 +		goto finish;
 +	} else if (prefix_len < 26) {
@@ -1468,14 +1617,16 @@ index 0000000..a6023e9
 +			s->nh26[idx26 + i] = 0;
 +			s->pl26[idx26 + i] = 0;
 +		}
++		if (!is_chunk_being_used(s->nh26, s->ci20[idx20])) {
++			chunk_level26_delete(s, s->ci20[idx20]);
++                        remove_chunk_ids(s->ci20, LEVEL20_SIZE, s->ci20[idx20]);                        
++		}
 +		goto finish;
 +	}
 +
 +	/* The prefix_len is 27-32. but no chunk for the prefix */
 +	if (s->ci26[idx26] == 0)
 +		goto error;
-+
-+	smp_mb();
 +
 +	/*Extract 6 bit from MSB and calculate level 32 index*/
 +	idx32 = (s->ci26[idx26] - 1) * CHUNK_SIZE + (key & 63);
@@ -1487,6 +1638,10 @@ index 0000000..a6023e9
 +			s->nh32[idx32] = 0;
 +			s->pl32[idx32] = 0;
 +		}
++		if (!is_chunk_being_used(s->nh32, s->ci26[idx26])) {
++			chunk_level32_delete(s, s->ci26[idx26]);
++			remove_chunk_ids(s->ci26, LEVEL26_ARR_SIZE(s), s->ci26[idx26]);                        
++		}                
 +		goto finish;
 +	} else if (prefix_len < 32) {
 +		/*Level pushing*/
@@ -1498,6 +1653,10 @@ index 0000000..a6023e9
 +				continue;
 +			s->nh32[idx32 + i] = 0;
 +			s->pl32[idx32 + i] = 0;
++		}
++		if (!is_chunk_being_used(s->nh32, s->ci26[idx26])) {
++			chunk_level32_delete(s, s->ci26[idx26]);
++			remove_chunk_ids(s->ci26, LEVEL26_ARR_SIZE(s), s->ci26[idx26]);                        
 +		}
 +		goto finish;
 +	}
