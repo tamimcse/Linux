@@ -712,7 +712,7 @@ index 0f7a27f..eb58c12 100644
 -
 +CONFIG_FIB_SAIL_ML=y
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..84c4aa0 100644
+index 81d0f21..672fd9f 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -736,7 +736,7 @@ index 81d0f21..84c4aa0 100644
 +#define NETDEV_COUNT_MAX 255
 +
 +struct sail_ml {
-+	/*Index to this array is stored in next-hop*/    
++	/*Index to this array is stored in next-hop*/
 +	struct net_device	*netdevs[NETDEV_COUNT_MAX];
 +	/*Total number of next-hops (netdev)*/
 +	u8 netdev_count;
@@ -999,10 +999,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..155954c
+index 0000000..a6023e9
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,611 @@
+@@ -0,0 +1,612 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1012,12 +1012,12 @@ index 0000000..155954c
 + * Author: MD Iftakharul Islam (Tamim) <mislam4@kent.edu>.
 + *
 + * This work is based on the SAIL_L which is originally described in:
-+ * 
++ *
 + * Yang, Tong, Gaogang Xie, YanBiao Li, Qiaobin Fu, Alex X. Liu, Qi Li,
 + * and Laurent Mathy. "Guarantee IP lookup performance with FIB explosion."
 + * In ACM SIGCOMM Computer Communication Review, vol. 44, no. 4, pp. 39-50.
 + * ACM, 2014.
-+ * 
++ *
 + * This file however deviates from the original SAIL_L. In original SAIL_L,
 + * a routing table is divided into level 16, level 24 and level 32. A 14-bit
 + * long prefix can be pushed to level 16 as well as upper levels such as
@@ -1031,13 +1031,13 @@ index 0000000..155954c
 + * the upper levels (unlike SAIL_L). This reduces the memory requiement
 + * significantly compared to SAIL_L. Let's name this approach
 + * "Multilevel SAIL (SAIL_ML)". The lookup process in SAIL_ML is as following:
-+ * 
++ *
 + * We look up in level 20 first. Then chunk_id array indicates if we need to
 + * lookup further in the upper level; if yes, then we look up in level 26.
 + * Then chunk id array of level 26 indicates if we need to lookup further; if
 + * yes, then we look up in level 32. In this way, a lookup in SAIL_ML may
 + * need upto three lookups.
-+ * 
++ *
 + * The main benefit of SAIL_ML over SAIL_L is that it consumes
 + * significantly less memory than SAIL_L. In SAIL_L, when a prefix of length 14
 + * is pushed to level 24, it increases the memory requirement to a great
@@ -1047,7 +1047,7 @@ index 0000000..155954c
 + * to the upper levels (level 26 and level 32). This is why SAIL_ML
 + * requires much less memory than SAIL_L (which is critical because CPU cache
 + * is limited in size).
-+ * 
++ *
 + */
 +
 +#include <net/ip_fib.h>
@@ -1058,8 +1058,8 @@ index 0000000..155954c
 +/*chunk size is 2^6*/
 +#define CHUNK_SIZE 64
 +
-+#define LEVEL26_ARR_SIZE(S) S->level26_chunk_count * CHUNK_SIZE
-+#define LEVEL32_ARR_SIZE(S) S->level32_chunk_count * CHUNK_SIZE
++#define LEVEL26_ARR_SIZE(S) (S->level26_chunk_count * CHUNK_SIZE)
++#define LEVEL32_ARR_SIZE(S) (S->level32_chunk_count * CHUNK_SIZE)
 +
 +/*Insert net_device to the net-device array.
 + *This function returns the index to the net_device array
@@ -1086,7 +1086,7 @@ index 0000000..155954c
 +	u8 *nh_old = s->nh26;
 +	u8 *pl_old = s->pl26;
 +	u32 *ci_old = s->ci26;
-+        /*New next-hop, prefix-length and chunk ID array*/
++	/*New next-hop, prefix-length and chunk ID array*/
 +	u8 *n, *p;
 +	u32 *c;
 +	u64 arr_size, i, j, k, l;
@@ -1146,7 +1146,7 @@ index 0000000..155954c
 +	kfree(nh_old);
 +	kfree(ci_old);
 +	kfree(pl_old);
-+        return 0;
++	return 0;
 +}
 +
 +/* Insert a chunk at index. Note that chunk_id starts from 1, not 0 */
@@ -1170,7 +1170,7 @@ index 0000000..155954c
 +
 +	if (!n || !p) {
 +		kfree(n);
-+		kfree(p);		
++		kfree(p);
 +		return -ENOMEM;
 +	}
 +
@@ -1202,7 +1202,7 @@ index 0000000..155954c
 +	++s->level32_chunk_count;
 +	kfree(nh_old);
 +	kfree(pl_old);
-+        return 0;
++	return 0;
 +}
 +
 +/*Finds the chunk ID for the index*/
@@ -1261,19 +1261,19 @@ index 0000000..155954c
 +}
 +
 +int sail_insert(struct sail_ml *s, u32 key, u8 prefix_len,
-+	        struct net_device *dev)
++		struct net_device *dev)
 +{
 +	int i, j;
 +	u8 *n20, *p20;
 +	u32 *c20;
-+        u32 chunk_id;
-+        /*Index to level 20*/
++	u32 chunk_id;
++	/*Index to level 20*/
 +	u32 idx20;
 +	/*Index to level 26 and level 32*/
 +	u64 idx26, idx32;
 +	u32 consecutive_leafs;
 +	u8 netdev_index = get_netdev_index(s, dev);
-+        int err = 0;
++	int err = 0;
 +
 +	spin_lock(&s->lock);
 +
@@ -1327,11 +1327,14 @@ index 0000000..155954c
 +	 */
 +	if (s->ci20[idx20] == 0) {
 +		err = get_chunk_id(s->ci20, LEVEL20_SIZE, idx20, &chunk_id);
-+		if(err)	goto error;
++		if (err)
++			goto error;
 +		err = chunk_level26_insert(s, chunk_id);
-+		if(err)	goto error;
++		if (err)
++			goto error;
 +		err = update_chunk_ids(s->ci20, LEVEL20_SIZE, idx20, chunk_id);
-+		if(err)	goto error;
++		if (err)
++			goto error;
 +	}
 +
 +	chunk_id = s->ci20[idx20];
@@ -1362,12 +1365,15 @@ index 0000000..155954c
 +	if (s->ci26[idx26] == 0) {
 +		err = get_chunk_id(s->ci26, LEVEL26_ARR_SIZE(s),
 +				   idx26, &chunk_id);
-+                if(err) goto error;
++		if (err)
++			goto error;
 +		err = chunk_level32_insert(s, chunk_id);
-+                if(err) goto error;
++		if (err)
++			goto error;
 +		err = update_chunk_ids(s->ci26, LEVEL26_ARR_SIZE(s),
 +				       idx26, chunk_id);
-+		if(err) goto error;
++		if (err)
++			goto error;
 +	}
 +
 +	chunk_id = s->ci26[idx26];
@@ -1403,7 +1409,7 @@ index 0000000..155954c
 +{
 +	int i;
 +	/*Index to level 20*/
-+        u32 idx20;
++	u32 idx20;
 +	/*Index to level 26 and level 32*/
 +	u64 idx26, idx32;
 +	u32 consecutive_leafs;
@@ -1455,9 +1461,6 @@ index 0000000..155954c
 +	} else if (prefix_len < 26) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (26 - prefix_len);
-+                if ((idx26 + consecutive_leafs - 1) >= LEVEL26_ARR_SIZE(s))
-+			goto error;
-+
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Prefix len doesn't match*/
 +			if (s->pl26[idx26 + i] != prefix_len)
@@ -1472,10 +1475,10 @@ index 0000000..155954c
 +	if (s->ci26[idx26] == 0)
 +		goto error;
 +
-+        smp_mb();
++	smp_mb();
 +
 +	/*Extract 6 bit from MSB and calculate level 32 index*/
-+	idx32 = (s->ci26[idx26] - 1) * CHUNK_SIZE + (key & 63U);
++	idx32 = (s->ci26[idx26] - 1) * CHUNK_SIZE + (key & 63);
 +	if (idx32 >= LEVEL32_ARR_SIZE(s))
 +		goto error;
 +
@@ -1488,8 +1491,6 @@ index 0000000..155954c
 +	} else if (prefix_len < 32) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (32 - prefix_len);
-+                if ((idx32 + consecutive_leafs - 1) >= LEVEL32_ARR_SIZE(s))
-+			goto error;
 +
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Prefix len doesn't match*/
