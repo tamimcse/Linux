@@ -999,10 +999,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..49ab9ac
+index 0000000..155954c
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,619 @@
+@@ -0,0 +1,611 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1412,22 +1412,17 @@ index 0000000..49ab9ac
 +	spin_lock(&s->lock);
 +
 +	/* Simply ignore */
-+	if (prefix_len == 0 || !s->nh20) {
-+		err = -ENOENT;
-+		goto finish;
-+	}
++	if (prefix_len == 0 || !s->nh20)
++		goto error;
 +
 +	/*Eextract 20 bits from LSB.*/
 +	idx20 = key >> 12;
 +
 +	if (prefix_len == 20) {
-+		/*Prefix len doesn't match*/
-+		if (s->pl20[idx20] !=  20) {
-+			err = -ENOENT;
-+			goto finish;
++		if (s->pl20[idx20] ==  20) {
++			s->nh20[idx20] = 0;
++			s->pl20[idx20] = 0;
 +		}
-+		s->nh20[idx20] = 0;
-+		s->pl20[idx20] = 0;
 +		goto finish;
 +	} else if (prefix_len < 20) {
 +		/*Level pushing*/
@@ -1443,30 +1438,26 @@ index 0000000..49ab9ac
 +	}
 +
 +	/* The prefix_len is 21-32 but no chunk for the prefix*/
-+	if (s->ci20[idx20] == 0) {
-+		err = -ENOENT;
-+		goto finish;
-+	}
++	if (s->ci20[idx20] == 0)
++		goto error;
 +
 +	/*Extract 21-26 bit and calculate level 26 index*/
 +	idx26 = (s->ci20[idx20] - 1) * CHUNK_SIZE + ((key & 4032) >> 6);
-+	if (idx26 >= LEVEL26_ARR_SIZE(s)) {
-+		err = -ENOENT;
-+		goto finish;
-+	}
++	if (idx26 >= LEVEL26_ARR_SIZE(s))
++		goto error;
 +
 +	if (prefix_len == 26) {
-+		/*Prefix len doesn't match*/
-+		if (s->pl26[idx26] !=  26) {
-+			err = -ENOENT;
-+			goto finish;
++		if (s->pl26[idx26] ==  26) {
++			s->nh26[idx26] = 0;
++			s->pl26[idx26] = 0;
 +		}
-+		s->nh26[idx26] = 0;
-+		s->pl26[idx26] = 0;
 +		goto finish;
 +	} else if (prefix_len < 26) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (26 - prefix_len);
++                if ((idx26 + consecutive_leafs - 1) >= LEVEL26_ARR_SIZE(s))
++			goto error;
++
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Prefix len doesn't match*/
 +			if (s->pl26[idx26 + i] != prefix_len)
@@ -1478,30 +1469,28 @@ index 0000000..49ab9ac
 +	}
 +
 +	/* The prefix_len is 27-32. but no chunk for the prefix */
-+	if (s->ci26[idx26] == 0) {
-+		err = -ENOENT;
-+		goto finish;
-+	}
++	if (s->ci26[idx26] == 0)
++		goto error;
++
++        smp_mb();
 +
 +	/*Extract 6 bit from MSB and calculate level 32 index*/
 +	idx32 = (s->ci26[idx26] - 1) * CHUNK_SIZE + (key & 63U);
-+	if (idx32 >= LEVEL32_ARR_SIZE(s)) {
-+		err = -ENOENT;
-+		goto finish;
-+	}
++	if (idx32 >= LEVEL32_ARR_SIZE(s))
++		goto error;
 +
 +	if (prefix_len == 32) {
-+		/*Prefix len doesn't match*/
-+		if (s->pl32[idx32] !=  32) {
-+			err = -ENOENT;
-+			goto finish;
++		if (s->pl32[idx32] ==  32) {
++			s->nh32[idx32] = 0;
++			s->pl32[idx32] = 0;
 +		}
-+		s->nh32[idx32] = 0;
-+		s->pl32[idx32] = 0;
 +		goto finish;
 +	} else if (prefix_len < 32) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (32 - prefix_len);
++                if ((idx32 + consecutive_leafs - 1) >= LEVEL32_ARR_SIZE(s))
++			goto error;
++
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Prefix len doesn't match*/
 +			if (s->pl32[idx32 + i] != prefix_len)
@@ -1512,6 +1501,9 @@ index 0000000..49ab9ac
 +		goto finish;
 +	}
 +
++/*The prefix was not found*/
++error:
++	err = -ENOENT;
 +finish:
 +	spin_unlock(&s->lock);
 +	return err;
