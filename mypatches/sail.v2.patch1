@@ -1000,10 +1000,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..4f9acca
+index 0000000..da76853
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,755 @@
+@@ -0,0 +1,759 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1110,15 +1110,17 @@ index 0000000..4f9acca
 +	}
 +
 +	/*Iterate over the new array and copy from the old array*/        
-+	for (i = 1, j = 0; i <= (s->level26_chunk_count + 1); i++) {
++	for (i = 1, j = 0, chunk_start = 0; i <= (s->level26_chunk_count + 1); i++) {
 +		if (i != chunk_id) {
-+			chunk_start = (i - 1) * CHUNK_SIZE;
 +			/*Copy the chunk*/
 +			for (k = 0; k < CHUNK_SIZE; k++, j++) {
 +				n[j] = nh_old[chunk_start + k];
 +				c[j] = ci_old[chunk_start + k];
 +				p[j] = pl_old[chunk_start + k];
 +			}
++			chunk_start += CHUNK_SIZE;
++		} else {
++			j += CHUNK_SIZE;
 +		}
 +	}
 +
@@ -1164,14 +1166,16 @@ index 0000000..4f9acca
 +	}
 +        
 +	/*Iterate over the new array and copy from the old array*/        
-+	for (i = 1, j = 0; i <= (s->level32_chunk_count + 1); i++) {
++	for (i = 1, j = 0, chunk_start = 0; i <= (s->level32_chunk_count + 1); i++) {
 +		if (i != chunk_id) {
-+			chunk_start = (i - 1) * CHUNK_SIZE;
 +			/*Copy the chunk*/
 +			for (k = 0; k < CHUNK_SIZE; k++, j++) {
 +				n[j] = nh_old[chunk_start + k];
 +				p[j] = pl_old[chunk_start + k];
 +			}
++			chunk_start += CHUNK_SIZE;
++		} else {
++			j += CHUNK_SIZE;
 +		}
 +	}
 +
