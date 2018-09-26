@@ -712,7 +712,7 @@ index 0f7a27f..eb58c12 100644
 -
 +CONFIG_FIB_SAIL_ML=y
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..672fd9f 100644
+index 81d0f21..f3da65d 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -775,17 +775,18 @@ index 81d0f21..672fd9f 100644
  struct fib_nh_notifier_info {
  	struct fib_notifier_info info; /* must be first */
  	struct fib_nh *fib_nh;
-@@ -219,6 +265,9 @@ struct fib_table {
+@@ -219,6 +265,10 @@ struct fib_table {
  	int			tb_num_default;
  	struct rcu_head		rcu;
  	unsigned long 		*tb_data;
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++	/*Each FIB table will have its own SAIL structure.*/
 +	struct sail_ml	sail;
 +#endif
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +308,177 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +309,177 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -999,10 +1000,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..1ddabc5
+index 0000000..4f9acca
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,771 @@
+@@ -0,0 +1,755 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1089,15 +1090,14 @@ index 0000000..1ddabc5
 +	/*New next-hop, prefix-length and chunk ID array*/
 +	u8 *n, *p;
 +	u32 *c;
-+	u64 arr_size, i, j, k, l;
-+	u32 chunk_count = s->level26_chunk_count + 1;
++	u64 arr_size, i, j, k, chunk_start;
 +
-+	if (chunk_id > chunk_count) {
-+		pr_err("Invalid chunk_id or chunk_count in level 26");
++	if (chunk_id > (s->level26_chunk_count + 1)) {
++		pr_err("Invalid chunk_id for level 26");
 +		return -EINVAL;
 +	}
 +
-+	arr_size = chunk_count * CHUNK_SIZE;
++	arr_size = (s->level26_chunk_count + 1) * CHUNK_SIZE;
 +	n = kcalloc(arr_size, sizeof(*n), GFP_ATOMIC);
 +	c = kcalloc(arr_size, sizeof(*c), GFP_ATOMIC);
 +	p = kcalloc(arr_size, sizeof(*p), GFP_ATOMIC);
@@ -1109,25 +1109,16 @@ index 0000000..1ddabc5
 +		return -ENOMEM;
 +	}
 +
-+	/*Copy everything from chunk-{1} to chunk-{chunk_id-1}*/
-+	if (chunk_id > 1) {
-+		l = (chunk_id - 1) * CHUNK_SIZE;
-+		for (i = 0 ; i < l ; i++) {
-+			n[i] = nh_old[i];
-+			c[i] = ci_old[i];
-+			p[i] = pl_old[i];
-+		}
-+	}
-+
-+	/*Copy everything from chunk-{chunk_id} to chunk-{end}*/
-+	if (chunk_count > chunk_id) {
-+		j = chunk_id * CHUNK_SIZE;
-+		k = (chunk_id - 1) * CHUNK_SIZE;
-+		l = (chunk_count - chunk_id) * CHUNK_SIZE;
-+		for (i = 0 ; i < l ; i++) {
-+			n[j + i] = nh_old[k + i];
-+			c[j + i] = ci_old[k + i];
-+			p[j + i] = pl_old[k + i];
++	/*Iterate over the new array and copy from the old array*/        
++	for (i = 1, j = 0; i <= (s->level26_chunk_count + 1); i++) {
++		if (i != chunk_id) {
++			chunk_start = (i - 1) * CHUNK_SIZE;
++			/*Copy the chunk*/
++			for (k = 0; k < CHUNK_SIZE; k++, j++) {
++				n[j] = nh_old[chunk_start + k];
++				c[j] = ci_old[chunk_start + k];
++				p[j] = pl_old[chunk_start + k];
++			}
 +		}
 +	}
 +
@@ -1155,16 +1146,14 @@ index 0000000..1ddabc5
 +	u8 *nh_old = s->nh32;
 +	u8 *pl_old = s->pl32;
 +	u8 *n, *p;
-+	u64 arrsize, i, a, b, c;
-+	u32 chunk_count = s->level32_chunk_count + 1;
++	u64 arrsize, i, j, k, chunk_start;
 +
-+	if (chunk_id > chunk_count) {
-+		pr_err("Invalid chunk_id or chunk_count in level 32");
++	if (chunk_id > (s->level32_chunk_count + 1)) {
++		pr_err("Invalid chunk_id for level 32");
 +		return -EINVAL;
 +	}
 +
-+	arrsize = chunk_count * CHUNK_SIZE;
-+
++	arrsize = (s->level32_chunk_count + 1) * CHUNK_SIZE;
 +	n = kcalloc(arrsize, sizeof(*n), GFP_ATOMIC);
 +	p = kcalloc(arrsize, sizeof(*p), GFP_ATOMIC);
 +
@@ -1173,24 +1162,16 @@ index 0000000..1ddabc5
 +		kfree(p);
 +		return -ENOMEM;
 +	}
-+
-+	/*Copy everything from chunk-{1} to chunk-{chunk_id-1}*/
-+	if (chunk_id > 1) {
-+		c = (chunk_id - 1) * CHUNK_SIZE;
-+		for (i = 0 ; i < c ; i++) {
-+			n[i] = nh_old[i];
-+			p[i] = pl_old[i];
-+		}
-+	}
-+
-+	/*Copy everything from chunk-{chunk_id} to chunk-{end}*/
-+	if (chunk_count > chunk_id) {
-+		a = chunk_id * CHUNK_SIZE;
-+		b = (chunk_id - 1) * CHUNK_SIZE;
-+		c = (chunk_count - chunk_id) * CHUNK_SIZE;
-+		for (i = 0 ; i < c ; i++) {
-+			n[a + i] = nh_old[b + i];
-+			p[a + i] = pl_old[b + i];
++        
++	/*Iterate over the new array and copy from the old array*/        
++	for (i = 1, j = 0; i <= (s->level32_chunk_count + 1); i++) {
++		if (i != chunk_id) {
++			chunk_start = (i - 1) * CHUNK_SIZE;
++			/*Copy the chunk*/
++			for (k = 0; k < CHUNK_SIZE; k++, j++) {
++				n[j] = nh_old[chunk_start + k];
++				p[j] = pl_old[chunk_start + k];
++			}
 +		}
 +	}
 +
@@ -1232,9 +1213,11 @@ index 0000000..1ddabc5
 +		return -ENOMEM;
 +	}
 +
++	/*Iterate over the old array and copy to new array*/        
 +	for (i = 1, j = 0; i <= s->level26_chunk_count; i++) {
 +		if (i != chunk_id) {
 +			chunk_start = (i - 1) * CHUNK_SIZE;
++			/*Copy the chunk*/
 +			for (k = 0; k < CHUNK_SIZE; k++, j++) {
 +				n[j] = nh_old[chunk_start + k];
 +				c[j] = ci_old[chunk_start + k];
@@ -1284,9 +1267,11 @@ index 0000000..1ddabc5
 +		return -ENOMEM;
 +	}
 +
++	/*Iterate over the old array and copy to new array*/        
 +	for (i = 1, j = 0; i <= s->level32_chunk_count; i++) {
 +		if (i != chunk_id) {
 +			chunk_start = (i - 1) * CHUNK_SIZE;
++			/*Copy the chunk*/
 +			for (k = 0; k < CHUNK_SIZE; k++, j++) {
 +				n[j] = nh_old[chunk_start + k];
 +				p[j] = pl_old[chunk_start + k];
@@ -1775,7 +1760,7 @@ index 0000000..1ddabc5
 +	return 0;
 +}
 diff --git a/net/ipv4/fib_trie.c b/net/ipv4/fib_trie.c
-index 3dcffd3..9618e57 100644
+index 3dcffd3..0cda3b8 100644
 --- a/net/ipv4/fib_trie.c
 +++ b/net/ipv4/fib_trie.c
 @@ -1280,6 +1280,10 @@ int fib_table_insert(struct net *net, struct fib_table *tb,
@@ -1794,7 +1779,7 @@ index 3dcffd3..9618e57 100644
  	pr_debug("Deleting %08x/%d tos=%d t=%p\n", key, plen, tos, t);
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+	sail_delete(&tb->sail, key, plen);
++//	sail_delete(&tb->sail, key, plen);
 +#endif
 +
  	fa_to_delete = NULL;
