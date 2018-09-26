@@ -1000,10 +1000,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..da76853
+index 0000000..1d106fa
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,759 @@
+@@ -0,0 +1,758 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1111,8 +1111,8 @@ index 0000000..da76853
 +
 +	/*Iterate over the new array and copy from the old array*/        
 +	for (i = 1, j = 0, chunk_start = 0; i <= (s->level26_chunk_count + 1); i++) {
++		/*Copy the chunk*/		
 +		if (i != chunk_id) {
-+			/*Copy the chunk*/
 +			for (k = 0; k < CHUNK_SIZE; k++, j++) {
 +				n[j] = nh_old[chunk_start + k];
 +				c[j] = ci_old[chunk_start + k];
@@ -1120,6 +1120,7 @@ index 0000000..da76853
 +			}
 +			chunk_start += CHUNK_SIZE;
 +		} else {
++			/*skip copying*/                    
 +			j += CHUNK_SIZE;
 +		}
 +	}
@@ -1165,16 +1166,18 @@ index 0000000..da76853
 +		return -ENOMEM;
 +	}
 +        
-+	/*Iterate over the new array and copy from the old array*/        
-+	for (i = 1, j = 0, chunk_start = 0; i <= (s->level32_chunk_count + 1); i++) {
++	/*Iterate over the new array and copy from the old array*/
++	for (i = 1, j = 0, chunk_start = 0;
++	     i <= (s->level32_chunk_count + 1); i++) {
++		/*copy the chunk*/
 +		if (i != chunk_id) {
-+			/*Copy the chunk*/
 +			for (k = 0; k < CHUNK_SIZE; k++, j++) {
 +				n[j] = nh_old[chunk_start + k];
 +				p[j] = pl_old[chunk_start + k];
 +			}
 +			chunk_start += CHUNK_SIZE;
 +		} else {
++			/*skip copying*/
 +			j += CHUNK_SIZE;
 +		}
 +	}
@@ -1217,7 +1220,7 @@ index 0000000..da76853
 +		return -ENOMEM;
 +	}
 +
-+	/*Iterate over the old array and copy to new array*/        
++	/*Iterate over the old array and copy to new array*/
 +	for (i = 1, j = 0; i <= s->level26_chunk_count; i++) {
 +		if (i != chunk_id) {
 +			chunk_start = (i - 1) * CHUNK_SIZE;
@@ -1271,7 +1274,7 @@ index 0000000..da76853
 +		return -ENOMEM;
 +	}
 +
-+	/*Iterate over the old array and copy to new array*/        
++	/*Iterate over the old array and copy to new array*/
 +	for (i = 1, j = 0; i <= s->level32_chunk_count; i++) {
 +		if (i != chunk_id) {
 +			chunk_start = (i - 1) * CHUNK_SIZE;
@@ -1300,26 +1303,23 @@ index 0000000..da76853
 +}
 +
 +/*Finds the chunk ID for the index*/
-+static int get_chunk_id(u32 *chunk_ids, u32 arr_size, u32 index, u32 *chunk_id)
++static u32 get_chunk_id(u32 *chunk_ids, u32 arr_size, u32 index)
 +{
 +	long long int i;
 +
 +	if (index >= arr_size) {
 +		pr_err("Index needs to be smaller than arr_size");
-+		return -EINVAL;
++		return 0;
 +	}
 +
 +	/*Find the first chunk_no > 0 to the left*/
 +	for (i = (long long int)index - 1; i >= 0; i--) {
-+		if (chunk_ids[i] > 0) {
-+			*chunk_id = chunk_ids[i] + 1;
-+			return 0;
-+		}
++		if (chunk_ids[i] > 0)
++			return chunk_ids[i] + 1;
 +	}
 +
 +	/*If there is no chunk to the left, then this is the first chunk*/
-+	*chunk_id = 1;
-+	return 0;
++	return 1;
 +}
 +
 +static int update_chunk_ids(u32 *chunk_ids, u32 arr_size,
@@ -1357,13 +1357,13 @@ index 0000000..da76853
 +static int remove_chunk_ids(u32 *chunk_ids, u32 arr_size, u32 chunk_id)
 +{
 +	long long int i;
-+	bool found = false;        
++	bool found = false;
 +
 +	/*Check if the chunk ID already exists*/
 +	for (i = 0; i < arr_size; i++) {
-+		if (found && chunk_ids[i] > 0)
-+			chunk_ids[i]--;     
-+		else if (chunk_ids[i] == chunk_id) {
++		if (found && chunk_ids[i] > 0) {
++			chunk_ids[i]--;
++		} else if (chunk_ids[i] == chunk_id) {
 +			chunk_ids[i] = 0;
 +			found = true;
 +		}
@@ -1376,7 +1376,7 @@ index 0000000..da76853
 +static bool is_chunk_being_used(u8 *nh, u32 chunk_id)
 +{
 +	long long int i;
-+        long long int start_index, end_index;
++	long long int start_index, end_index;
 +
 +	if (chunk_id < 1) {
 +		pr_err("Invalid chunk ID");
@@ -1388,7 +1388,7 @@ index 0000000..da76853
 +	for (i = start_index; i <= end_index; i++) {
 +		/*The chunk is being used*/
 +		if (nh[i] > 0)
-+                    return false;
++			return false;
 +	}
 +
 +	return true;
@@ -1460,8 +1460,8 @@ index 0000000..da76853
 +	 * chunk for this index in level 26
 +	 */
 +	if (s->ci20[idx20] == 0) {
-+		err = get_chunk_id(s->ci20, LEVEL20_SIZE, idx20, &chunk_id);
-+		if (err)
++		chunk_id = get_chunk_id(s->ci20, LEVEL20_SIZE, idx20);
++		if (!chunk_id)
 +			goto error;
 +		err = chunk_level26_insert(s, chunk_id);
 +		if (err)
@@ -1471,10 +1471,8 @@ index 0000000..da76853
 +			goto error;
 +	}
 +
-+	chunk_id = s->ci20[idx20];
-+	/*Extract 21-26 bit*/
-+	idx20 = (key & 4032) >> 6;
-+	idx26 = (chunk_id - 1) * CHUNK_SIZE + idx20;
++	/*Extract 21-26 bit and calculate index to level 26*/
++	idx26 = (s->ci20[idx20] - 1) * CHUNK_SIZE + ((key & 4032) >> 6);
 +
 +	if (prefix_len == 26) {
 +		s->nh26[idx26] = netdev_index;
@@ -1497,9 +1495,8 @@ index 0000000..da76853
 +	 * chunk for this index in level 32
 +	 */
 +	if (s->ci26[idx26] == 0) {
-+		err = get_chunk_id(s->ci26, LEVEL26_ARR_SIZE(s),
-+				   idx26, &chunk_id);
-+		if (err)
++		chunk_id = get_chunk_id(s->ci26, LEVEL26_ARR_SIZE(s), idx26);
++		if (!chunk_id)
 +			goto error;
 +		err = chunk_level32_insert(s, chunk_id);
 +		if (err)
@@ -1510,10 +1507,8 @@ index 0000000..da76853
 +			goto error;
 +	}
 +
-+	chunk_id = s->ci26[idx26];
-+	/*Extract 6 bit from MSB*/
-+	idx20 = key & 63;
-+	idx32 = (chunk_id - 1) * CHUNK_SIZE + idx20;
++	/*Extract 6 bit from MSB and calculate index to level 32*/
++	idx32 = (s->ci26[idx26] - 1) * CHUNK_SIZE + (key & 63);
 +
 +	if (prefix_len == 32) {
 +		s->nh32[idx32] = netdev_index;
@@ -1592,7 +1587,8 @@ index 0000000..da76853
 +			s->pl26[idx26] = 0;
 +			if (!is_chunk_being_used(s->nh26, s->ci20[idx20])) {
 +				chunk_level26_delete(s, s->ci20[idx20]);
-+                                remove_chunk_ids(s->ci20, LEVEL20_SIZE, s->ci20[idx20]);
++				remove_chunk_ids(s->ci20, LEVEL20_SIZE,
++						 s->ci20[idx20]);
 +			}
 +		}
 +		goto finish;
@@ -1608,7 +1604,8 @@ index 0000000..da76853
 +		}
 +		if (!is_chunk_being_used(s->nh26, s->ci20[idx20])) {
 +			chunk_level26_delete(s, s->ci20[idx20]);
-+                        remove_chunk_ids(s->ci20, LEVEL20_SIZE, s->ci20[idx20]);                        
++			remove_chunk_ids(s->ci20, LEVEL20_SIZE,
++					 s->ci20[idx20]);
 +		}
 +		goto finish;
 +	}
@@ -1629,8 +1626,9 @@ index 0000000..da76853
 +		}
 +		if (!is_chunk_being_used(s->nh32, s->ci26[idx26])) {
 +			chunk_level32_delete(s, s->ci26[idx26]);
-+			remove_chunk_ids(s->ci26, LEVEL26_ARR_SIZE(s), s->ci26[idx26]);                        
-+		}                
++			remove_chunk_ids(s->ci26, LEVEL26_ARR_SIZE(s),
++					 s->ci26[idx26]);
++		}
 +		goto finish;
 +	} else if (prefix_len < 32) {
 +		/*Level pushing*/
@@ -1645,7 +1643,8 @@ index 0000000..da76853
 +		}
 +		if (!is_chunk_being_used(s->nh32, s->ci26[idx26])) {
 +			chunk_level32_delete(s, s->ci26[idx26]);
-+			remove_chunk_ids(s->ci26, LEVEL26_ARR_SIZE(s), s->ci26[idx26]);                        
++			remove_chunk_ids(s->ci26, LEVEL26_ARR_SIZE(s),
++					 s->ci26[idx26]);
 +		}
 +		goto finish;
 +	}
