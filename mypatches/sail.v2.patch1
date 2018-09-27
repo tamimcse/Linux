@@ -737,7 +737,7 @@ index 32699b2..1a9f77e 100644
  
  /*
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..e8088bb 100644
+index 81d0f21..56927af 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -811,7 +811,7 @@ index 81d0f21..e8088bb 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +309,204 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +309,219 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -930,8 +930,10 @@ index 81d0f21..e8088bb 100644
 +	};
 +	struct net_device *dev;
 +	u64 tsc_begin, tsc_end;
++        u64 tsc_trie_begin, tsc_trie_end;
 +
 +        u64 tsc20 = 0, tsc26 = 0, tsc32 = 0;
++        u64 tsc_trie_20 = 0, tsc_trie_26 = 0, tsc_trie_32 = 0;
 +        u64 count20 = 0, count26 = 0, count32 = 0;
 +        
 +	for (j = 0; j < 89; j++) {
@@ -948,9 +950,12 @@ index 81d0f21..e8088bb 100644
 +		temp = flp->daddr;
 +		flp->daddr = ip_addr;
 +		flp->flowi4_flags |= FLOWI_FLAG_SKIP_NH_OIF;
-+		if (tb)
++		if (tb) {
++                        tsc_trie_begin = rdtsc();
 +			err = fib_table_lookup(tb, flp, res,
 +					       flags | FIB_LOOKUP_NOREF);
++                        tsc_trie_end = rdtsc();
++                }
 +//		if (res->fi)
 +//			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
 +//				   &flp->daddr, res->fi->fib_dev->name,
@@ -978,29 +983,31 @@ index 81d0f21..e8088bb 100644
 +		temp = flp->daddr;
 +		flp->daddr = ip_addr;
 +		flp->flowi4_flags |= FLOWI_FLAG_SKIP_NH_OIF;
-+		if (tb)
-+			err = fib_table_lookup(tb, flp,
-+					       res, flags | FIB_LOOKUP_NOREF);
++		if (tb) {
++			tsc_trie_begin = rdtsc();
++			err = fib_table_lookup(tb, flp, res,
++					       flags | FIB_LOOKUP_NOREF);
++			tsc_trie_end = rdtsc();
++		}
 +
 +		flp->daddr = temp;
 +
 +		if (res->fi) {
 +                    if(res->prefixlen <= 20){
-+                        tsc20 = tsc20 * count20 + (tsc_end - tsc_begin);
++                        tsc20 += (tsc_end - tsc_begin);
++                        tsc_trie_20 += (tsc_trie_end - tsc_trie_begin);
 +                        count20++;
-+                        tsc20 = tsc20/count20;
 +                    } else if(res->prefixlen <= 26){
-+                        tsc26 = tsc26 * count26 + (tsc_end - tsc_begin);
++                        tsc26 += (tsc_end - tsc_begin);
++                        tsc_trie_26 += (tsc_trie_end - tsc_trie_begin);
 +                        count26++;
-+                        tsc26 = tsc26/count26;
 +                    } else {
-+                        tsc32 = tsc32 * count32 + (tsc_end - tsc_begin);
++                        tsc32 += (tsc_end - tsc_begin);
++                        tsc_trie_32 += (tsc_trie_end - tsc_trie_begin);
 +                        count32++;
-+                        tsc32 = tsc32/count32;
 +                    }
 +                    
 +                    //pr_err("depth=%d TSC=%llu", res->prefixlen, tsc_end - tsc_begin);
-+                    pr_err("20=%llu 26=%llu 32=%llu", tsc20, tsc26, tsc32);
 +                        
 +                }    
 +//			pr_err("depth=%d TSC=%llu", res->prefixlen, tsc_end - tsc_begin);                
@@ -1013,6 +1020,14 @@ index 81d0f21..e8088bb 100644
 +			        &ip_addr, res->fi->fib_dev->name);
 +		}
 +	}
++        u64 avg_sail_20 = count20? tsc20/count20 : 0;
++        u64 avg_sail_26 = count26? tsc26/count26 : 0;
++        u64 avg_sail_32 = count32? tsc32/count32: 0;
++        u64 avg_trie_20 = count20? tsc_trie_20/count20 : 0;
++        u64 avg_trie_26 = count26? tsc_trie_26/count26 : 0;
++        u64 avg_trie_32 = count32? tsc_trie_32/count32 : 0;        
++        pr_err("SAIL: 20=%llu 26=%llu 32=%llu", avg_sail_20, avg_sail_26, avg_sail_32);
++        pr_err("TRIE: 20=%llu 26=%llu 32=%llu", avg_trie_20, avg_trie_26, avg_trie_32);
 +#endif
  	if (tb)
  		err = fib_table_lookup(tb, flp, res, flags | FIB_LOOKUP_NOREF);
