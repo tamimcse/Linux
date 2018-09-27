@@ -737,7 +737,7 @@ index 32699b2..1a9f77e 100644
  
  /*
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..f3da65d 100644
+index 81d0f21..e8088bb 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -811,7 +811,7 @@ index 81d0f21..f3da65d 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +309,177 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +309,204 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -931,6 +931,9 @@ index 81d0f21..f3da65d 100644
 +	struct net_device *dev;
 +	u64 tsc_begin, tsc_end;
 +
++        u64 tsc20 = 0, tsc26 = 0, tsc32 = 0;
++        u64 count20 = 0, count26 = 0, count32 = 0;
++        
 +	for (j = 0; j < 89; j++) {
 +		/*inet_aton(ips[j], &some_addr);*/
 +		ip_addr = in_aton(wtf[j]);
@@ -948,10 +951,10 @@ index 81d0f21..f3da65d 100644
 +		if (tb)
 +			err = fib_table_lookup(tb, flp, res,
 +					       flags | FIB_LOOKUP_NOREF);
-+		if (res->fi)
-+			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
-+				   &flp->daddr, res->fi->fib_dev->name,
-+				   res->prefixlen, tsc_end - tsc_begin);
++//		if (res->fi)
++//			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
++//				   &flp->daddr, res->fi->fib_dev->name,
++//				   res->prefixlen, tsc_end - tsc_begin);
 +		flp->daddr = temp;
 +
 +		if (tb && dev && res->fi &&
@@ -966,8 +969,11 @@ index 81d0f21..f3da65d 100644
 +	for (j = 0; j < 1000; j++) {
 +		get_random_bytes(&ip_addr, 4);
 +
-+		if (tb)
++		if (tb) {
++                        tsc_begin = rdtsc();
 +			sail_lookup(&tb->sail, ip_addr, &dev);
++                        tsc_end = rdtsc();
++                }        
 +
 +		temp = flp->daddr;
 +		flp->daddr = ip_addr;
@@ -978,6 +984,27 @@ index 81d0f21..f3da65d 100644
 +
 +		flp->daddr = temp;
 +
++		if (res->fi) {
++                    if(res->prefixlen <= 20){
++                        tsc20 = tsc20 * count20 + (tsc_end - tsc_begin);
++                        count20++;
++                        tsc20 = tsc20/count20;
++                    } else if(res->prefixlen <= 26){
++                        tsc26 = tsc26 * count26 + (tsc_end - tsc_begin);
++                        count26++;
++                        tsc26 = tsc26/count26;
++                    } else {
++                        tsc32 = tsc32 * count32 + (tsc_end - tsc_begin);
++                        count32++;
++                        tsc32 = tsc32/count32;
++                    }
++                    
++                    //pr_err("depth=%d TSC=%llu", res->prefixlen, tsc_end - tsc_begin);
++                    pr_err("20=%llu 26=%llu 32=%llu", tsc20, tsc26, tsc32);
++                        
++                }    
++//			pr_err("depth=%d TSC=%llu", res->prefixlen, tsc_end - tsc_begin);                
++                
 +		if (tb && dev && res->fi &&
 +		    strcmp(res->fi->fib_dev->name, dev->name) &&
 +		    strcmp(res->fi->fib_dev->name, "lo")) {
