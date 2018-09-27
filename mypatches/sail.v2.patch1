@@ -1,5 +1,5 @@
 diff --git a/arch/x86/configs/x86_64_defconfig b/arch/x86/configs/x86_64_defconfig
-index 0f7a27f..eb58c12 100644
+index 0f7a27f..4b7cff1 100644
 --- a/arch/x86/configs/x86_64_defconfig
 +++ b/arch/x86/configs/x86_64_defconfig
 @@ -61,6 +61,11 @@ CONFIG_HIBERNATION=y
@@ -113,11 +113,10 @@ index 0f7a27f..eb58c12 100644
  CONFIG_SECURITY=y
  CONFIG_SECURITY_NETWORK=y
  CONFIG_SECURITY_SELINUX=y
-@@ -304,596 +325,6 @@ CONFIG_ATH9K_PCOEM=y
- CONFIG_ATH9K_HTC=m
+@@ -305,595 +326,7 @@ CONFIG_ATH9K_HTC=m
  CONFIG_ATH9K_HTC_DEBUGFS=y
  
--
+ 
 -CONFIG_TCP_INIGO=y
 -
 -#Veth, Network namespace, and NetEm setup (Needed for Mininet)
@@ -711,6 +710,32 @@ index 0f7a27f..eb58c12 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 +CONFIG_FIB_SAIL_ML=y
++CONFIG_SLAB=y
+diff --git a/include/linux/mmzone.h b/include/linux/mmzone.h
+index 32699b2..1a9f77e 100644
+--- a/include/linux/mmzone.h
++++ b/include/linux/mmzone.h
+@@ -20,12 +20,20 @@
+ #include <linux/atomic.h>
+ #include <asm/page.h>
+ 
++/*
++ * Warning: This is a hack. CONFIG_FORCE_MAX_ZONEORDER cannot seem to be
++ * set on x86_64.
++ */
++#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++#define MAX_ORDER 15
++#else
+ /* Free memory management - zoned buddy allocator.  */
+ #ifndef CONFIG_FORCE_MAX_ZONEORDER
+ #define MAX_ORDER 11
+ #else
+ #define MAX_ORDER CONFIG_FORCE_MAX_ZONEORDER
+ #endif
++#endif
+ #define MAX_ORDER_NR_PAGES (1 << (MAX_ORDER - 1))
+ 
+ /*
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
 index 81d0f21..f3da65d 100644
 --- a/include/net/ip_fib.h
@@ -966,22 +991,26 @@ index 81d0f21..f3da65d 100644
  		err = fib_table_lookup(tb, flp, res, flags | FIB_LOOKUP_NOREF);
  
 diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
-index 80dad30..1094d96 100644
+index 80dad30..1b387f4 100644
 --- a/net/ipv4/Kconfig
 +++ b/net/ipv4/Kconfig
-@@ -52,6 +52,16 @@ config IP_ADVANCED_ROUTER
+@@ -52,6 +52,20 @@ config IP_ADVANCED_ROUTER
  
  	  If unsure, say N here.
  
 +config FIB_SAIL_ML
-+	bool "CONFIG_FIB_SAIL_ML"
++	bool "SAIL_ML FIB lookup"
++	depends on SLAB
 +	default y
 +	help
-+	  This will store FIB table as a SAIL (along with LC-trie). This is
++	  This will store FIB table as a SAIL_ML (along with LC-trie). This is
 +	  useful if you want fast routing table lookup in XDP forwarding.
 +	  XDP along with fast routing table lookup will enable Linux to work as
 +	  a carrier router (similar to DPDK/VPP based routers).
-+	  Currently this option only supports up to 255 ports.
++	  Currently this option only supports up to 255 ports. If a routing
++	  table has several hundred thousands prefixes with length (20~32),
++	  SAIL_ML allocates arrays larger than 4MB. This is why
++	  it requires SLAB memory allocator to be enabled.
 +
  config IP_FIB_TRIE_STATS
  	bool "FIB TRIE statistics"
