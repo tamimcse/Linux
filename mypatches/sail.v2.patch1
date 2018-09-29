@@ -1071,10 +1071,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..69f1aa0
+index 0000000..5d8d03a
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,759 @@
+@@ -0,0 +1,747 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1511,11 +1511,7 @@ index 0000000..69f1aa0
 +	/*Eextract 20 bits from LSB.*/
 +	idx20 = key >> 12;
 +
-+	if (prefix_len == 20) {
-+		s->nh20[idx20] = netdev_index;
-+		s->pl20[idx20] = 20;
-+		goto finish;
-+	} else if (prefix_len < 20) {
++	if (prefix_len <= 20) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (20 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
@@ -1546,11 +1542,7 @@ index 0000000..69f1aa0
 +	/*Extract 21-26 bit and calculate index to level 26*/
 +	idx26 = (s->ci20[idx20] - 1) * CHUNK_SIZE + ((key & 4032) >> 6);
 +
-+	if (prefix_len == 26) {
-+		s->nh26[idx26] = netdev_index;
-+		s->pl26[idx26] = 26;
-+		goto finish;
-+	} else if (prefix_len < 26) {
++	if (prefix_len <= 26) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (26 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
@@ -1582,11 +1574,7 @@ index 0000000..69f1aa0
 +	/*Extract 6 bit from MSB and calculate index to level 32*/
 +	idx32 = (s->ci26[idx26] - 1) * CHUNK_SIZE + (key & 63);
 +
-+	if (prefix_len == 32) {
-+		s->nh32[idx32] = netdev_index;
-+		s->pl32[idx32] = 32;
-+		goto finish;
-+	} else if (prefix_len < 32) {
++	if (prefix_len <= 32) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (32 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
