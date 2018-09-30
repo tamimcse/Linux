@@ -753,7 +753,7 @@ index 32699b2..1a9f77e 100644
  
  /*
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..afcbdf7 100644
+index 81d0f21..64190e6 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -765,7 +765,7 @@ index 81d0f21..afcbdf7 100644
  
  struct fib_config {
  	u8			fc_dst_len;
-@@ -197,6 +199,52 @@ struct fib_entry_notifier_info {
+@@ -197,6 +199,54 @@ struct fib_entry_notifier_info {
  	u32 tb_id;
  };
  
@@ -794,13 +794,15 @@ index 81d0f21..afcbdf7 100644
 +	u8 __rcu *nh26;
 +	u8 __rcu *pl26;
 +	u32 __rcu *ci26;
-+	u32 level26_total_chunks_allocated;
++	/*Total number of chunks allocated*/
++	u32 level26_chunk_total;
++	/*Total number of chunks being used*/
 +	u32 level26_chunk_count;
 +
 +	/*Level 32*/
 +	u8 __rcu *nh32;
 +	u8 __rcu *pl32;
-+	u32 level32_total_chunks_allocated;
++	u32 level32_chunk_total;
 +	u32 level32_chunk_count;
 +
 +	spinlock_t			lock;
@@ -818,7 +820,7 @@ index 81d0f21..afcbdf7 100644
  struct fib_nh_notifier_info {
  	struct fib_notifier_info info; /* must be first */
  	struct fib_nh *fib_nh;
-@@ -219,6 +267,10 @@ struct fib_table {
+@@ -219,6 +269,10 @@ struct fib_table {
  	int			tb_num_default;
  	struct rcu_head		rcu;
  	unsigned long 		*tb_data;
@@ -829,7 +831,7 @@ index 81d0f21..afcbdf7 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +311,360 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +313,321 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -844,11 +846,6 @@ index 81d0f21..afcbdf7 100644
  	struct fib_table *tb;
  	int err = -ENETUNREACH;
 +	int j = 0;
- 
- 	rcu_read_lock();
- 
- 	tb = fib_get_table(net, RT_TABLE_MAIN);
-+
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
 +	static const char * const wtf_26[] = {
 +		"1.11.8.173",
@@ -1046,17 +1043,17 @@ index 81d0f21..afcbdf7 100644
 +		 */
 +	};
 +	struct net_device *dev;
-+	u64 tsc_begin, tsc_end;
-+        u64 tsc_trie_begin, tsc_trie_end;
++	u64 tsc_begin = 0, tsc_end = 0;
++	u64 tsc_trie_begin = 0, tsc_trie_end = 0;
++#endif
+ 
+ 	rcu_read_lock();
+ 
+ 	tb = fib_get_table(net, RT_TABLE_MAIN);
 +
-+        u64 tsc20 = 0, tsc26 = 0, tsc32 = 0;
-+        u64 tsc_trie_20 = 0, tsc_trie_26 = 0, tsc_trie_32 = 0;
-+        u64 count20 = 0, count26 = 0, count32 = 0;
-+        
++#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
 +	for (j = 0; j < 89; j++) {
-+		/*inet_aton(ips[j], &some_addr);*/
 +		ip_addr = in_aton(wtf[j]);
-+//		pr_err("ip_addr=%u %pI4 !!!!!!!", ip_addr, &ip_addr);
 +
 +		if (tb) {
 +			tsc_begin = rdtsc();
@@ -1068,11 +1065,11 @@ index 81d0f21..afcbdf7 100644
 +		flp->daddr = ip_addr;
 +		flp->flowi4_flags |= FLOWI_FLAG_SKIP_NH_OIF;
 +		if (tb) {
-+                        tsc_trie_begin = rdtsc();
++			tsc_trie_begin = rdtsc();
 +			err = fib_table_lookup(tb, flp, res,
 +					       flags | FIB_LOOKUP_NOREF);
-+                        tsc_trie_end = rdtsc();
-+                }
++			tsc_trie_end = rdtsc();
++		}
 +//		if (res->fi)
 +//			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
 +//				   &flp->daddr, res->fi->fib_dev->name,
@@ -1084,58 +1081,18 @@ index 81d0f21..afcbdf7 100644
 +				strcmp(res->fi->fib_dev->name, "lo")) {
 +			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
 +			pr_err("fib_lookup: %pI4 => %s", &ip_addr,
-+			        res->fi->fib_dev->name);
++			       res->fi->fib_dev->name);
 +		}
 +	}
 +
 +	for (j = 0; j < 97; j++) {
-+		/*inet_aton(ips[j], &some_addr);*/
 +		ip_addr = in_aton(wtf_26[j]);
-+//		pr_err("ip_addr=%u %pI4 !!!!!!!", ip_addr, &ip_addr);
 +
 +		if (tb) {
 +			tsc_begin = rdtsc();
 +			sail_lookup(&tb->sail, ip_addr, &dev);
 +			tsc_end = rdtsc();
 +		}
-+
-+		temp = flp->daddr;
-+		flp->daddr = ip_addr;
-+		flp->flowi4_flags |= FLOWI_FLAG_SKIP_NH_OIF;
-+		if (tb) {
-+                        tsc_trie_begin = rdtsc();
-+			err = fib_table_lookup(tb, flp, res,
-+					       flags | FIB_LOOKUP_NOREF);
-+                        tsc_trie_end = rdtsc();
-+                }
-+//		if (res->fi)
-+//			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
-+//				   &flp->daddr, res->fi->fib_dev->name,
-+//				   res->prefixlen, tsc_end - tsc_begin);
-+		flp->daddr = temp;
-+
-+		if (tb && dev && res->fi &&
-+				strcmp(res->fi->fib_dev->name, dev->name) &&
-+				strcmp(res->fi->fib_dev->name, "lo")) {
-+			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
-+			pr_err("fib_lookup: %pI4 => %s", &ip_addr,
-+			        res->fi->fib_dev->name);
-+		}
-+                
-+		if (res->fi)
-+			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
-+				   &ip_addr, res->fi->fib_dev->name,
-+				   res->prefixlen, tsc_end - tsc_begin);
-+	}
-+
-+	for (j = 1000; j < 1000; j++) {
-+		get_random_bytes(&ip_addr, 4);
-+
-+		if (tb) {
-+                        tsc_begin = rdtsc();
-+			sail_lookup(&tb->sail, ip_addr, &dev);
-+                        tsc_end = rdtsc();
-+                }        
 +
 +		temp = flp->daddr;
 +		flp->daddr = ip_addr;
@@ -1148,45 +1105,51 @@ index 81d0f21..afcbdf7 100644
 +		}
 +
 +		flp->daddr = temp;
-+                
-+		if (res->fi && res->prefixlen > 20)
++
++		if (tb && dev && res->fi &&
++				strcmp(res->fi->fib_dev->name, dev->name) &&
++				strcmp(res->fi->fib_dev->name, "lo")) {
++			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
++			pr_err("fib_lookup: %pI4 => %s", &ip_addr,
++			       res->fi->fib_dev->name);
++		}
++
++		if (res->fi)
 +			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
 +				   &ip_addr, res->fi->fib_dev->name,
-+				   res->prefixlen, tsc_end - tsc_begin);                
-+
-+		if (res->fi) {
-+                    if(res->prefixlen <= 20){
-+                        tsc20 += (tsc_end - tsc_begin);
-+                        tsc_trie_20 += (tsc_trie_end - tsc_trie_begin);
-+                        count20++;
-+                    } else if(res->prefixlen <= 26){
-+                        tsc26 += (tsc_end - tsc_begin);
-+                        tsc_trie_26 += (tsc_trie_end - tsc_trie_begin);
-+                        count26++;
-+                    } else {
-+                        tsc32 += (tsc_end - tsc_begin);
-+                        tsc_trie_32 += (tsc_trie_end - tsc_trie_begin);
-+                        count32++;
-+                    }
-+                }    
-+//			pr_err("depth=%d TSC=%llu", res->prefixlen, tsc_end - tsc_begin);                
-+                
-+//		if (tb && dev && res->fi &&
-+//		    strcmp(res->fi->fib_dev->name, dev->name) &&
-+//		    strcmp(res->fi->fib_dev->name, "lo")) {
-+//			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
-+//			pr_err("fib_lookup: %pI4 => %s",
-+//			        &ip_addr, res->fi->fib_dev->name);
-+//		}
++				   res->prefixlen, tsc_end - tsc_begin);
 +	}
-+        u64 avg_sail_20 = count20? tsc20/count20 : 0;
-+        u64 avg_sail_26 = count26? tsc26/count26 : 0;
-+        u64 avg_sail_32 = count32? tsc32/count32: 0;
-+        u64 avg_trie_20 = count20? tsc_trie_20/count20 : 0;
-+        u64 avg_trie_26 = count26? tsc_trie_26/count26 : 0;
-+        u64 avg_trie_32 = count32? tsc_trie_32/count32 : 0;        
-+        pr_err("SAIL: 20=%llu 26=%llu 32=%llu", avg_sail_20, avg_sail_26, avg_sail_32);
-+        pr_err("TRIE: 20=%llu 26=%llu 32=%llu", avg_trie_20, avg_trie_26, avg_trie_32);
++
++	for (j = 1000; j < 1000; j++) {
++		get_random_bytes(&ip_addr, 4);
++
++		if (tb) {
++			tsc_begin = rdtsc();
++			sail_lookup(&tb->sail, ip_addr, &dev);
++			tsc_end = rdtsc();
++		}
++
++		temp = flp->daddr;
++		flp->daddr = ip_addr;
++		flp->flowi4_flags |= FLOWI_FLAG_SKIP_NH_OIF;
++		if (tb) {
++			tsc_trie_begin = rdtsc();
++			err = fib_table_lookup(tb, flp, res,
++					       flags | FIB_LOOKUP_NOREF);
++			tsc_trie_end = rdtsc();
++		}
++
++		flp->daddr = temp;
++
++		if (tb && dev && res->fi &&
++		    strcmp(res->fi->fib_dev->name, dev->name) &&
++		    strcmp(res->fi->fib_dev->name, "lo")) {
++			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
++			pr_err("fib_lookup: %pI4 => %s",
++				&ip_addr, res->fi->fib_dev->name);
++		}
++	}
++
 +#endif
  	if (tb)
  		err = fib_table_lookup(tb, flp, res, flags | FIB_LOOKUP_NOREF);
@@ -1230,10 +1193,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..df5538b
+index 0000000..c529361
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,784 @@
+@@ -0,0 +1,795 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1318,23 +1281,28 @@ index 0000000..df5538b
 +static int chunk_level26_insert(struct sail_ml *s, u32 chunk_id)
 +{
 +	long long int m;
-+	
++
 +	if (chunk_id > (s->level26_chunk_count + 1) || chunk_id < 1) {
 +		pr_err("Invalid chunk_id for level 26");
 +		return -EINVAL;
 +	}
 +
-+	if(s->level26_chunk_count < s->level26_total_chunks_allocated) {
-+		/*shift each chunk one step right to make space for the new one*/
-+		for (m = (long long int)s->level26_chunk_count * CHUNK_SIZE - 1; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
++	if (s->level26_chunk_count < s->level26_chunk_total) {
++		/*shift each element one step right to make
++		 *space for the new one
++		 */
++		m = (long long int)s->level26_chunk_count * CHUNK_SIZE - 1;
++		for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
 +			s->nh26[m + 1] = s->nh26[m];
 +			s->pl26[m + 1] = s->pl26[m];
 +			s->ci26[m + 1] = s->ci26[m];
 +		}
 +		++s->level26_chunk_count;
 +		return 0;
-+	} else if (s->level26_chunk_count == s->level26_total_chunks_allocated) {
-+		/*Previously allocated memory is full. chunk_count == total chunks*/            
++	} else if (s->level26_chunk_count == s->level26_chunk_total) {
++		/*Previously allocated memory is full.
++		 *So need to reallocate the array
++		 */
 +		u8 *nh_old = s->nh26;
 +		u8 *pl_old = s->pl26;
 +		u32 *ci_old = s->ci26;
@@ -1382,7 +1350,7 @@ index 0000000..df5538b
 +
 +		/*Increment the counter after chunk has been inserted*/
 +		++s->level26_chunk_count;
-+		s->level26_total_chunks_allocated += NUM_CHUNKS;
++		s->level26_chunk_total += NUM_CHUNKS;
 +
 +		/*Remove old arrays*/
 +		kfree(nh_old);
@@ -1390,7 +1358,7 @@ index 0000000..df5538b
 +		kfree(pl_old);
 +		return 0;
 +	}
-+	
++
 +	pr_err("Something is really wrong in level 26 insertion");
 +	return -EINVAL;
 +}
@@ -1398,27 +1366,33 @@ index 0000000..df5538b
 +/* Insert a chunk at index. Note that chunk_id starts from 1, not 0 */
 +static int chunk_level32_insert(struct sail_ml *s, u32 chunk_id)
 +{
-+	long long int m;    
++	long long int m;
 +
 +	if (chunk_id > (s->level32_chunk_count + 1) || chunk_id < 1) {
 +		pr_err("Invalid chunk_id for level 32");
 +		return -EINVAL;
 +	}
 +
-+	if(s->level32_chunk_count < s->level32_total_chunks_allocated) {
-+		/*shift each chunk one step right to make space for the new one*/
-+		for (m = (long long int)s->level32_chunk_count * CHUNK_SIZE - 1; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
++	if (s->level32_chunk_count < s->level32_chunk_total) {
++		/*shift each element one step right to make
++		 *space for the new one
++		 */
++		m = (long long int)s->level32_chunk_count * CHUNK_SIZE - 1;
++		for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
 +			s->nh32[m + 1] = s->nh32[m];
 +			s->pl32[m + 1] = s->pl32[m];
 +		}
 +		++s->level32_chunk_count;
 +		return 0;
-+	} else if (s->level32_chunk_count == s->level32_total_chunks_allocated) {
-+		/*Previously allocated memory is full*/
++	} else if (s->level32_chunk_count == s->level32_chunk_total) {
++		/*Previously allocated memory is full.
++		 *So need to reallocate the array
++		 */
 +		u8 *nh_old = s->nh32;
 +		u8 *pl_old = s->pl32;
 +		u8 *n, *p;
 +		u64 arrsize, i, j, k, chunk_start;
++
 +		arrsize = (s->level32_chunk_count + NUM_CHUNKS) * CHUNK_SIZE;
 +		n = kcalloc(arrsize, sizeof(*n), GFP_ATOMIC);
 +		p = kcalloc(arrsize, sizeof(*p), GFP_ATOMIC);
@@ -1451,7 +1425,7 @@ index 0000000..df5538b
 +		synchronize_rcu();
 +		/*Increment the counter after chunk has been inserted*/
 +		++s->level32_chunk_count;
-+		s->level32_total_chunks_allocated += NUM_CHUNKS;
++		s->level32_chunk_total += NUM_CHUNKS;
 +		kfree(nh_old);
 +		kfree(pl_old);
 +		return 0;
@@ -1665,7 +1639,7 @@ index 0000000..df5538b
 +int sail_insert(struct sail_ml *s, u32 key, u8 prefix_len,
 +		struct net_device *dev)
 +{
-+	int i, j;
++	int i;
 +	u8 *n20, *p20;
 +	u32 *c20;
 +	u32 chunk_id;
@@ -1916,7 +1890,7 @@ index 0000000..df5538b
 +int sail_flush(struct sail_ml *s)
 +{
 +	u8 *n20_old, *p20_old, *n26_old, *p26_old, *n32_old, *p32_old;
-+	u32 *c20_old, *c26_old, *c32;
++	u32 *c20_old, *c26_old;
 +
 +	spin_lock(&s->lock);
 +
