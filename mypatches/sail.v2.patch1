@@ -1,3 +1,19 @@
+diff --git a/MAINTAINERS b/MAINTAINERS
+index ebe0b9e..ae12217 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -7369,6 +7369,11 @@ M:	Juanjo Ciarlante <jjciarla@raiz.uncu.edu.ar>
+ S:	Maintained
+ F:	net/ipv4/netfilter/ipt_MASQUERADE.c
+ 
++SAIL_ML FIB LOOKUP
++M:	MD Iftakharul Islam (Tamim) <tamim@csebuet.org>
++S:	Maintained
++F:	net/ipv4/fib_sail_ml.c
++
+ IPMI SUBSYSTEM
+ M:	Corey Minyard <minyard@acm.org>
+ L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/arch/x86/configs/x86_64_defconfig b/arch/x86/configs/x86_64_defconfig
 index 0f7a27f..4b7cff1 100644
 --- a/arch/x86/configs/x86_64_defconfig
@@ -737,7 +753,7 @@ index 32699b2..1a9f77e 100644
  
  /*
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..56927af 100644
+index 81d0f21..b2a33b4 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -749,7 +765,7 @@ index 81d0f21..56927af 100644
  
  struct fib_config {
  	u8			fc_dst_len;
-@@ -197,6 +199,50 @@ struct fib_entry_notifier_info {
+@@ -197,6 +199,52 @@ struct fib_entry_notifier_info {
  	u32 tb_id;
  };
  
@@ -778,11 +794,13 @@ index 81d0f21..56927af 100644
 +	u8 __rcu *nh26;
 +	u8 __rcu *pl26;
 +	u32 __rcu *ci26;
++	u32 level26_total_chunks_allocated;
 +	u32 level26_chunk_count;
 +
 +	/*Level 32*/
 +	u8 __rcu *nh32;
 +	u8 __rcu *pl32;
++	u32 level32_total_chunks_allocated;
 +	u32 level32_chunk_count;
 +
 +	spinlock_t			lock;
@@ -800,7 +818,7 @@ index 81d0f21..56927af 100644
  struct fib_nh_notifier_info {
  	struct fib_notifier_info info; /* must be first */
  	struct fib_nh *fib_nh;
-@@ -219,6 +265,10 @@ struct fib_table {
+@@ -219,6 +267,10 @@ struct fib_table {
  	int			tb_num_default;
  	struct rcu_head		rcu;
  	unsigned long 		*tb_data;
@@ -811,7 +829,7 @@ index 81d0f21..56927af 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +309,219 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +311,219 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -1071,10 +1089,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..5d8d03a
+index 0000000..df5538b
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,747 @@
+@@ -0,0 +1,784 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1130,6 +1148,9 @@ index 0000000..5d8d03a
 +/*chunk size is 2^6*/
 +#define CHUNK_SIZE 64
 +
++/*Number of chunks allocated each time*/
++#define NUM_CHUNKS 50000
++
 +#define LEVEL26_ARR_SIZE(S) (S->level26_chunk_count * CHUNK_SIZE)
 +#define LEVEL32_ARR_SIZE(S) (S->level32_chunk_count * CHUNK_SIZE)
 +
@@ -1155,114 +1176,148 @@ index 0000000..5d8d03a
 +/* Insert a chunk at index. Note that chunk_id starts from 1, not 0 */
 +static int chunk_level26_insert(struct sail_ml *s, u32 chunk_id)
 +{
-+	u8 *nh_old = s->nh26;
-+	u8 *pl_old = s->pl26;
-+	u32 *ci_old = s->ci26;
-+	/*New next-hop, prefix-length and chunk ID array*/
-+	u8 *n, *p;
-+	u32 *c;
-+	u64 arr_size, i, j, k, chunk_start;
-+
-+	if (chunk_id > (s->level26_chunk_count + 1)) {
++	long long int m;
++	
++	if (chunk_id > (s->level26_chunk_count + 1) || chunk_id < 1) {
 +		pr_err("Invalid chunk_id for level 26");
 +		return -EINVAL;
 +	}
 +
-+	arr_size = (s->level26_chunk_count + 1) * CHUNK_SIZE;
-+	n = kcalloc(arr_size, sizeof(*n), GFP_ATOMIC);
-+	c = kcalloc(arr_size, sizeof(*c), GFP_ATOMIC);
-+	p = kcalloc(arr_size, sizeof(*p), GFP_ATOMIC);
-+
-+	if (!n || !c || !p) {
-+		kfree(n);
-+		kfree(c);
-+		kfree(p);
-+		return -ENOMEM;
-+	}
-+
-+	/*Iterate over the new array and copy from the old array*/
-+	for (i = 1, j = 0, chunk_start = 0;
-+	     i <= (s->level26_chunk_count + 1); i++) {
-+		/*Copy the chunk*/
-+		if (i != chunk_id) {
-+			for (k = 0; k < CHUNK_SIZE; k++, j++) {
-+				n[j] = nh_old[chunk_start + k];
-+				c[j] = ci_old[chunk_start + k];
-+				p[j] = pl_old[chunk_start + k];
-+			}
-+			chunk_start += CHUNK_SIZE;
-+		} else {
-+			/*skip copying*/
-+			j += CHUNK_SIZE;
++	if(s->level26_chunk_count < s->level26_total_chunks_allocated) {
++		/*shift each chunk one step right to make space for the new one*/
++		for (m = (long long int)s->level26_chunk_count * CHUNK_SIZE - 1; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
++			s->nh26[m + 1] = s->nh26[m];
++			s->pl26[m + 1] = s->pl26[m];
++			s->ci26[m + 1] = s->ci26[m];
 +		}
++		++s->level26_chunk_count;
++		return 0;
++	} else if (s->level26_chunk_count == s->level26_total_chunks_allocated) {
++		/*Previously allocated memory is full. chunk_count == total chunks*/            
++		u8 *nh_old = s->nh26;
++		u8 *pl_old = s->pl26;
++		u32 *ci_old = s->ci26;
++		/*New next-hop, prefix-length and chunk ID array*/
++		u8 *n, *p;
++		u32 *c;
++		u64 arr_size, i, j, k, chunk_start;
++
++		arr_size = (s->level26_chunk_count + NUM_CHUNKS) * CHUNK_SIZE;
++		n = kcalloc(arr_size, sizeof(*n), GFP_ATOMIC);
++		c = kcalloc(arr_size, sizeof(*c), GFP_ATOMIC);
++		p = kcalloc(arr_size, sizeof(*p), GFP_ATOMIC);
++
++		if (!n || !c || !p) {
++			kfree(n);
++			kfree(c);
++			kfree(p);
++			return -ENOMEM;
++		}
++
++		/*Iterate over the new array and copy from the old array*/
++		for (i = 1, j = 0, chunk_start = 0;
++		     i <= (s->level26_chunk_count + 1); i++) {
++			/*Copy the chunk*/
++			if (i != chunk_id) {
++				for (k = 0; k < CHUNK_SIZE; k++, j++) {
++					n[j] = nh_old[chunk_start + k];
++					c[j] = ci_old[chunk_start + k];
++					p[j] = pl_old[chunk_start + k];
++				}
++				chunk_start += CHUNK_SIZE;
++			} else {
++				/*skip copying*/
++				j += CHUNK_SIZE;
++			}
++		}
++
++		/*Update the pointers with new pointer*/
++		rcu_assign_pointer(s->nh26, n);
++		rcu_assign_pointer(s->pl26, p);
++		rcu_assign_pointer(s->ci26, c);
++
++		/* Wait for all readers to be finished */
++		synchronize_rcu();
++
++		/*Increment the counter after chunk has been inserted*/
++		++s->level26_chunk_count;
++		s->level26_total_chunks_allocated += NUM_CHUNKS;
++
++		/*Remove old arrays*/
++		kfree(nh_old);
++		kfree(ci_old);
++		kfree(pl_old);
++		return 0;
 +	}
-+
-+	/*Update the pointers with new pointer*/
-+	rcu_assign_pointer(s->nh26, n);
-+	rcu_assign_pointer(s->pl26, p);
-+	rcu_assign_pointer(s->ci26, c);
-+
-+	/* Wait for all readers to be finished */
-+	synchronize_rcu();
-+
-+	/*Increment the counter after chunk has been inserted*/
-+	++s->level26_chunk_count;
-+
-+	/*Remove old arrays*/
-+	kfree(nh_old);
-+	kfree(ci_old);
-+	kfree(pl_old);
-+	return 0;
++	
++	pr_err("Something is really wrong in level 26 insertion");
++	return -EINVAL;
 +}
 +
 +/* Insert a chunk at index. Note that chunk_id starts from 1, not 0 */
 +static int chunk_level32_insert(struct sail_ml *s, u32 chunk_id)
 +{
-+	u8 *nh_old = s->nh32;
-+	u8 *pl_old = s->pl32;
-+	u8 *n, *p;
-+	u64 arrsize, i, j, k, chunk_start;
++	long long int m;    
 +
-+	if (chunk_id > (s->level32_chunk_count + 1)) {
++	if (chunk_id > (s->level32_chunk_count + 1) || chunk_id < 1) {
 +		pr_err("Invalid chunk_id for level 32");
 +		return -EINVAL;
 +	}
 +
-+	arrsize = (s->level32_chunk_count + 1) * CHUNK_SIZE;
-+	n = kcalloc(arrsize, sizeof(*n), GFP_ATOMIC);
-+	p = kcalloc(arrsize, sizeof(*p), GFP_ATOMIC);
-+
-+	if (!n || !p) {
-+		kfree(n);
-+		kfree(p);
-+		return -ENOMEM;
-+	}
-+
-+	/*Iterate over the new array and copy from the old array*/
-+	for (i = 1, j = 0, chunk_start = 0;
-+	     i <= (s->level32_chunk_count + 1); i++) {
-+		/*copy the chunk*/
-+		if (i != chunk_id) {
-+			for (k = 0; k < CHUNK_SIZE; k++, j++) {
-+				n[j] = nh_old[chunk_start + k];
-+				p[j] = pl_old[chunk_start + k];
-+			}
-+			chunk_start += CHUNK_SIZE;
-+		} else {
-+			/*skip copying*/
-+			j += CHUNK_SIZE;
++	if(s->level32_chunk_count < s->level32_total_chunks_allocated) {
++		/*shift each chunk one step right to make space for the new one*/
++		for (m = (long long int)s->level32_chunk_count * CHUNK_SIZE - 1; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
++			s->nh32[m + 1] = s->nh32[m];
++			s->pl32[m + 1] = s->pl32[m];
 +		}
++		++s->level32_chunk_count;
++		return 0;
++	} else if (s->level32_chunk_count == s->level32_total_chunks_allocated) {
++		/*Previously allocated memory is full*/
++		u8 *nh_old = s->nh32;
++		u8 *pl_old = s->pl32;
++		u8 *n, *p;
++		u64 arrsize, i, j, k, chunk_start;
++		arrsize = (s->level32_chunk_count + NUM_CHUNKS) * CHUNK_SIZE;
++		n = kcalloc(arrsize, sizeof(*n), GFP_ATOMIC);
++		p = kcalloc(arrsize, sizeof(*p), GFP_ATOMIC);
++
++		if (!n || !p) {
++			kfree(n);
++			kfree(p);
++			return -ENOMEM;
++		}
++
++		/*Iterate over the new array and copy from the old array*/
++		for (i = 1, j = 0, chunk_start = 0;
++		     i <= (s->level32_chunk_count + 1); i++) {
++			/*copy the chunk*/
++			if (i != chunk_id) {
++				for (k = 0; k < CHUNK_SIZE; k++, j++) {
++					n[j] = nh_old[chunk_start + k];
++					p[j] = pl_old[chunk_start + k];
++				}
++				chunk_start += CHUNK_SIZE;
++			} else {
++				/*skip copying*/
++				j += CHUNK_SIZE;
++			}
++		}
++
++		rcu_assign_pointer(s->nh32, n);
++		rcu_assign_pointer(s->pl32, p);
++		/* Wait for all references to be released */
++		synchronize_rcu();
++		/*Increment the counter after chunk has been inserted*/
++		++s->level32_chunk_count;
++		s->level32_total_chunks_allocated += NUM_CHUNKS;
++		kfree(nh_old);
++		kfree(pl_old);
++		return 0;
 +	}
 +
-+	rcu_assign_pointer(s->nh32, n);
-+	rcu_assign_pointer(s->pl32, p);
-+	/* Wait for all references to be released */
-+	synchronize_rcu();
-+	/*Increment the counter after chunk has been inserted*/
-+	++s->level32_chunk_count;
-+	kfree(nh_old);
-+	kfree(pl_old);
-+	return 0;
++	pr_err("Something is really wrong in level 32 insertion");
++	return -EINVAL;
 +}
 +
 +static int chunk_level26_delete(struct sail_ml *s, u32 chunk_id)
