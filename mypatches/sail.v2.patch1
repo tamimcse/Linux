@@ -753,7 +753,7 @@ index 32699b2..1a9f77e 100644
  
  /*
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..b2a33b4 100644
+index 81d0f21..afcbdf7 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -829,7 +829,7 @@ index 81d0f21..b2a33b4 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +311,219 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +311,360 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -850,6 +850,106 @@ index 81d0f21..b2a33b4 100644
  	tb = fib_get_table(net, RT_TABLE_MAIN);
 +
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++	static const char * const wtf_26[] = {
++		"1.11.8.173",
++		"1.22.229.12",
++		"1.45.169.125",
++		"1.65.197.30",
++		"1.240.4.85",
++		"1.176.220.116",
++		"1.177.136.19",
++		"1.177.171.40",
++		"1.22.243.78",
++		"1.23.236.70",
++		"1.186.77.25",
++		"1.45.34.87",
++		"2.92.43.229",
++		"2.93.39.69",
++		"2.16.40.38",
++		"8.8.200.239",
++		"8.18.46.215",
++		"8.24.237.210",
++		"2.20.17.221",
++		"12.5.59.16",
++		"12.27.187.190",
++		"12.28.71.153",
++		"12.66.72.54",
++		"12.111.165.26",
++		"12.150.213.3",
++		"12.151.79.144",
++		"12.156.6.107",
++		"12.196.167.182",
++		"12.164.67.242",
++		"12.204.197.211",
++		"12.222.202.223",
++		"12.230.239.213",
++		"12.232.99.210",
++		"13.2.113.242",
++		"14.0.195.0",
++		"14.102.76.238",
++		"14.102.25.227",
++		"14.53.93.198",
++		"17.69.61.193",
++		"23.38.95.180",
++		"24.40.241.31",
++		"24.116.194.178",
++		"20.143.240.47",
++		"23.12.157.217",
++		"23.53.130.100",
++		"23.47.183.138",
++		"23.34.136.217",
++		"23.49.94.4",
++		"23.53.99.180",
++		"23.54.3.205",
++		"24.116.223.55",
++		"24.143.27.120",
++		"24.233.187.149",
++		"31.132.6.83",
++		"24.123.112.2",
++		"31.25.36.14",
++		"12.157.193.76",
++		"31.13.139.145",
++		"12.191.56.206",
++		"20.139.5.220",
++		"27.6.64.52",
++		"23.49.104.208",
++		"14.35.130.15",
++		"24.192.51.174",
++		"24.206.129.112",
++		"27.113.242.2",
++		"24.187.70.182",
++		"24.213.245.105",
++		"2.92.110.18",
++		"27.101.114.16",
++		"8.3.161.100",
++		"1.176.245.176",
++		"23.52.19.106",
++		"27.123.248.92",
++		"23.36.247.134",
++		"8.10.70.42",
++		"23.19.201.139",
++		"23.51.221.161",
++		"31.13.165.223",
++		"8.27.163.183",
++		"24.48.194.238",
++		"24.177.33.67",
++		"12.159.195.230",
++		"1.11.78.94",
++		"24.138.119.240",
++		"23.49.104.57",
++		"2.23.127.48",
++		"2.20.135.23",
++		"23.51.201.82",
++		"24.100.138.68",
++		"12.176.226.110",
++		"14.201.39.9",
++		"12.197.249.101",
++		"24.192.163.220",
++		"24.249.47.255",
++		"8.21.243.224",
++		"8.19.13.233",
++	};
++
 +	 static const char * const wtf[] = {
 +		"95.78.8.4",
 +		"46.147.83.0",
@@ -940,7 +1040,6 @@ index 81d0f21..b2a33b4 100644
 +		"153.43.248.144",
 +		"155.6.105.118",
 +		"2.78.35.60",
-+
 +		/*
 +		 *"169.254.221.211",
 +		 *"169.254.231.253",
@@ -989,7 +1088,47 @@ index 81d0f21..b2a33b4 100644
 +		}
 +	}
 +
-+	for (j = 0; j < 1000; j++) {
++	for (j = 0; j < 97; j++) {
++		/*inet_aton(ips[j], &some_addr);*/
++		ip_addr = in_aton(wtf_26[j]);
++//		pr_err("ip_addr=%u %pI4 !!!!!!!", ip_addr, &ip_addr);
++
++		if (tb) {
++			tsc_begin = rdtsc();
++			sail_lookup(&tb->sail, ip_addr, &dev);
++			tsc_end = rdtsc();
++		}
++
++		temp = flp->daddr;
++		flp->daddr = ip_addr;
++		flp->flowi4_flags |= FLOWI_FLAG_SKIP_NH_OIF;
++		if (tb) {
++                        tsc_trie_begin = rdtsc();
++			err = fib_table_lookup(tb, flp, res,
++					       flags | FIB_LOOKUP_NOREF);
++                        tsc_trie_end = rdtsc();
++                }
++//		if (res->fi)
++//			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
++//				   &flp->daddr, res->fi->fib_dev->name,
++//				   res->prefixlen, tsc_end - tsc_begin);
++		flp->daddr = temp;
++
++		if (tb && dev && res->fi &&
++				strcmp(res->fi->fib_dev->name, dev->name) &&
++				strcmp(res->fi->fib_dev->name, "lo")) {
++			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
++			pr_err("fib_lookup: %pI4 => %s", &ip_addr,
++			        res->fi->fib_dev->name);
++		}
++                
++		if (res->fi)
++			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
++				   &ip_addr, res->fi->fib_dev->name,
++				   res->prefixlen, tsc_end - tsc_begin);
++	}
++
++	for (j = 1000; j < 1000; j++) {
 +		get_random_bytes(&ip_addr, 4);
 +
 +		if (tb) {
@@ -1009,6 +1148,11 @@ index 81d0f21..b2a33b4 100644
 +		}
 +
 +		flp->daddr = temp;
++                
++		if (res->fi && res->prefixlen > 20)
++			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
++				   &ip_addr, res->fi->fib_dev->name,
++				   res->prefixlen, tsc_end - tsc_begin);                
 +
 +		if (res->fi) {
 +                    if(res->prefixlen <= 20){
@@ -1024,19 +1168,16 @@ index 81d0f21..b2a33b4 100644
 +                        tsc_trie_32 += (tsc_trie_end - tsc_trie_begin);
 +                        count32++;
 +                    }
-+                    
-+                    //pr_err("depth=%d TSC=%llu", res->prefixlen, tsc_end - tsc_begin);
-+                        
 +                }    
 +//			pr_err("depth=%d TSC=%llu", res->prefixlen, tsc_end - tsc_begin);                
 +                
-+		if (tb && dev && res->fi &&
-+		    strcmp(res->fi->fib_dev->name, dev->name) &&
-+		    strcmp(res->fi->fib_dev->name, "lo")) {
-+			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
-+			pr_err("fib_lookup: %pI4 => %s",
-+			        &ip_addr, res->fi->fib_dev->name);
-+		}
++//		if (tb && dev && res->fi &&
++//		    strcmp(res->fi->fib_dev->name, dev->name) &&
++//		    strcmp(res->fi->fib_dev->name, "lo")) {
++//			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
++//			pr_err("fib_lookup: %pI4 => %s",
++//			        &ip_addr, res->fi->fib_dev->name);
++//		}
 +	}
 +        u64 avg_sail_20 = count20? tsc20/count20 : 0;
 +        u64 avg_sail_26 = count26? tsc26/count26 : 0;
