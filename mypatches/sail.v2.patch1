@@ -1193,10 +1193,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..bd88c1b
+index 0000000..2e3e8df
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,763 @@
+@@ -0,0 +1,768 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1278,7 +1278,7 @@ index 0000000..bd88c1b
 +}
 +
 +/* Insert a chunk at index. Note that chunk_id starts from 1, not 0 */
-+static int chunk_level26_insert(struct sail_ml *s, u32 chunk_id)
++static int level26_chunk_insert(struct sail_ml *s, u32 chunk_id)
 +{
 +	long long int m;
 +
@@ -1364,7 +1364,7 @@ index 0000000..bd88c1b
 +}
 +
 +/* Insert a chunk at index. Note that chunk_id starts from 1, not 0 */
-+static int chunk_level32_insert(struct sail_ml *s, u32 chunk_id)
++static int level32_chunk_insert(struct sail_ml *s, u32 chunk_id)
 +{
 +	long long int m;
 +
@@ -1435,7 +1435,7 @@ index 0000000..bd88c1b
 +	return -EINVAL;
 +}
 +
-+static int chunk_level26_delete(struct sail_ml *s, u32 chunk_id)
++static int level26_chunk_delete(struct sail_ml *s, u32 chunk_id)
 +{
 +	u8 *nh_old = s->nh26;
 +	u8 *pl_old = s->pl26;
@@ -1446,7 +1446,7 @@ index 0000000..bd88c1b
 +	u64 arr_size, i, j, k, chunk_start;
 +
 +	if (chunk_id > s->level26_chunk_count) {
-+		pr_err("Invalid chunk_id or chunk_count in level 26");
++		pr_err("Invalid chunk_id to level 26");
 +		return -EINVAL;
 +	}
 +
@@ -1493,7 +1493,7 @@ index 0000000..bd88c1b
 +	return 0;
 +}
 +
-+static int chunk_level32_delete(struct sail_ml *s, u32 chunk_id)
++static int level32_chunk_delete(struct sail_ml *s, u32 chunk_id)
 +{
 +	u8 *nh_old = s->nh32;
 +	u8 *pl_old = s->pl32;
@@ -1614,7 +1614,12 @@ index 0000000..bd88c1b
 +	return 0;
 +}
 +
-+/*Check if a chunk is being used by looking at its nh array*/
++ /* Check if a chunk is being used by looking at its nh array
++  * @param nh next-hop array on which the chunk is sitting
++  * @param chunk_id The chunk ID will be found in the chunk ID array in the
++  * upper level
++  * @return true if it is being used, false otherwise
++  */
 +static bool is_chunk_being_used(u8 *nh, u32 chunk_id)
 +{
 +	long long int i;
@@ -1701,7 +1706,7 @@ index 0000000..bd88c1b
 +		chunk_id = get_chunk_id(s->ci20, LEVEL20_SIZE, idx20);
 +		if (!chunk_id)
 +			goto error;
-+		err = chunk_level26_insert(s, chunk_id);
++		err = level26_chunk_insert(s, chunk_id);
 +		if (err)
 +			goto error;
 +		err = update_chunk_ids(s->ci20, LEVEL20_SIZE, idx20, chunk_id);
@@ -1732,7 +1737,7 @@ index 0000000..bd88c1b
 +		chunk_id = get_chunk_id(s->ci26, LEVEL26_ARR_SIZE(s), idx26);
 +		if (!chunk_id)
 +			goto error;
-+		err = chunk_level32_insert(s, chunk_id);
++		err = level32_chunk_insert(s, chunk_id);
 +		if (err)
 +			goto error;
 +		err = update_chunk_ids(s->ci26, LEVEL26_ARR_SIZE(s),
@@ -1814,7 +1819,7 @@ index 0000000..bd88c1b
 +			s->pl26[idx26 + i] = 0;
 +		}
 +		if (!is_chunk_being_used(s->nh26, s->ci20[idx20])) {
-+			chunk_level26_delete(s, s->ci20[idx20]);
++			level26_chunk_delete(s, s->ci20[idx20]);
 +			remove_chunk_ids(s->ci20, LEVEL20_SIZE,
 +					 s->ci20[idx20]);
 +		}
@@ -1840,7 +1845,7 @@ index 0000000..bd88c1b
 +			s->pl32[idx32 + i] = 0;
 +		}
 +		if (!is_chunk_being_used(s->nh32, s->ci26[idx26])) {
-+			chunk_level32_delete(s, s->ci26[idx26]);
++			level32_chunk_delete(s, s->ci26[idx26]);
 +			remove_chunk_ids(s->ci26, LEVEL26_ARR_SIZE(s),
 +					 s->ci26[idx26]);
 +		}
