@@ -753,7 +753,7 @@ index 32699b2..1a9f77e 100644
  
  /*
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..64190e6 100644
+index 81d0f21..33a3eb8 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -1120,7 +1120,7 @@ index 81d0f21..64190e6 100644
 +				   res->prefixlen, tsc_end - tsc_begin);
 +	}
 +
-+	for (j = 1000; j < 1000; j++) {
++	for (j = 0; j < 1000; j++) {
 +		get_random_bytes(&ip_addr, 4);
 +
 +		if (tb) {
@@ -1193,10 +1193,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..c529361
+index 0000000..bd88c1b
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,795 @@
+@@ -0,0 +1,763 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1783,13 +1783,7 @@ index 0000000..c529361
 +	/*Eextract 20 bits from LSB.*/
 +	idx20 = key >> 12;
 +
-+	if (prefix_len == 20) {
-+		if (s->pl20[idx20] ==  20) {
-+			s->nh20[idx20] = 0;
-+			s->pl20[idx20] = 0;
-+		}
-+		goto finish;
-+	} else if (prefix_len < 20) {
++	if (prefix_len <= 20) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (20 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
@@ -1808,21 +1802,8 @@ index 0000000..c529361
 +
 +	/*Extract 21-26 bit and calculate level 26 index*/
 +	idx26 = (s->ci20[idx20] - 1) * CHUNK_SIZE + ((key & 4032) >> 6);
-+	if (idx26 >= LEVEL26_ARR_SIZE(s))
-+		goto error;
 +
-+	if (prefix_len == 26) {
-+		if (s->pl26[idx26] ==  26) {
-+			s->nh26[idx26] = 0;
-+			s->pl26[idx26] = 0;
-+			if (!is_chunk_being_used(s->nh26, s->ci20[idx20])) {
-+				chunk_level26_delete(s, s->ci20[idx20]);
-+				remove_chunk_ids(s->ci20, LEVEL20_SIZE,
-+						 s->ci20[idx20]);
-+			}
-+		}
-+		goto finish;
-+	} else if (prefix_len < 26) {
++	if (prefix_len <= 26) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (26 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
@@ -1846,21 +1827,8 @@ index 0000000..c529361
 +
 +	/*Extract 6 bit from MSB and calculate level 32 index*/
 +	idx32 = (s->ci26[idx26] - 1) * CHUNK_SIZE + (key & 63);
-+	if (idx32 >= LEVEL32_ARR_SIZE(s))
-+		goto error;
 +
-+	if (prefix_len == 32) {
-+		if (s->pl32[idx32] ==  32) {
-+			s->nh32[idx32] = 0;
-+			s->pl32[idx32] = 0;
-+		}
-+		if (!is_chunk_being_used(s->nh32, s->ci26[idx26])) {
-+			chunk_level32_delete(s, s->ci26[idx26]);
-+			remove_chunk_ids(s->ci26, LEVEL26_ARR_SIZE(s),
-+					 s->ci26[idx26]);
-+		}
-+		goto finish;
-+	} else if (prefix_len < 32) {
++	if (prefix_len <= 32) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (32 - prefix_len);
 +
