@@ -753,7 +753,7 @@ index 32699b2..1a9f77e 100644
  
  /*
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..33a3eb8 100644
+index 81d0f21..23af18d 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -1114,10 +1114,10 @@ index 81d0f21..33a3eb8 100644
 +			       res->fi->fib_dev->name);
 +		}
 +
-+		if (res->fi)
++		if (tb && dev && res->fi && (tsc_end > tsc_begin))
 +			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
-+				   &ip_addr, res->fi->fib_dev->name,
-+				   res->prefixlen, tsc_end - tsc_begin);
++			       &ip_addr, dev->name, res->prefixlen,
++			       tsc_end - tsc_begin);
 +	}
 +
 +	for (j = 0; j < 1000; j++) {
