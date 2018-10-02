@@ -1193,10 +1193,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..73b7a83
+index 0000000..1b44f35
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,767 @@
+@@ -0,0 +1,784 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1293,10 +1293,19 @@ index 0000000..73b7a83
 +		 */
 +		m = (long long int)s->level26_chunk_count * CHUNK_SIZE - 1;
 +		for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
-+			s->nh26[m + 1] = s->nh26[m];
-+			s->pl26[m + 1] = s->pl26[m];
-+			s->ci26[m + 1] = s->ci26[m];
++			s->nh26[m + CHUNK_SIZE] = s->nh26[m];
++			s->pl26[m + CHUNK_SIZE] = s->pl26[m];
++			s->ci26[m + CHUNK_SIZE] = s->ci26[m];
 +		}
++
++		/*Reset the newly created empty chunk*/
++		m = (chunk_id - 1) * CHUNK_SIZE;
++		for (; m < chunk_id * CHUNK_SIZE; m++) {
++			s->nh26[m] = 0;
++			s->pl26[m] = 0;
++			s->ci26[m] = 0;
++		}
++
 +		++s->level26_chunk_count;
 +		return 0;
 +	} else if (s->level26_chunk_count == s->level26_chunk_total) {
@@ -1379,9 +1388,17 @@ index 0000000..73b7a83
 +		 */
 +		m = (long long int)s->level32_chunk_count * CHUNK_SIZE - 1;
 +		for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
-+			s->nh32[m + 1] = s->nh32[m];
-+			s->pl32[m + 1] = s->pl32[m];
++			s->nh32[m + CHUNK_SIZE] = s->nh32[m];
++			s->pl32[m + CHUNK_SIZE] = s->pl32[m];
 +		}
++
++		/*Reset the newly created empty chunk*/
++		m = (chunk_id - 1) * CHUNK_SIZE;
++		for (; m < chunk_id * CHUNK_SIZE; m++) {
++			s->nh32[m] = 0;
++			s->pl32[m] = 0;
++		}
++
 +		++s->level32_chunk_count;
 +		return 0;
 +	} else if (s->level32_chunk_count == s->level32_chunk_total) {
