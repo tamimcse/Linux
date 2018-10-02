@@ -14,7 +14,7 @@ Solution: Shut down and restart by power button. Chances are it will show you an
 
 Problem: Linux crashes while restarting. It is almost impossible to know why. Becouse it shuts down properly and runs into OOPS while restarting.
 
-Solution: Check that you are access some memory (dynamic memory) which you shouldn't do. Insted of crashing right then, it ctrashes while restarting.
+Solution: Check that you are access some memory (dynamic memory or some NULL poiner) which you shouldn't do. Insted of crashing right then, it ctrashes while restarting.
 
 
 
