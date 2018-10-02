@@ -753,7 +753,7 @@ index 32699b2..1a9f77e 100644
  
  /*
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..23af18d 100644
+index 81d0f21..e89df75 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -1114,7 +1114,7 @@ index 81d0f21..23af18d 100644
 +			       res->fi->fib_dev->name);
 +		}
 +
-+		if (tb && dev && res->fi && (tsc_end > tsc_begin))
++		if (tb && dev && res && res->fi && (tsc_end > tsc_begin))
 +			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
 +			       &ip_addr, dev->name, res->prefixlen,
 +			       tsc_end - tsc_begin);
@@ -1193,10 +1193,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..1cf03bf
+index 0000000..73b7a83
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,768 @@
+@@ -0,0 +1,767 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1921,7 +1921,7 @@ index 0000000..1cf03bf
 +	u8 netdev_index = s->def_nh;
 +	/*extract 20 bits from LSB*/
 +	const u32 index = key >> 12;
-+	u64 index_up;
++	u64 index_up, idx32;
 +
 +	rcu_read_lock();
 +
@@ -1952,14 +1952,13 @@ index 0000000..1cf03bf
 +	 */
 +	c26 = rcu_dereference(s->ci26);
 +	if (likely(c26[index_up] != 0))
-+		index_up = (c26[index_up] - 1) * CHUNK_SIZE + (key & 63);
++		idx32 = (c26[index_up] - 1) * CHUNK_SIZE + (key & 63);
 +	else
 +		goto finish;
 +
-+	/*Find corresponding next-hop in level 32*/
 +	n32 = rcu_dereference(s->nh32);
-+	if (likely(n32[index_up] != 0))
-+		netdev_index = n32[index_up];
++	if (likely(n32[idx32] != 0))
++		netdev_index = n32[idx32];
 +finish:
 +	*dev = s->netdevs[netdev_index];
 +	rcu_read_unlock();
