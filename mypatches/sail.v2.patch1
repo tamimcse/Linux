@@ -1193,7 +1193,7 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..2e3e8df
+index 0000000..1cf03bf
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
 @@ -0,0 +1,768 @@
@@ -1631,7 +1631,7 @@ index 0000000..2e3e8df
 +	}
 +
 +	start_index = (long long int)(chunk_id - 1) * CHUNK_SIZE;
-+	end_index = (long long int)chunk_id * CHUNK_SIZE;
++	end_index = (long long int)chunk_id * CHUNK_SIZE - 1;
 +	for (i = start_index; i <= end_index; i++) {
 +		/*The chunk is being used*/
 +		if (nh[i] > 0)
