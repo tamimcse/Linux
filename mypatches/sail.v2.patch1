@@ -753,7 +753,7 @@ index 32699b2..1a9f77e 100644
  
  /*
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..e89df75 100644
+index 81d0f21..0e3715b 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -831,21 +831,21 @@ index 81d0f21..e89df75 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +313,321 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +313,328 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
 -static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
++#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++	static u32 global_ip = 0;
++#endif
 +
 +
 +static inline int fib_lookup(struct net *net, struct flowi4 *flp,
  			     struct fib_result *res, unsigned int flags)
  {
-+
-+	u32 ip_addr, temp;
  	struct fib_table *tb;
  	int err = -ENETUNREACH;
-+	int j = 0;
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
 +	static const char * const wtf_26[] = {
 +		"1.11.8.173",
@@ -1045,6 +1045,8 @@ index 81d0f21..e89df75 100644
 +	struct net_device *dev;
 +	u64 tsc_begin = 0, tsc_end = 0;
 +	u64 tsc_trie_begin = 0, tsc_trie_end = 0;
++	int j = 0;
++	u32 ip_addr, temp;
 +#endif
  
  	rcu_read_lock();
@@ -1121,7 +1123,12 @@ index 81d0f21..e89df75 100644
 +	}
 +
 +	for (j = 0; j < 1000; j++) {
-+		get_random_bytes(&ip_addr, 4);
++//		get_random_bytes(&ip_addr, 4);
++		ip_addr = global_ip;
++		if (global_ip == 4294967295)
++			global_ip = 0;
++		else
++			global_ip++;
 +
 +		if (tb) {
 +			tsc_begin = rdtsc();
