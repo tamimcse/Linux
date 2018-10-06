@@ -753,7 +753,7 @@ index 32699b2..1a9f77e 100644
  
  /*
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 81d0f21..0e3715b 100644
+index 81d0f21..ba1e232 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -1078,7 +1078,7 @@ index 81d0f21..0e3715b 100644
 +//				   res->prefixlen, tsc_end - tsc_begin);
 +		flp->daddr = temp;
 +
-+		if (tb && dev && res->fi &&
++		if (tb && dev && !err && res && res->fi && res->fi->fib_dev &&
 +				strcmp(res->fi->fib_dev->name, dev->name) &&
 +				strcmp(res->fi->fib_dev->name, "lo")) {
 +			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
@@ -1108,7 +1108,7 @@ index 81d0f21..0e3715b 100644
 +
 +		flp->daddr = temp;
 +
-+		if (tb && dev && res->fi &&
++		if (tb && dev && !err && res && res->fi && res->fi->fib_dev &&
 +				strcmp(res->fi->fib_dev->name, dev->name) &&
 +				strcmp(res->fi->fib_dev->name, "lo")) {
 +			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
@@ -1116,7 +1116,7 @@ index 81d0f21..0e3715b 100644
 +			       res->fi->fib_dev->name);
 +		}
 +
-+		if (tb && dev && res && res->fi && (tsc_end > tsc_begin))
++		if (tb && dev && !err && res && res->fi && res->fi->fib_dev && (tsc_end > tsc_begin))
 +			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
 +			       &ip_addr, dev->name, res->prefixlen,
 +			       tsc_end - tsc_begin);
@@ -1148,7 +1148,7 @@ index 81d0f21..0e3715b 100644
 +
 +		flp->daddr = temp;
 +
-+		if (tb && dev && res->fi &&
++		if (tb && dev && !err && res && res->fi && res->fi->fib_dev &&
 +		    strcmp(res->fi->fib_dev->name, dev->name) &&
 +		    strcmp(res->fi->fib_dev->name, "lo")) {
 +			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
@@ -1200,10 +1200,10 @@ index b379520..aca50cd 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..1b44f35
+index 0000000..62c2a96
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,784 @@
+@@ -0,0 +1,741 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
@@ -1461,110 +1461,67 @@ index 0000000..1b44f35
 +
 +static int level26_chunk_delete(struct sail_ml *s, u32 chunk_id)
 +{
-+	u8 *nh_old = s->nh26;
-+	u8 *pl_old = s->pl26;
-+	u32 *ci_old = s->ci26;
-+	/*New next-hop, prefix-length and chunk ID array*/
-+	u8 *n, *p;
-+	u32 *c;
-+	u64 arr_size, i, j, k, chunk_start;
++	long long int m;
++	u64 end_idx;
 +
 +	if (chunk_id > s->level26_chunk_count) {
 +		pr_err("Invalid chunk_id to level 26");
 +		return -EINVAL;
 +	}
 +
-+	arr_size = (s->level26_chunk_count - 1) * CHUNK_SIZE;
-+	n = kcalloc(arr_size, sizeof(*n), GFP_ATOMIC);
-+	c = kcalloc(arr_size, sizeof(*c), GFP_ATOMIC);
-+	p = kcalloc(arr_size, sizeof(*p), GFP_ATOMIC);
-+
-+	if (!n || !c || !p) {
-+		kfree(n);
-+		kfree(c);
-+		kfree(p);
-+		return -ENOMEM;
-+	}
-+
-+	/*Iterate over the old array and copy to new array*/
-+	for (i = 1, j = 0; i <= s->level26_chunk_count; i++) {
-+		if (i != chunk_id) {
-+			chunk_start = (i - 1) * CHUNK_SIZE;
-+			/*Copy the chunk*/
-+			for (k = 0; k < CHUNK_SIZE; k++, j++) {
-+				n[j] = nh_old[chunk_start + k];
-+				c[j] = ci_old[chunk_start + k];
-+				p[j] = pl_old[chunk_start + k];
-+			}
++	if (chunk_id < s->level26_chunk_count) {
++		/*shift each chunk one step left*/
++		m = (long long int)chunk_id * CHUNK_SIZE;
++		end_idx = s->level26_chunk_count * CHUNK_SIZE - 1;
++		for (; m <= end_idx; m++) {
++			s->nh26[m - CHUNK_SIZE] = s->nh26[m];
++			s->pl26[m - CHUNK_SIZE] = s->pl26[m];
++			s->ci26[m - CHUNK_SIZE] = s->ci26[m];
 +		}
 +	}
 +
-+	/*Update the pointers with new pointer*/
-+	rcu_assign_pointer(s->nh26, n);
-+	rcu_assign_pointer(s->pl26, p);
-+	rcu_assign_pointer(s->ci26, c);
++	/*Reset the the last chunk*/
++	end_idx = s->level26_chunk_count * CHUNK_SIZE - 1;
++	m = (s->level26_chunk_count - 1) * CHUNK_SIZE;
++	for (; m <= end_idx; m++) {
++		s->nh26[m] = 0;
++		s->pl26[m] = 0;
++		s->ci26[m] = 0;
++	}
 +
-+	/* Wait for all readers to be finished */
-+	synchronize_rcu();
-+
-+	/*Decrement the counter after chunk has been inserted*/
 +	--s->level26_chunk_count;
-+
-+	/*Remove old arrays*/
-+	kfree(nh_old);
-+	kfree(ci_old);
-+	kfree(pl_old);
 +	return 0;
 +}
 +
 +static int level32_chunk_delete(struct sail_ml *s, u32 chunk_id)
 +{
-+	u8 *nh_old = s->nh32;
-+	u8 *pl_old = s->pl32;
-+	/*New next-hop, prefix-length and chunk ID array*/
-+	u8 *n, *p;
-+	u64 arr_size, i, j, k, chunk_start;
++	long long int m;
++	u64 end_idx;
 +
 +	if (chunk_id > s->level32_chunk_count) {
-+		pr_err("Invalid chunk_id or chunk_count in level 32");
++		pr_err("Invalid chunk_id to level 32");
 +		return -EINVAL;
 +	}
 +
-+	arr_size = (s->level32_chunk_count - 1) * CHUNK_SIZE;
-+	n = kcalloc(arr_size, sizeof(*n), GFP_ATOMIC);
-+	p = kcalloc(arr_size, sizeof(*p), GFP_ATOMIC);
-+
-+	if (!n || !p) {
-+		kfree(n);
-+		kfree(p);
-+		return -ENOMEM;
-+	}
-+
-+	/*Iterate over the old array and copy to new array*/
-+	for (i = 1, j = 0; i <= s->level32_chunk_count; i++) {
-+		if (i != chunk_id) {
-+			chunk_start = (i - 1) * CHUNK_SIZE;
-+			/*Copy the chunk*/
-+			for (k = 0; k < CHUNK_SIZE; k++, j++) {
-+				n[j] = nh_old[chunk_start + k];
-+				p[j] = pl_old[chunk_start + k];
-+			}
++	if (chunk_id < s->level32_chunk_count) {
++		/*shift each chunk one step left*/
++		m = (long long int)chunk_id * CHUNK_SIZE;
++		end_idx = s->level32_chunk_count * CHUNK_SIZE - 1;
++		for (; m <= end_idx; m++) {
++			s->nh32[m - CHUNK_SIZE] = s->nh32[m];
++			s->pl32[m - CHUNK_SIZE] = s->pl32[m];
 +		}
 +	}
 +
-+	/*Update the pointers with new pointer*/
-+	rcu_assign_pointer(s->nh32, n);
-+	rcu_assign_pointer(s->pl32, p);
++	/*Reset the the last chunk*/
++	end_idx = s->level32_chunk_count * CHUNK_SIZE - 1;
++	m = (s->level32_chunk_count - 1) * CHUNK_SIZE;
++	for (; m <= end_idx; m++) {
++		s->nh32[m] = 0;
++		s->pl32[m] = 0;
++	}
 +
-+	/* Wait for all readers to be finished */
-+	synchronize_rcu();
-+
-+	/*Decrement the counter after chunk has been inserted*/
 +	--s->level32_chunk_count;
-+
-+	/*Remove old arrays*/
-+	kfree(nh_old);
-+	kfree(pl_old);
 +	return 0;
 +}
 +
@@ -1989,7 +1946,7 @@ index 0000000..1b44f35
 +	return 0;
 +}
 diff --git a/net/ipv4/fib_trie.c b/net/ipv4/fib_trie.c
-index 3dcffd3..0cda3b8 100644
+index 3dcffd3..9618e57 100644
 --- a/net/ipv4/fib_trie.c
 +++ b/net/ipv4/fib_trie.c
 @@ -1280,6 +1280,10 @@ int fib_table_insert(struct net *net, struct fib_table *tb,
@@ -2008,7 +1965,7 @@ index 3dcffd3..0cda3b8 100644
  	pr_debug("Deleting %08x/%d tos=%d t=%p\n", key, plen, tos, t);
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+//	sail_delete(&tb->sail, key, plen);
++	sail_delete(&tb->sail, key, plen);
 +#endif
 +
  	fa_to_delete = NULL;
