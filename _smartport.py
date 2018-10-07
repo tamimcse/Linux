@@ -68,7 +68,7 @@ def main(cli=0):
 
 #Setup BFP. sudo cat /sys/kernel/debug/tracing/trace_pipe to see the BPF debug output
     net['r1'].cmd( 'tc qdisc add dev r1-eth3 clsact')
-    net['r1'].cmd( 'tc filter add dev r1-eth3 ingress bpf da obj samples/bpf/mf.o sec mf')
+    net['r1'].cmd( 'tc filter add dev r1-eth3 ingress bpf da obj ../net-next/samples/bpf/xdp_fwd_kern.o sec xdp_fwd_direct')
 
 #Setup RPS CPUs
 #    net['r1'].cmd( 'sudo chmod a+rwx -R /sys/class/net/r1-eth2/queues/rx-0/')
