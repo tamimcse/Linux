@@ -5,7 +5,7 @@ Solution: Uninstall and reinstall Gstreamer-plugins-good from source.
 
 Problem: If eBPF wouldnot compile.
 
-Solution: Please look at the README at samples/bpf/. Most probably you need to also execute make headers_install to make it to work.
+Solution: Please look at the README at samples/bpf/. Most probably you need to also execute make headers_install to make it to work. eBPF also requires to enable many kernel options. Make sure all of them are enabled.
 
 
 Problem: Sometime you cannot log into Linux after modifing kernel.
