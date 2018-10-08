@@ -1165,22 +1165,23 @@ index 69c91d1..8525e25 100644
  		err = fib_table_lookup(tb, flp, res, flags | FIB_LOOKUP_NOREF);
  
 diff --git a/net/core/filter.c b/net/core/filter.c
-index 5e00f2b..65b055b 100644
+index 5e00f2b..e47b2c9 100644
 --- a/net/core/filter.c
 +++ b/net/core/filter.c
-@@ -4236,6 +4236,44 @@ static int bpf_fib_set_fwd_params(struct bpf_fib_lookup *params,
+@@ -4236,6 +4236,49 @@ static int bpf_fib_set_fwd_params(struct bpf_fib_lookup *params,
  }
  #endif
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
 +static int sail_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
-+			   u32 flags)
++			   u32 flags, bool check_mtu)
 +{
 +	struct net_device *dev_in, *dev_out;
 +	struct fib_table *tb;
 +	struct neighbour *neigh;
 +	u32 tbid;
 +	int err;
++	u32 mtu;
 +
 +	if (flags & BPF_FIB_LOOKUP_DIRECT) {
 +		dev_in = dev_get_by_index_rcu(net, params->ifindex);
@@ -1195,11 +1196,15 @@ index 5e00f2b..65b055b 100644
 +	if (unlikely(!tb))
 +		return BPF_FIB_LKUP_RET_NOT_FWDED;
 +
-+	rcu_read_lock();
 +	err = sail_lookup(&tb->sail, params->ipv4_dst, &dev_out);
-+	rcu_read_unlock();
 +	if (err)
 +		return -ENOENT;
++
++	if (check_mtu) {
++		mtu = min(READ_ONCE(dev_out->mtu), IP_MAX_MTU);
++		if (params->tot_len > mtu)
++			return BPF_FIB_LKUP_RET_FRAG_NEEDED;
++	}
 +
 +	neigh = __ipv4_neigh_lookup_noref(dev_out,
 +					  (__force u32)params->ipv4_dst);
@@ -1213,12 +1218,13 @@ index 5e00f2b..65b055b 100644
  #if IS_ENABLED(CONFIG_INET)
  static int bpf_ipv4_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
  			       u32 flags, bool check_mtu)
-@@ -4468,9 +4506,14 @@ BPF_CALL_4(bpf_xdp_fib_lookup, struct xdp_buff *, ctx,
+@@ -4468,9 +4511,15 @@ BPF_CALL_4(bpf_xdp_fib_lookup, struct xdp_buff *, ctx,
  	switch (params->family) {
  #if IS_ENABLED(CONFIG_INET)
  	case AF_INET:
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+		return sail_fib_lookup(dev_net(ctx->rxq->dev), params, flags);
++		return sail_fib_lookup(dev_net(ctx->rxq->dev), params,
++				       flags, true);
 +#else
  		return bpf_ipv4_fib_lookup(dev_net(ctx->rxq->dev), params,
  					   flags, true);
@@ -1229,16 +1235,16 @@ index 5e00f2b..65b055b 100644
  	case AF_INET6:
  		return bpf_ipv6_fib_lookup(dev_net(ctx->rxq->dev), params,
 diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
-index 32cae39..5f25411 100644
+index 32cae39..0750a51 100644
 --- a/net/ipv4/Kconfig
 +++ b/net/ipv4/Kconfig
-@@ -52,6 +52,21 @@ config IP_ADVANCED_ROUTER
+@@ -52,6 +52,22 @@ config IP_ADVANCED_ROUTER
  
  	  If unsure, say N here.
  
 +config FIB_SAIL_ML
 +	bool "SAIL_ML FIB lookup"
-+	depends on SLAB && !IP_ROUTE_MULTIPATH
++	depends on SLAB && !IP_ROUTE_MULTIPATH && !LWTUNNEL
 +	default y
 +	help
 +	  This will store FIB table as a SAIL_ML (along with LC-trie). This is
@@ -1249,7 +1255,8 @@ index 32cae39..5f25411 100644
 +	  table has several hundred thousands prefixes with length (20~32),
 +	  SAIL_ML allocates arrays larger than 4MB. This is why
 +	  it requires SLAB memory allocator to be enabled. Currently it does
-+	  not support multi-path routing.
++	  not support multi-path routing. It also does not support
++	  light-weight tunnels such as MPLS.
 +
  config IP_FIB_TRIE_STATS
  	bool "FIB TRIE statistics"
