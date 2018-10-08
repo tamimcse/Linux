@@ -755,7 +755,7 @@ index 1e22d96..8cd9fe2 100644
  
  /*
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..07c9c7f 100644
+index 69c91d1..8525e25 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -833,7 +833,7 @@ index 69c91d1..07c9c7f 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +313,328 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +313,329 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -1118,7 +1118,8 @@ index 69c91d1..07c9c7f 100644
 +			       res->fi->fib_dev->name);
 +		}
 +
-+		if (tb && dev && !err && res && res->fi && res->fi->fib_dev && (tsc_end > tsc_begin))
++		if (tb && dev && !err && res && res->fi && res->fi->fib_dev
++		    && (tsc_end > tsc_begin))
 +			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
 +			       &ip_addr, dev->name, res->prefixlen,
 +			       tsc_end - tsc_begin);
@@ -1164,16 +1165,16 @@ index 69c91d1..07c9c7f 100644
  		err = fib_table_lookup(tb, flp, res, flags | FIB_LOOKUP_NOREF);
  
 diff --git a/net/core/filter.c b/net/core/filter.c
-index 5e00f2b..1eec13a 100644
+index 5e00f2b..65b055b 100644
 --- a/net/core/filter.c
 +++ b/net/core/filter.c
-@@ -4236,6 +4236,43 @@ static int bpf_fib_set_fwd_params(struct bpf_fib_lookup *params,
+@@ -4236,6 +4236,44 @@ static int bpf_fib_set_fwd_params(struct bpf_fib_lookup *params,
  }
  #endif
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
 +static int sail_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
-+			       u32 flags)
++			   u32 flags)
 +{
 +	struct net_device *dev_in, *dev_out;
 +	struct fib_table *tb;
@@ -1187,20 +1188,21 @@ index 5e00f2b..1eec13a 100644
 +			return -ENODEV;
 +		tbid = l3mdev_fib_table_rcu(dev_in) ? : RT_TABLE_MAIN;
 +	} else {
-+		tbid = RT_TABLE_MAIN;    
++		tbid = RT_TABLE_MAIN;
 +	}
 +
 +	tb = fib_get_table(net, tbid);
 +	if (unlikely(!tb))
 +		return BPF_FIB_LKUP_RET_NOT_FWDED;
 +
-+	rcu_read_lock();        
++	rcu_read_lock();
 +	err = sail_lookup(&tb->sail, params->ipv4_dst, &dev_out);
 +	rcu_read_unlock();
-+	if(err)
++	if (err)
 +		return -ENOENT;
 +
-+	neigh = __ipv4_neigh_lookup_noref(dev_out, (__force u32)params->ipv4_dst);
++	neigh = __ipv4_neigh_lookup_noref(dev_out,
++					  (__force u32)params->ipv4_dst);
 +	if (!neigh)
 +		return BPF_FIB_LKUP_RET_NO_NEIGH;
 +
@@ -1211,7 +1213,7 @@ index 5e00f2b..1eec13a 100644
  #if IS_ENABLED(CONFIG_INET)
  static int bpf_ipv4_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
  			       u32 flags, bool check_mtu)
-@@ -4468,8 +4505,13 @@ BPF_CALL_4(bpf_xdp_fib_lookup, struct xdp_buff *, ctx,
+@@ -4468,9 +4506,14 @@ BPF_CALL_4(bpf_xdp_fib_lookup, struct xdp_buff *, ctx,
  	switch (params->family) {
  #if IS_ENABLED(CONFIG_INET)
  	case AF_INET:
@@ -1220,11 +1222,12 @@ index 5e00f2b..1eec13a 100644
 +#else
  		return bpf_ipv4_fib_lookup(dev_net(ctx->rxq->dev), params,
  					   flags, true);
-+#endif            
-+
  #endif
++
++#endif
  #if IS_ENABLED(CONFIG_IPV6)
  	case AF_INET6:
+ 		return bpf_ipv6_fib_lookup(dev_net(ctx->rxq->dev), params,
 diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
 index 32cae39..5f25411 100644
 --- a/net/ipv4/Kconfig
@@ -1265,7 +1268,7 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..62c2a96
+index 0000000..ea0c127
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
 @@ -0,0 +1,741 @@
@@ -1327,8 +1330,8 @@ index 0000000..62c2a96
 +/*Number of chunks allocated each time*/
 +#define NUM_CHUNKS 50000
 +
-+#define LEVEL26_ARR_SIZE(S) (S->level26_chunk_count * CHUNK_SIZE)
-+#define LEVEL32_ARR_SIZE(S) (S->level32_chunk_count * CHUNK_SIZE)
++#define LEVEL26_ARR_SIZE(S) ((S)->level26_chunk_count * CHUNK_SIZE)
++#define LEVEL32_ARR_SIZE(S) ((S)->level32_chunk_count * CHUNK_SIZE)
 +
 +/*Insert net_device to the net-device array.
 + *This function returns the index to the net_device array
@@ -1352,7 +1355,7 @@ index 0000000..62c2a96
 +/* Insert a chunk at index. Note that chunk_id starts from 1, not 0 */
 +static int level26_chunk_insert(struct sail_ml *s, u32 chunk_id)
 +{
-+	long long int m;
++	long long m;
 +
 +	if (chunk_id > (s->level26_chunk_count + 1) || chunk_id < 1) {
 +		pr_err("Invalid chunk_id for level 26");
@@ -1363,7 +1366,7 @@ index 0000000..62c2a96
 +		/*shift each element one step right to make
 +		 *space for the new one
 +		 */
-+		m = (long long int)s->level26_chunk_count * CHUNK_SIZE - 1;
++		m = (long long)s->level26_chunk_count * CHUNK_SIZE - 1;
 +		for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
 +			s->nh26[m + CHUNK_SIZE] = s->nh26[m];
 +			s->pl26[m + CHUNK_SIZE] = s->pl26[m];
@@ -1447,7 +1450,7 @@ index 0000000..62c2a96
 +/* Insert a chunk at index. Note that chunk_id starts from 1, not 0 */
 +static int level32_chunk_insert(struct sail_ml *s, u32 chunk_id)
 +{
-+	long long int m;
++	long long m;
 +
 +	if (chunk_id > (s->level32_chunk_count + 1) || chunk_id < 1) {
 +		pr_err("Invalid chunk_id for level 32");
@@ -1458,7 +1461,7 @@ index 0000000..62c2a96
 +		/*shift each element one step right to make
 +		 *space for the new one
 +		 */
-+		m = (long long int)s->level32_chunk_count * CHUNK_SIZE - 1;
++		m = (long long)s->level32_chunk_count * CHUNK_SIZE - 1;
 +		for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
 +			s->nh32[m + CHUNK_SIZE] = s->nh32[m];
 +			s->pl32[m + CHUNK_SIZE] = s->pl32[m];
@@ -1526,7 +1529,7 @@ index 0000000..62c2a96
 +
 +static int level26_chunk_delete(struct sail_ml *s, u32 chunk_id)
 +{
-+	long long int m;
++	long long m;
 +	u64 end_idx;
 +
 +	if (chunk_id > s->level26_chunk_count) {
@@ -1536,7 +1539,7 @@ index 0000000..62c2a96
 +
 +	if (chunk_id < s->level26_chunk_count) {
 +		/*shift each chunk one step left*/
-+		m = (long long int)chunk_id * CHUNK_SIZE;
++		m = (long long)chunk_id * CHUNK_SIZE;
 +		end_idx = s->level26_chunk_count * CHUNK_SIZE - 1;
 +		for (; m <= end_idx; m++) {
 +			s->nh26[m - CHUNK_SIZE] = s->nh26[m];
@@ -1560,7 +1563,7 @@ index 0000000..62c2a96
 +
 +static int level32_chunk_delete(struct sail_ml *s, u32 chunk_id)
 +{
-+	long long int m;
++	long long m;
 +	u64 end_idx;
 +
 +	if (chunk_id > s->level32_chunk_count) {
@@ -1570,7 +1573,7 @@ index 0000000..62c2a96
 +
 +	if (chunk_id < s->level32_chunk_count) {
 +		/*shift each chunk one step left*/
-+		m = (long long int)chunk_id * CHUNK_SIZE;
++		m = (long long)chunk_id * CHUNK_SIZE;
 +		end_idx = s->level32_chunk_count * CHUNK_SIZE - 1;
 +		for (; m <= end_idx; m++) {
 +			s->nh32[m - CHUNK_SIZE] = s->nh32[m];
@@ -1593,7 +1596,7 @@ index 0000000..62c2a96
 +/*Finds the chunk ID for the index*/
 +static u32 get_chunk_id(u32 *chunk_ids, u32 arr_size, u32 index)
 +{
-+	long long int i;
++	long long i;
 +
 +	if (index >= arr_size) {
 +		pr_err("Index needs to be smaller than arr_size");
@@ -1601,7 +1604,7 @@ index 0000000..62c2a96
 +	}
 +
 +	/*Find the first chunk_no > 0 to the left*/
-+	for (i = (long long int)index - 1; i >= 0; i--) {
++	for (i = (long long)index - 1; i >= 0; i--) {
 +		if (chunk_ids[i] > 0)
 +			return chunk_ids[i] + 1;
 +	}
@@ -1613,7 +1616,7 @@ index 0000000..62c2a96
 +static int update_chunk_ids(u32 *chunk_ids, u32 arr_size,
 +			    u32 index, u32 chunk_id)
 +{
-+	long long int i;
++	long long i;
 +
 +	if (index >= arr_size) {
 +		pr_err("Index needs to be smaller than arr_size");
@@ -1621,7 +1624,7 @@ index 0000000..62c2a96
 +	}
 +
 +	/*Check if the chunk ID already exists*/
-+	for (i = (long long int)index - 1; i >= 0; i--) {
++	for (i = (long long)index - 1; i >= 0; i--) {
 +		if (chunk_ids[i] > 0) {
 +			if (chunk_ids[i] >= chunk_id) {
 +				pr_err("The chunk ID is already exist");
@@ -1644,7 +1647,7 @@ index 0000000..62c2a96
 +
 +static int remove_chunk_ids(u32 *chunk_ids, u32 arr_size, u32 chunk_id)
 +{
-+	long long int i;
++	long long i;
 +	bool found = false;
 +
 +	/*Check if the chunk ID already exists*/
@@ -1668,16 +1671,16 @@ index 0000000..62c2a96
 +  */
 +static bool is_chunk_being_used(u8 *nh, u32 chunk_id)
 +{
-+	long long int i;
-+	long long int start_index, end_index;
++	long long i;
++	long long start_index, end_index;
 +
 +	if (chunk_id < 1) {
 +		pr_err("Invalid chunk ID");
 +		return -EINVAL;
 +	}
 +
-+	start_index = (long long int)(chunk_id - 1) * CHUNK_SIZE;
-+	end_index = (long long int)chunk_id * CHUNK_SIZE - 1;
++	start_index = (long long)(chunk_id - 1) * CHUNK_SIZE;
++	end_index = (long long)chunk_id * CHUNK_SIZE - 1;
 +	for (i = start_index; i <= end_index; i++) {
 +		/*The chunk is being used*/
 +		if (nh[i] > 0)
