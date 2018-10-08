@@ -730,10 +730,10 @@ index 0f7a27f..8543819 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 diff --git a/include/linux/mmzone.h b/include/linux/mmzone.h
-index 1e22d96..8cd9fe2 100644
+index 1e22d96..55ad1e8 100644
 --- a/include/linux/mmzone.h
 +++ b/include/linux/mmzone.h
-@@ -20,12 +20,20 @@
+@@ -20,12 +20,25 @@
  #include <linux/atomic.h>
  #include <asm/page.h>
  
@@ -742,6 +742,11 @@ index 1e22d96..8cd9fe2 100644
 + * set on x86_64.
 + */
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++/*
++ * SAIL_ML may need to allocate a 4MB+ dynamic array for
++ * for a very large routing table (such as the one with 90K+ routes). This
++ * is why, MAX_ORDER is set manually for SAIL_ML.
++ */
 +#define MAX_ORDER 15
 +#else
  /* Free memory management - zoned buddy allocator.  */
