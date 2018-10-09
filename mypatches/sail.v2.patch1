@@ -1277,7 +1277,7 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..ea0c127
+index 0000000..8724faa
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
 @@ -0,0 +1,741 @@
@@ -1336,8 +1336,8 @@ index 0000000..ea0c127
 +/*chunk size is 2^6*/
 +#define CHUNK_SIZE 64
 +
-+/*Number of chunks allocated each time*/
-+#define NUM_CHUNKS 50000
++/*Number of new chunks allocated each time*/
++#define NUM_CHUNKS 1024
 +
 +#define LEVEL26_ARR_SIZE(S) ((S)->level26_chunk_count * CHUNK_SIZE)
 +#define LEVEL32_ARR_SIZE(S) ((S)->level32_chunk_count * CHUNK_SIZE)
