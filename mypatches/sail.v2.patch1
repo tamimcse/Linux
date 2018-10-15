@@ -757,7 +757,7 @@ index 1e22d96..d3597a7 100644
  
  /*
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..8525e25 100644
+index 69c91d1..1052531 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -780,7 +780,7 @@ index 69c91d1..8525e25 100644
 + */
 +#define NETDEV_COUNT_MAX 255
 +
-+struct sail_ml {
++struct sail {
 +	/*Index to this array is stored in next-hop*/
 +	struct net_device	*netdevs[NETDEV_COUNT_MAX];
 +	/*Total number of next-hops (netdev)*/
@@ -812,12 +812,12 @@ index 69c91d1..8525e25 100644
 +	spinlock_t			lock;
 +};
 +
-+int sail_insert(struct sail_ml *pt, u32 key,
++int sail_ml_insert(struct sail *s, u32 key,
 +		u8 prefix_len, struct net_device *dev);
-+int sail_delete(struct sail_ml *pt, u32 key,
++int sail_ml_delete(struct sail *s, u32 key,
 +		u8 prefix_len);
-+int sail_flush(struct sail_ml *pt);
-+int sail_lookup(const struct sail_ml *pt, const __be32 dest,
++int sail_ml_flush(struct sail *s);
++int sail_ml_lookup(const struct sail *s, const __be32 dest,
 +		struct net_device **dev);
 +#endif
 +
@@ -830,7 +830,7 @@ index 69c91d1..8525e25 100644
  	unsigned long 		*tb_data;
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
 +	/*Each FIB table will have its own SAIL structure.*/
-+	struct sail_ml	sail;
++	struct sail	sail;
 +#endif
  	unsigned long		__data[0];
  };
@@ -1063,7 +1063,7 @@ index 69c91d1..8525e25 100644
 +
 +		if (tb) {
 +			tsc_begin = rdtsc();
-+			sail_lookup(&tb->sail, ip_addr, &dev);
++			sail_ml_lookup(&tb->sail, ip_addr, &dev);
 +			tsc_end = rdtsc();
 +		}
 +
@@ -1096,7 +1096,7 @@ index 69c91d1..8525e25 100644
 +
 +		if (tb) {
 +			tsc_begin = rdtsc();
-+			sail_lookup(&tb->sail, ip_addr, &dev);
++			sail_ml_lookup(&tb->sail, ip_addr, &dev);
 +			tsc_end = rdtsc();
 +		}
 +
@@ -1137,7 +1137,7 @@ index 69c91d1..8525e25 100644
 +
 +		if (tb) {
 +			tsc_begin = rdtsc();
-+			sail_lookup(&tb->sail, ip_addr, &dev);
++			sail_ml_lookup(&tb->sail, ip_addr, &dev);
 +			tsc_end = rdtsc();
 +		}
 +
@@ -1167,7 +1167,7 @@ index 69c91d1..8525e25 100644
  		err = fib_table_lookup(tb, flp, res, flags | FIB_LOOKUP_NOREF);
  
 diff --git a/net/core/filter.c b/net/core/filter.c
-index 5e00f2b..e47b2c9 100644
+index 5e00f2b..584309d 100644
 --- a/net/core/filter.c
 +++ b/net/core/filter.c
 @@ -4236,6 +4236,49 @@ static int bpf_fib_set_fwd_params(struct bpf_fib_lookup *params,
@@ -1198,7 +1198,7 @@ index 5e00f2b..e47b2c9 100644
 +	if (unlikely(!tb))
 +		return BPF_FIB_LKUP_RET_NOT_FWDED;
 +
-+	err = sail_lookup(&tb->sail, params->ipv4_dst, &dev_out);
++	err = sail_ml_lookup(&tb->sail, params->ipv4_dst, &dev_out);
 +	if (err)
 +		return -ENOENT;
 +
@@ -1277,55 +1277,26 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..8724faa
+index 0000000..04369ce
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,741 @@
+@@ -0,0 +1,712 @@
 +// SPDX-License-Identifier: GPL-2.0
-+/*This program is free software; you can redistribute it and/or
++/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
++ *
++ * This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
 + *   as published by the Free Software Foundation; either version
 + *   2 of the License, or (at your osion) any later version.
 + *
-+ * Author: MD Iftakharul Islam (Tamim) <mislam4@kent.edu>.
 + *
-+ * This work is based on the SAIL_L which is originally described in:
++ * This is a variant of SAIL_L called SAIL_ML. SAIL_L is
++ * originally described in:
 + *
 + * Yang, Tong, Gaogang Xie, YanBiao Li, Qiaobin Fu, Alex X. Liu, Qi Li,
 + * and Laurent Mathy. "Guarantee IP lookup performance with FIB explosion."
 + * In ACM SIGCOMM Computer Communication Review, vol. 44, no. 4, pp. 39-50.
 + * ACM, 2014.
-+ *
-+ * This file however deviates from the original SAIL_L. In original SAIL_L,
-+ * a routing table is divided into level 16, level 24 and level 32. A 14-bit
-+ * long prefix can be pushed to level 16 as well as upper levels such as
-+ * level 24 and level 32. However in this file, the routing table is divided
-+ * into four levels (level 0, level 20, level 26 and level 32). Here level 0
-+ * is the default route. Again a 1~20-bit long prefix will be always be
-+ * pushed to level 20. It will never be pushed to higher levels (level 26
-+ * and level 32). Again 21~26-bit long prefixes will be pushed to level 26 and
-+ * prefixes with length 26~32 will be pushed to level 32.
-+ * The main difference from SAIL_L is that a prefix will not be pushed to
-+ * the upper levels (unlike SAIL_L). This reduces the memory requiement
-+ * significantly compared to SAIL_L. Let's name this approach
-+ * "Multilevel SAIL (SAIL_ML)". The lookup process in SAIL_ML is as following:
-+ *
-+ * We look up in level 20 first. Then chunk_id array indicates if we need to
-+ * lookup further in the upper level; if yes, then we look up in level 26.
-+ * Then chunk id array of level 26 indicates if we need to lookup further; if
-+ * yes, then we look up in level 32. In this way, a lookup in SAIL_ML may
-+ * need upto three lookups.
-+ *
-+ * The main benefit of SAIL_ML over SAIL_L is that it consumes
-+ * significantly less memory than SAIL_L. In SAIL_L, when a prefix of length 14
-+ * is pushed to level 24, it increases the memory requirement to a great
-+ * extent. If the same prefix is pushed to level 32, it makes the situation
-+ * even worse. SAIL_ML avoids the problem by not pushing a prefix to the upper
-+ * level. Here a prefix with length 18 will always be pushed to level 20, not
-+ * to the upper levels (level 26 and level 32). This is why SAIL_ML
-+ * requires much less memory than SAIL_L (which is critical because CPU cache
-+ * is limited in size).
-+ *
 + */
 +
 +#include <net/ip_fib.h>
@@ -1345,7 +1316,7 @@ index 0000000..8724faa
 +/*Insert net_device to the net-device array.
 + *This function returns the index to the net_device array
 + */
-+static u8 get_netdev_index(struct sail_ml *s, struct net_device *dev)
++static u8 get_netdev_index(struct sail *s, struct net_device *dev)
 +{
 +	u8 i;
 +
@@ -1362,7 +1333,7 @@ index 0000000..8724faa
 +}
 +
 +/* Insert a chunk at index. Note that chunk_id starts from 1, not 0 */
-+static int level26_chunk_insert(struct sail_ml *s, u32 chunk_id)
++static int level26_chunk_insert(struct sail *s, u32 chunk_id)
 +{
 +	long long m;
 +
@@ -1457,7 +1428,7 @@ index 0000000..8724faa
 +}
 +
 +/* Insert a chunk at index. Note that chunk_id starts from 1, not 0 */
-+static int level32_chunk_insert(struct sail_ml *s, u32 chunk_id)
++static int level32_chunk_insert(struct sail *s, u32 chunk_id)
 +{
 +	long long m;
 +
@@ -1536,7 +1507,7 @@ index 0000000..8724faa
 +	return -EINVAL;
 +}
 +
-+static int level26_chunk_delete(struct sail_ml *s, u32 chunk_id)
++static int level26_chunk_delete(struct sail *s, u32 chunk_id)
 +{
 +	long long m;
 +	u64 end_idx;
@@ -1570,7 +1541,7 @@ index 0000000..8724faa
 +	return 0;
 +}
 +
-+static int level32_chunk_delete(struct sail_ml *s, u32 chunk_id)
++static int level32_chunk_delete(struct sail *s, u32 chunk_id)
 +{
 +	long long m;
 +	u64 end_idx;
@@ -1699,8 +1670,8 @@ index 0000000..8724faa
 +	return true;
 +}
 +
-+int sail_insert(struct sail_ml *s, u32 key, u8 prefix_len,
-+		struct net_device *dev)
++int sail_ml_insert(struct sail *s, u32 key, u8 prefix_len,
++		   struct net_device *dev)
 +{
 +	int i;
 +	u8 *n20, *p20;
@@ -1827,7 +1798,7 @@ index 0000000..8724faa
 +	return err;
 +}
 +
-+int sail_delete(struct sail_ml *s, u32 key, u8 prefix_len)
++int sail_ml_delete(struct sail *s, u32 key, u8 prefix_len)
 +{
 +	int i;
 +	/*Index to level 20*/
@@ -1918,7 +1889,7 @@ index 0000000..8724faa
 +	return err;
 +}
 +
-+int sail_flush(struct sail_ml *s)
++int sail_ml_flush(struct sail *s)
 +{
 +	u8 *n20_old, *p20_old, *n26_old, *p26_old, *n32_old, *p32_old;
 +	u32 *c20_old, *c26_old;
@@ -1970,8 +1941,8 @@ index 0000000..8724faa
 +	return 0;
 +}
 +
-+int sail_lookup(const struct sail_ml *s,
-+		const __be32 dest, struct net_device **dev)
++int sail_ml_lookup(const struct sail *s,
++		   const __be32 dest, struct net_device **dev)
 +{
 +	u8 *n20, *n26, *n32;
 +	u32 *c20, *c26;
@@ -2023,7 +1994,7 @@ index 0000000..8724faa
 +	return 0;
 +}
 diff --git a/net/ipv4/fib_trie.c b/net/ipv4/fib_trie.c
-index 5bc0c89..104553e 100644
+index 5bc0c89..40cf7cf 100644
 --- a/net/ipv4/fib_trie.c
 +++ b/net/ipv4/fib_trie.c
 @@ -1280,6 +1280,10 @@ int fib_table_insert(struct net *net, struct fib_table *tb,
@@ -2031,7 +2002,7 @@ index 5bc0c89..104553e 100644
  		goto out_fib_notif;
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+	sail_insert(&tb->sail, key, plen, fi->fib_dev);
++	sail_ml_insert(&tb->sail, key, plen, fi->fib_dev);
 +#endif
 +
  	if (!plen)
@@ -2042,7 +2013,7 @@ index 5bc0c89..104553e 100644
  	pr_debug("Deleting %08x/%d tos=%d t=%p\n", key, plen, tos, t);
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+	sail_delete(&tb->sail, key, plen);
++	sail_ml_delete(&tb->sail, key, plen);
 +#endif
 +
  	fa_to_delete = NULL;
@@ -2053,7 +2024,7 @@ index 5bc0c89..104553e 100644
  	}
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+	sail_flush(&tb->sail);
++	sail_ml_flush(&tb->sail);
 +#endif
 +
  	pr_debug("trie_flush found=%d\n", found);
