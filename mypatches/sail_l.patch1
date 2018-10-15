@@ -1277,10 +1277,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..04369ce
+index 0000000..4f3b920
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,712 @@
+@@ -0,0 +1,744 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1673,7 +1673,7 @@ index 0000000..04369ce
 +int sail_ml_insert(struct sail *s, u32 key, u8 prefix_len,
 +		   struct net_device *dev)
 +{
-+	int i;
++	int i, j;
 +	u8 *n20, *p20;
 +	u32 *c20;
 +	u32 chunk_id;
@@ -1722,9 +1722,22 @@ index 0000000..04369ce
 +			/*Longer prefix exists*/
 +			if (s->pl20[idx20 + i] > prefix_len)
 +				continue;
-+			s->nh20[idx20 + i] = netdev_index;
-+			s->pl20[idx20 + i] = prefix_len;
-+		}
++                        if (!s->ci20[idx20 + i]) {
++                            s->nh20[idx20 + i] = netdev_index;
++                            s->pl20[idx20 + i] = prefix_len;                            
++                        } else {
++                            /*Needs to store in level 26*/
++                            idx26 = (s->ci20[idx20 + i] - 1) * CHUNK_SIZE;
++                            for (j = 0; j < CHUNK_SIZE; j++) {
++                                    /*Longer prefix exists*/
++                                    if (s->pl26[idx26 + j] > prefix_len)
++                                            continue;
++                                    s->nh26[idx26 + j] = netdev_index;
++                                    s->pl26[idx26 + j] = prefix_len;
++                            }                            
++                        }
++
++                }
 +		goto finish;
 +	}
 +
@@ -1741,7 +1754,7 @@ index 0000000..04369ce
 +		err = update_chunk_ids(s->ci20, LEVEL20_SIZE, idx20, chunk_id);
 +		if (err)
 +			goto error;
-+	}
++	}       
 +
 +	/*Extract 21-26 bit and calculate index to level 26*/
 +	idx26 = (s->ci20[idx20] - 1) * CHUNK_SIZE + ((key & 4032) >> 6);
@@ -1756,6 +1769,21 @@ index 0000000..04369ce
 +			s->nh26[idx26 + i] = netdev_index;
 +			s->pl26[idx26 + i] = prefix_len;
 +		}
++                
++                /* If there is a prefic at level 20, push it level 26 first*/
++                if(s->nh20[idx20]) {
++                    idx26 = (s->ci20[idx20] - 1) * CHUNK_SIZE;
++                    for (j = 0; j < CHUNK_SIZE; j++) {
++                            /*Longer prefix exists*/
++                            if (s->pl26[idx26 + j] > s->pl20[idx20])
++                                    continue;
++                            s->nh26[idx26 + j] = s->nh20[idx20];
++                            s->pl26[idx26 + j] = s->pl20[idx20];
++                    }                    
++                    s->nh20[idx20] = 0;
++                    s->pl20[idx20] = 0;
++                }
++                
 +		goto finish;
 +	}
 +
@@ -1959,8 +1987,10 @@ index 0000000..04369ce
 +	if (unlikely(!n20))
 +		goto finish;
 +
-+	if (likely(n20[index] != 0))
++	if (likely(n20[index] != 0)) {
 +		netdev_index = n20[index];
++                goto finish;
++        }
 +
 +	/*Check if there is a longer prefix; if yes, extract 21-26 bit
 +	 *  and calculate index for level 26
@@ -1973,8 +2003,10 @@ index 0000000..04369ce
 +
 +	/*Find corresponding next-hop in level 26*/
 +	n26 = rcu_dereference(s->nh26);
-+	if (likely(n26[index_up] != 0))
++	if (likely(n26[index_up] != 0)) {
 +		netdev_index = n26[index_up];
++                goto finish;                
++        }
 +
 +	/*Check if there is a longer prefix; if yes, extract 6 bits
 +	 * from MSB and calculate index for level 26
