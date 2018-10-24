@@ -1259,10 +1259,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..1c62e20
+index 0000000..c75c964
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,863 @@
+@@ -0,0 +1,865 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1348,10 +1348,10 @@ index 0000000..1c62e20
 +			s->pl26[m + CHUNK_SIZE] = s->pl26[m];
 +//			s->ci26[m + CHUNK_SIZE] = s->ci26[m];
 +		}                
-+                m = (long long)s->level26_chunk_count - 1;
-+                for (;m >= (chunk_id - 1); m--) {
-+                    s->chunks26[m + 1] = s->chunks26[m];
-+                }
++		m = (long long)s->level26_chunk_count - 1;
++		for (;m >= (chunk_id - 1); m--) {
++			s->chunks26[m + 1] = s->chunks26[m];
++		}
 +
 +		/*Reset the newly created empty chunk*/
 +		m = (chunk_id - 1) * CHUNK_SIZE;
@@ -1360,9 +1360,9 @@ index 0000000..1c62e20
 +			s->pl26[m] = 0;
 +//			s->ci26[m] = 0;
 +		}
-+                m =  (chunk_id - 1);
-+                s->chunks26[m].ci_bm = 0;
-+                s->chunks26[m].ci_off = 0;
++		m =  (chunk_id - 1);
++		s->chunks26[m].ci_bm = 0;
++		s->chunks26[m].ci_off = 0;
 +
 +		++s->level26_chunk_count;
 +		return 0;
@@ -1373,24 +1373,25 @@ index 0000000..1c62e20
 +		u8 *nh_old = s->nh26;
 +		u8 *pl_old = s->pl26;
 +//		u32 *ci_old = s->ci26;
-+                struct chunk *chunks_old = s->chunks26;
++		struct chunk *chunks_old = s->chunks26;
 +		/*New next-hop, prefix-length and chunk ID array*/
 +		u8 *n, *p;
 +//		u32 *c;
-+                struct chunk *chunks;
++		struct chunk *chunks;
 +		u64 arr_size, i, j, k, chunk_start;
 +
 +		arr_size = (s->level26_chunk_count + NUM_CHUNKS) * CHUNK_SIZE;
 +		n = kcalloc(arr_size, sizeof(*n), GFP_ATOMIC);
 +//		c = kcalloc(arr_size, sizeof(*c), GFP_ATOMIC);
 +		p = kcalloc(arr_size, sizeof(*p), GFP_ATOMIC);
-+                chunks = kcalloc(s->level26_chunk_count + NUM_CHUNKS, sizeof(*chunks), GFP_ATOMIC);
++		chunks = kcalloc(s->level26_chunk_count + NUM_CHUNKS,
++				 sizeof(*chunks), GFP_ATOMIC);
 +
 +		if (!n || !p || !chunks) {
 +			kfree(n);
 +//			kfree(c);
 +			kfree(p);
-+                        kfree(chunks);
++			kfree(chunks);
 +			return -ENOMEM;
 +		}
 +
@@ -1404,7 +1405,7 @@ index 0000000..1c62e20
 +//					c[j] = ci_old[chunk_start + k];
 +					p[j] = pl_old[chunk_start + k];
 +				}
-+                                chunks[i - 1] = chunks_old[i - 1];
++				chunks[i - 1] = chunks_old[i - 1];
 +
 +				chunk_start += CHUNK_SIZE;
 +			} else {
@@ -1417,7 +1418,7 @@ index 0000000..1c62e20
 +		rcu_assign_pointer(s->nh26, n);
 +		rcu_assign_pointer(s->pl26, p);
 +//		rcu_assign_pointer(s->ci26, c);
-+                rcu_assign_pointer(s->chunks26, chunks);
++		rcu_assign_pointer(s->chunks26, chunks);
 +
 +		/* Wait for all readers to be finished */
 +		synchronize_rcu();
@@ -1430,7 +1431,7 @@ index 0000000..1c62e20
 +		kfree(nh_old);
 +//		kfree(ci_old);
 +		kfree(pl_old);
-+                kfree(chunks_old);
++		kfree(chunks_old);
 +		return 0;
 +	}
 +
@@ -1609,7 +1610,7 @@ index 0000000..1c62e20
 +{
 +	long long i;
 +	long long index = 0;
-+	bool isFound = false;
++	bool found = false;
 +
 +	/*Calculate the actual index to chunk array*/
 +	if (chunks[cnk_idx].ci_bm) {
@@ -1617,20 +1618,20 @@ index 0000000..1c62e20
 +			IDX_FRM_MASK(cnk_off, chunks[cnk_idx].ci_bm) - 1;
 +		if (index < 0)
 +			return 1;
-+		isFound = true;
++		found = true;
 +	} else {
 +		/*Find a chunk to the left whose offset is not 0*/
 +		for (i = (long long)cnk_idx - 1; i >= 0; i--) {
 +			if (chunks[i].ci_bm) {
 +				index = chunks[i].ci_off +
 +					POPCNT(chunks[i].ci_bm) - 1;
-+				isFound = true;
++				found = true;
 +				break;
 +			}
 +		}
 +	}
 +
-+	if (isFound) {
++	if (found) {
 +		if (index >= CI_ARR_SIZE) {
 +			pr_err("Invalid Index");
 +			return 0;
@@ -1782,16 +1783,16 @@ index 0000000..1c62e20
 +	int i;
 +	u8 *n20, *p20;
 +	u32 *c20;
-+        u32 *c26_dup;
++	u32 *c26_dup;
 +	u32 chunk_id;
 +	/*Index to level 20*/
 +	u32 idx20;
 +	/*Index to level 26 and level 32*/
 +	u64 idx26, idx32;
-+        /*Index to chunk array*/
-+        u32 cnk_idx;
-+        /*offset inside a chunk*/
-+        u64 cnk_off;
++	/*Index to chunk array*/
++	u32 cnk_idx;
++	/*offset inside a chunk*/
++	u64 cnk_off;
 +	u32 consecutive_leafs;
 +	u8 netdev_index = get_netdev_index(s, dev);
 +	int err = 0;
@@ -1808,13 +1809,13 @@ index 0000000..1c62e20
 +		n20 = kcalloc(LEVEL20_SIZE, sizeof(*n20), GFP_ATOMIC);
 +		p20 = kcalloc(LEVEL20_SIZE, sizeof(*p20), GFP_ATOMIC);
 +		c20 = kcalloc(LEVEL20_SIZE, sizeof(*c20), GFP_ATOMIC);
-+                c26_dup = kcalloc(CI_ARR_SIZE, sizeof(*c26_dup), GFP_ATOMIC);
++		c26_dup = kcalloc(CI_ARR_SIZE, sizeof(*c26_dup), GFP_ATOMIC);
 +
 +		if (!n20 || !c20 || !p20 || !c26_dup) {
 +			kfree(n20);
 +			kfree(c20);
 +			kfree(p20);
-+                        kfree(c26_dup);
++			kfree(c26_dup);
 +			pr_err("Out of memory while allocating level 20");
 +			goto error;
 +		}
@@ -1822,7 +1823,7 @@ index 0000000..1c62e20
 +		RCU_INIT_POINTER(s->nh20, n20);
 +		RCU_INIT_POINTER(s->pl20, p20);
 +		RCU_INIT_POINTER(s->ci20, c20);
-+                RCU_INIT_POINTER(s->ci26_dup, c26_dup);
++		RCU_INIT_POINTER(s->ci26_dup, c26_dup);
 +		synchronize_rcu();
 +	}
 +
@@ -1859,9 +1860,9 @@ index 0000000..1c62e20
 +
 +	/*Extract 21-26 bit and calculate index to level 26*/
 +	idx26 = (s->ci20[idx20] - 1) * CHUNK_SIZE + ((key & 4032) >> 6);
-+        cnk_idx = s->ci20[idx20] - 1;
-+        cnk_off = (key & 4032) >> 6;
-+        
++	cnk_idx = s->ci20[idx20] - 1;
++	cnk_off = (key & 4032) >> 6;
++
 +	if (prefix_len <= 26) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (26 - prefix_len);
@@ -1878,22 +1879,23 @@ index 0000000..1c62e20
 +	/* The prefix_len is 27-32. So we need to check if if there is any
 +	 * chunk for this index in level 32
 +	 */
-+	if(!(s->chunks26[cnk_idx].ci_bm & IDX_TO_BM(cnk_off))) {
-+
-+		chunk_id = find_chunk_id(s->chunks26, cnk_idx, cnk_off, s->ci26_dup);
++	if (!(s->chunks26[cnk_idx].ci_bm & IDX_TO_BM(cnk_off))) {
++		chunk_id = find_chunk_id(s->chunks26, cnk_idx, cnk_off,
++					 s->ci26_dup);
 +		if (!chunk_id)
 +			goto error;
 +		err = level32_chunk_insert(s, chunk_id);
 +		if (err)
 +			goto error;
-+		err = update_chunk(s->chunks26, cnk_idx, cnk_off, s->ci26_dup, s->level26_chunk_count, chunk_id);
++		err = update_chunk(s->chunks26, cnk_idx, cnk_off, s->ci26_dup,
++				   s->level26_chunk_count, chunk_id);
 +		if (err)
-+			goto error;              
++			goto error;
 +	}
 +
 +	/*Extract 6 bit from MSB and calculate index to level 32*/
-+        idx32 = (s->ci26_dup[get_arr_idx(s->chunks26[cnk_idx], cnk_off)] - 1) *
-+                CHUNK_SIZE + (key & 63);
++	idx32 = (s->ci26_dup[get_arr_idx(s->chunks26[cnk_idx], cnk_off)] - 1) *
++			CHUNK_SIZE + (key & 63);
 +
 +	if (prefix_len <= 32) {
 +		/*Level pushing*/
