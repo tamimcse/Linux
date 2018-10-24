@@ -729,7 +729,7 @@ index 0f7a27f..64100d7 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..432b77d 100644
+index 69c91d1..98a1251 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -752,8 +752,8 @@ index 69c91d1..432b77d 100644
 + */
 +#define NETDEV_COUNT_MAX 255
 +struct chunk {
-+    u64 ci_bm;
-+    u64 ci_off;
++	u64 ci_bm;
++	u64 ci_off;
 +};
 +
 +struct sail {
@@ -775,7 +775,7 @@ index 69c91d1..432b77d 100644
 +	u8 __rcu *nh26;
 +	u8 __rcu *pl26;
 +	u32 __rcu *ci26;
-+        u32 __rcu *ci26_dup;
++	u32 __rcu *ci26_dup;
 +	/*Total number of chunks allocated*/
 +	u32 level26_chunk_total;
 +	/*Total number of chunks being used*/
@@ -1067,7 +1067,7 @@ index 69c91d1..432b77d 100644
 +		if (tb && dev && !err && res && res->fi && res->fi->fib_dev &&
 +				strcmp(res->fi->fib_dev->name, dev->name) &&
 +				strcmp(res->fi->fib_dev->name, "lo") &&
-+		    		strcmp(res->fi->fib_dev->name, "wlo1")) {
++				strcmp(res->fi->fib_dev->name, "wlo1")) {
 +			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
 +			pr_err("fib_lookup: %pI4 => %s", &ip_addr,
 +			       res->fi->fib_dev->name);
@@ -1098,7 +1098,7 @@ index 69c91d1..432b77d 100644
 +		if (tb && dev && !err && res && res->fi && res->fi->fib_dev &&
 +				strcmp(res->fi->fib_dev->name, dev->name) &&
 +				strcmp(res->fi->fib_dev->name, "lo") &&
-+		    		strcmp(res->fi->fib_dev->name, "wlo1")) {
++				strcmp(res->fi->fib_dev->name, "wlo1")) {
 +			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
 +			pr_err("fib_lookup: %pI4 => %s", &ip_addr,
 +			       res->fi->fib_dev->name);
@@ -1259,10 +1259,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..c75c964
+index 0000000..709e41b
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,865 @@
+@@ -0,0 +1,861 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1299,15 +1299,12 @@ index 0000000..c75c964
 +#define LEVEL32_ARR_SIZE(S) ((S)->level32_chunk_count * CHUNK_SIZE)
 +
 +/*Converts an index to bitmap*/
-+#define IDX_TO_BM(X) (1ULL << X)
-+
-+/*Converts an index to bitmask*/
-+#define IDX_TO_MASK(X) ((1ULL << X) - 1)
++#define IDX_TO_BM(X) (1ULL << (X))
 +
 +#define POPCNT(X) (hweight64(X))
 +
 +/*Converts an index and bitmap to actual index*/
-+#define IDX_FRM_MASK(X, Y) (hweight64(((1ULL << X) - 1) & Y))
++#define IDX_FRM_MASK(X, Y) (hweight64(((1ULL << (X)) - 1) & (Y)))
 +
 +/*Insert net_device to the net-device array.
 + *This function returns the index to the net_device array
@@ -1347,11 +1344,10 @@ index 0000000..c75c964
 +			s->nh26[m + CHUNK_SIZE] = s->nh26[m];
 +			s->pl26[m + CHUNK_SIZE] = s->pl26[m];
 +//			s->ci26[m + CHUNK_SIZE] = s->ci26[m];
-+		}                
-+		m = (long long)s->level26_chunk_count - 1;
-+		for (;m >= (chunk_id - 1); m--) {
-+			s->chunks26[m + 1] = s->chunks26[m];
 +		}
++		m = (long long)s->level26_chunk_count - 1;
++		for (; m >= (chunk_id - 1); m--)
++			s->chunks26[m + 1] = s->chunks26[m];
 +
 +		/*Reset the newly created empty chunk*/
 +		m = (chunk_id - 1) * CHUNK_SIZE;
@@ -1774,7 +1770,7 @@ index 0000000..c75c964
 +
 +static u64 get_arr_idx(struct chunk c, u32 idx)
 +{
-+    return c.ci_off + IDX_FRM_MASK(idx, c.ci_bm);
++	return c.ci_off + IDX_FRM_MASK(idx, c.ci_bm);
 +}
 +
 +int sail_ml_insert(struct sail *s, u32 key, u8 prefix_len,
