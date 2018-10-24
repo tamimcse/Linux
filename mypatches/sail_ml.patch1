@@ -729,7 +729,7 @@ index 0f7a27f..64100d7 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..98a1251 100644
+index 69c91d1..9ede139 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -813,7 +813,7 @@ index 69c91d1..98a1251 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +319,336 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +319,337 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -1040,7 +1040,7 @@ index 69c91d1..98a1251 100644
  	tb = fib_get_table(net, RT_TABLE_MAIN);
 +
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+	for (j = 0; j < 93; j++) {
++	for (j = 93; j < 93; j++) {
 +		ip_addr = in_aton(wtf[j]);
 +
 +		if (tb) {
@@ -1074,7 +1074,7 @@ index 69c91d1..98a1251 100644
 +		}
 +	}
 +
-+	for (j = 0; j < 97; j++) {
++	for (j = 97; j < 97; j++) {
 +		ip_addr = in_aton(wtf_26[j]);
 +
 +		if (tb) {
@@ -1140,7 +1140,8 @@ index 69c91d1..98a1251 100644
 +		if (tb && dev && !err && res && res->fi && res->fi->fib_dev &&
 +		    strcmp(res->fi->fib_dev->name, dev->name) &&
 +		    strcmp(res->fi->fib_dev->name, "lo") &&
-+		    strcmp(res->fi->fib_dev->name, "wlo1")) {
++		    strcmp(res->fi->fib_dev->name, "wlo1") && 
++		    strcmp(dev->name, "wlo1")) {
 +			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
 +			pr_err("fib_lookup: %pI4 => %s",
 +				&ip_addr, res->fi->fib_dev->name);
