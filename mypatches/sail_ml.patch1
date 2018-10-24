@@ -1260,10 +1260,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..709e41b
+index 0000000..df7da37
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,861 @@
+@@ -0,0 +1,905 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1326,8 +1326,8 @@ index 0000000..709e41b
 +	return s->netdev_count - 1;
 +}
 +
-+/* Insert a chunk at index. Note that chunk_id starts from 1, not 0 */
-+static int level26_chunk_insert(struct sail *s, u32 chunk_id)
++/* Insert a chunk to N26 and P26.*/
++static int nexthop26_arr_insert(struct sail *s, u32 chunk_id)
 +{
 +	long long m;
 +
@@ -1336,6 +1336,7 @@ index 0000000..709e41b
 +		return -EINVAL;
 +	}
 +
++	/* No need to allocate memory*/
 +	if (s->level26_chunk_count < s->level26_chunk_total) {
 +		/*shift each element one step right to make
 +		 *space for the new one
@@ -1344,51 +1345,31 @@ index 0000000..709e41b
 +		for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
 +			s->nh26[m + CHUNK_SIZE] = s->nh26[m];
 +			s->pl26[m + CHUNK_SIZE] = s->pl26[m];
-+//			s->ci26[m + CHUNK_SIZE] = s->ci26[m];
 +		}
-+		m = (long long)s->level26_chunk_count - 1;
-+		for (; m >= (chunk_id - 1); m--)
-+			s->chunks26[m + 1] = s->chunks26[m];
 +
-+		/*Reset the newly created empty chunk*/
++		/*Reset the newly created chunk*/
 +		m = (chunk_id - 1) * CHUNK_SIZE;
 +		for (; m < chunk_id * CHUNK_SIZE; m++) {
 +			s->nh26[m] = 0;
 +			s->pl26[m] = 0;
-+//			s->ci26[m] = 0;
 +		}
-+		m =  (chunk_id - 1);
-+		s->chunks26[m].ci_bm = 0;
-+		s->chunks26[m].ci_off = 0;
-+
-+		++s->level26_chunk_count;
 +		return 0;
 +	} else if (s->level26_chunk_count == s->level26_chunk_total) {
 +		/*Previously allocated memory is full.
 +		 *So need to reallocate the array
 +		 */
++		u8 *n, *p;
 +		u8 *nh_old = s->nh26;
 +		u8 *pl_old = s->pl26;
-+//		u32 *ci_old = s->ci26;
-+		struct chunk *chunks_old = s->chunks26;
-+		/*New next-hop, prefix-length and chunk ID array*/
-+		u8 *n, *p;
-+//		u32 *c;
-+		struct chunk *chunks;
 +		u64 arr_size, i, j, k, chunk_start;
 +
 +		arr_size = (s->level26_chunk_count + NUM_CHUNKS) * CHUNK_SIZE;
 +		n = kcalloc(arr_size, sizeof(*n), GFP_ATOMIC);
-+//		c = kcalloc(arr_size, sizeof(*c), GFP_ATOMIC);
 +		p = kcalloc(arr_size, sizeof(*p), GFP_ATOMIC);
-+		chunks = kcalloc(s->level26_chunk_count + NUM_CHUNKS,
-+				 sizeof(*chunks), GFP_ATOMIC);
 +
-+		if (!n || !p || !chunks) {
++		if (!n || !p) {
 +			kfree(n);
-+//			kfree(c);
 +			kfree(p);
-+			kfree(chunks);
 +			return -ENOMEM;
 +		}
 +
@@ -1399,11 +1380,8 @@ index 0000000..709e41b
 +			if (i != chunk_id) {
 +				for (k = 0; k < CHUNK_SIZE; k++, j++) {
 +					n[j] = nh_old[chunk_start + k];
-+//					c[j] = ci_old[chunk_start + k];
 +					p[j] = pl_old[chunk_start + k];
 +				}
-+				chunks[i - 1] = chunks_old[i - 1];
-+
 +				chunk_start += CHUNK_SIZE;
 +			} else {
 +				/*skip copying*/
@@ -1414,27 +1392,93 @@ index 0000000..709e41b
 +		/*Update the pointers with new pointer*/
 +		rcu_assign_pointer(s->nh26, n);
 +		rcu_assign_pointer(s->pl26, p);
-+//		rcu_assign_pointer(s->ci26, c);
++
++		/* Wait for all readers to be finished */
++		synchronize_rcu();
++
++		/*Remove old arrays*/
++		kfree(nh_old);
++		kfree(pl_old);
++		return 0;
++	}
++	return -EINVAL;
++}
++
++/* Insert a chunk in CK26.*/
++static int chunk26_arr_insert(struct sail *s, u32 chunk_id)
++{
++	long long m;
++
++	if (chunk_id > (s->level26_chunk_count + 1) || chunk_id < 1) {
++		pr_err("Invalid chunk_id for level 26");
++		return -EINVAL;
++	}
++
++	/* No need to allocate memory*/
++	if (s->level26_chunk_count < s->level26_chunk_total) {
++		/*shift each chunk one step right to make
++		 *space for the new one
++		 */
++		m = (long long)s->level26_chunk_count - 1;
++		for (; m >= (chunk_id - 1); m--)
++			s->chunks26[m + 1] = s->chunks26[m];
++
++		/*Reset the newly created empty chunk*/
++		s->chunks26[chunk_id - 1].ci_bm = 0;
++		s->chunks26[chunk_id - 1].ci_off = 0;
++		return 0;
++	} else if (s->level26_chunk_count == s->level26_chunk_total) {
++		/*Previously allocated memory is full.
++		 *So need to reallocate the array
++		 */
++		struct chunk *chunks_old = s->chunks26;
++		struct chunk *chunks;
++		u64 i;
++
++		chunks = kcalloc(s->level26_chunk_count + NUM_CHUNKS,
++				 sizeof(*chunks), GFP_ATOMIC);
++		if (!chunks) {
++			kfree(chunks);
++			return -ENOMEM;
++		}
++
++		/*Iterate over the new array and copy from the old array*/
++		for (i = 1; i <= (s->level26_chunk_count + 1); i++) {
++			if (i != chunk_id)
++				chunks[i - 1] = chunks_old[i - 1];
++		}
++
++		/*Update the pointers with new pointer*/
 +		rcu_assign_pointer(s->chunks26, chunks);
 +
 +		/* Wait for all readers to be finished */
 +		synchronize_rcu();
 +
-+		/*Increment the counter after chunk has been inserted*/
-+		++s->level26_chunk_count;
-+		s->level26_chunk_total += NUM_CHUNKS;
-+
 +		/*Remove old arrays*/
-+		kfree(nh_old);
-+//		kfree(ci_old);
-+		kfree(pl_old);
 +		kfree(chunks_old);
 +		return 0;
 +	}
-+
-+	pr_err("Something is really wrong in level 26 insertion");
 +	return -EINVAL;
 +}
++
++/* Insert a chunk to level 26. Note that chunk_id starts from 1, not 0 */
++static int level26_chunk_insert(struct sail *s, u32 chunk_id)
++{
++	int err = 0;
++
++	err = nexthop26_arr_insert(s, chunk_id);
++	if(!err)
++		err = chunk26_arr_insert(s, chunk_id);
++	if(!err) {
++		if (s->level26_chunk_count == s->level26_chunk_total)
++			s->level26_chunk_total += NUM_CHUNKS;
++		++s->level26_chunk_count;
++	} else {
++		pr_err("Something is really wrong in level 26 insertion");
++	}
++        return err;
++}
++
 +
 +/* Insert a chunk at index. Note that chunk_id starts from 1, not 0 */
 +static int level32_chunk_insert(struct sail *s, u32 chunk_id)
@@ -2019,7 +2063,7 @@ index 0000000..709e41b
 +
 +	n26_old = s->nh26;
 +	p26_old = s->pl26;
-+	c26_old = s->ci26;
++	c26_old = s->ci26_dup;
 +
 +	n32_old = s->nh32;
 +	p32_old = s->pl32;
@@ -2035,7 +2079,7 @@ index 0000000..709e41b
 +
 +	rcu_assign_pointer(s->nh26, NULL);
 +	rcu_assign_pointer(s->pl26, NULL);
-+	rcu_assign_pointer(s->ci26, NULL);
++	rcu_assign_pointer(s->ci26_dup, NULL);
 +
 +	rcu_assign_pointer(s->nh32, NULL);
 +	rcu_assign_pointer(s->pl32, NULL);
@@ -2126,7 +2170,7 @@ index 0000000..709e41b
 +	return 0;
 +}
 diff --git a/net/ipv4/fib_trie.c b/net/ipv4/fib_trie.c
-index 5bc0c89..4762adc 100644
+index 5bc0c89..098cf03 100644
 --- a/net/ipv4/fib_trie.c
 +++ b/net/ipv4/fib_trie.c
 @@ -1280,6 +1280,10 @@ int fib_table_insert(struct net *net, struct fib_table *tb,
@@ -2156,7 +2200,7 @@ index 5bc0c89..4762adc 100644
  	}
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+//	sail_ml_flush(&tb->sail);
++	sail_ml_flush(&tb->sail);
 +#endif
 +
  	pr_debug("trie_flush found=%d\n", found);
