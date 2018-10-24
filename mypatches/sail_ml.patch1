@@ -1259,10 +1259,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..bcc0d1a
+index 0000000..1c62e20
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,855 @@
+@@ -0,0 +1,863 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1604,88 +1604,94 @@ index 0000000..bcc0d1a
 +	return 1;
 +}
 +
-+static u32 find_chunk_id(struct chunk *chunks, u32 cnk_idx, u32 idx20_26, u32 *ci)
++static u32 find_chunk_id(struct chunk *chunks, u32 cnk_idx, u32 cnk_off,
++			 u32 *ci)
 +{
 +	long long i;
-+        long long index = 0;
-+        bool isFound = false;
-+        
-+        /*Calculate the actual index to chunk array*/
-+        if(chunks[cnk_idx].ci_bm) {
-+            index = chunks[cnk_idx].ci_off + IDX_FRM_MASK(idx20_26, chunks[cnk_idx].ci_bm) - 1;
-+            if(index < 0)
-+                return 1;
-+            isFound = true;    
-+        } else {
-+            /*Find a chunk to the left whose offset is not 0*/
-+            for (i = (long long)cnk_idx - 1; i >= 0; i--) {
-+                if(chunks[i].ci_bm) {
-+                    index = chunks[i].ci_off + POPCNT(chunks[i].ci_bm) - 1;
-+                    isFound = true;
-+                    break;
-+                }
-+            }
-+        }
-+        
-+        if (isFound) {
-+            if(index >= CI_ARR_SIZE) {
-+                pr_err("Invalid Index");
-+                return 0;
-+            } else if (ci[index] <= 0) {
-+                pr_err("Chunk ID says its zero which is not right");
-+                return 0;
-+            } else {
-+                return ci[index] + 1;
-+            }            
-+        }        
++	long long index = 0;
++	bool isFound = false;
++
++	/*Calculate the actual index to chunk array*/
++	if (chunks[cnk_idx].ci_bm) {
++		index = chunks[cnk_idx].ci_off +
++			IDX_FRM_MASK(cnk_off, chunks[cnk_idx].ci_bm) - 1;
++		if (index < 0)
++			return 1;
++		isFound = true;
++	} else {
++		/*Find a chunk to the left whose offset is not 0*/
++		for (i = (long long)cnk_idx - 1; i >= 0; i--) {
++			if (chunks[i].ci_bm) {
++				index = chunks[i].ci_off +
++					POPCNT(chunks[i].ci_bm) - 1;
++				isFound = true;
++				break;
++			}
++		}
++	}
++
++	if (isFound) {
++		if (index >= CI_ARR_SIZE) {
++			pr_err("Invalid Index");
++			return 0;
++		} else if (ci[index] <= 0) {
++			pr_err("Chunk ID says its zero which is not right");
++			return 0;
++		} else {
++			return ci[index] + 1;
++		}
++	}
 +
 +	/*If there is no chunk to the left, then this is the first chunk*/
-+        return 1;
++	return 1;
 +}
 +
-+static int update_chunk(struct chunk *chunks, u32 cnk_idx, u32 idx20_26, u32 *ci, u32 chunk_count, u32 chunk_id)
++static int update_chunk(struct chunk *chunks, u32 cnk_idx, u32 cnk_off,
++			u32 *ci, u32 chunk_count, u32 chunk_id)
 +{
 +	long long i;
-+        u64 index = 0;
-+        
-+        if(chunks[cnk_idx].ci_bm & IDX_TO_BM(idx20_26)) {
-+            pr_err("Error: bitmap is already set");
-+            return -EINVAL;
-+        }
++	u64 index = 0;
 +
-+        /*Calculate the actual index to chunk array*/
-+        if(chunks[cnk_idx].ci_bm) {
-+            index = chunks[cnk_idx].ci_off + IDX_FRM_MASK(idx20_26, chunks[cnk_idx].ci_bm) ;
-+        } else {
-+            /*Find a chunk to the left which is not empty*/
-+            for (i = (long long)cnk_idx - 1; i >= 0; i--) {
-+                if(chunks[i].ci_bm) {
-+                    index = chunks[i].ci_off + POPCNT(chunks[i].ci_bm);
-+                    break;
-+                }
-+            }
-+        }  
-+        
++	if (chunks[cnk_idx].ci_bm & IDX_TO_BM(cnk_off)) {
++		pr_err("Error: bitmap is already set");
++		return -EINVAL;
++	}
++
++	/*Calculate the actual index to chunk array*/
++	if (chunks[cnk_idx].ci_bm) {
++		index = chunks[cnk_idx].ci_off +
++			IDX_FRM_MASK(cnk_off, chunks[cnk_idx].ci_bm);
++	} else {
++		/*Find a chunk to the left which is not empty*/
++		for (i = (long long)cnk_idx - 1; i >= 0; i--) {
++			if (chunks[i].ci_bm) {
++				index = chunks[i].ci_off +
++					POPCNT(chunks[i].ci_bm);
++				break;
++			}
++		}
++	}
++
 +	/* Move each elemenmt one step to the right to create a space for
-+         * new element. Also increment chunk IDs by 1
-+         */
++	 * new element. Also increment chunk IDs by 1
++	 */
 +	for (i = CI_ARR_SIZE - 2 ; i >= (long long)index; i--)
-+            ci[i + 1] = (ci[i] > 0) ? ci[i] + 1 : ci[i];
-+        ci[index] = chunk_id;
-+        
-+        /*This is the first element of this chunk*/
-+        if(!chunks[cnk_idx].ci_bm)
-+            chunks[cnk_idx].ci_off = index;
++		ci[i + 1] = (ci[i] > 0) ? ci[i] + 1 : ci[i];
++	ci[index] = chunk_id;
 +
-+        chunks[cnk_idx].ci_bm |= IDX_TO_BM(idx20_26);
++	/*This is the first element of this chunk*/
++	if (!chunks[cnk_idx].ci_bm)
++		chunks[cnk_idx].ci_off = index;
 +
-+        /*Update offset of the chunks to the right*/
-+        for (i = (long long)cnk_idx + 1; i < chunk_count; i++) {
-+            if(chunks[i].ci_bm)
-+                chunks[i].ci_off++;
-+        }
++	chunks[cnk_idx].ci_bm |= IDX_TO_BM(cnk_off);
 +
-+        return 0;
++	/*Update offset of the chunks to the right*/
++	for (i = (long long)cnk_idx + 1; i < chunk_count; i++) {
++		if (chunks[i].ci_bm)
++			chunks[i].ci_off++;
++	}
++
++	return 0;
 +}
 +
 +static int update_chunk_ids(u32 *chunk_ids, u32 arr_size,
@@ -1781,9 +1787,11 @@ index 0000000..bcc0d1a
 +	/*Index to level 20*/
 +	u32 idx20;
 +	/*Index to level 26 and level 32*/
-+	u64 idx26, idx32, idx20_26;
-+        /*Index to chunk array of level 26*/
-+        u32 chunk_arr_26_idx;
++	u64 idx26, idx32;
++        /*Index to chunk array*/
++        u32 cnk_idx;
++        /*offset inside a chunk*/
++        u64 cnk_off;
 +	u32 consecutive_leafs;
 +	u8 netdev_index = get_netdev_index(s, dev);
 +	int err = 0;
@@ -1851,8 +1859,8 @@ index 0000000..bcc0d1a
 +
 +	/*Extract 21-26 bit and calculate index to level 26*/
 +	idx26 = (s->ci20[idx20] - 1) * CHUNK_SIZE + ((key & 4032) >> 6);
-+        chunk_arr_26_idx = s->ci20[idx20] - 1;
-+        idx20_26 = (key & 4032) >> 6;
++        cnk_idx = s->ci20[idx20] - 1;
++        cnk_off = (key & 4032) >> 6;
 +        
 +	if (prefix_len <= 26) {
 +		/*Level pushing*/
@@ -1870,21 +1878,21 @@ index 0000000..bcc0d1a
 +	/* The prefix_len is 27-32. So we need to check if if there is any
 +	 * chunk for this index in level 32
 +	 */
-+	if(!(s->chunks26[chunk_arr_26_idx].ci_bm & IDX_TO_BM(idx20_26))) {
++	if(!(s->chunks26[cnk_idx].ci_bm & IDX_TO_BM(cnk_off))) {
 +
-+		chunk_id = find_chunk_id(s->chunks26, chunk_arr_26_idx, idx20_26, s->ci26_dup);
++		chunk_id = find_chunk_id(s->chunks26, cnk_idx, cnk_off, s->ci26_dup);
 +		if (!chunk_id)
 +			goto error;
 +		err = level32_chunk_insert(s, chunk_id);
 +		if (err)
 +			goto error;
-+		err = update_chunk(s->chunks26, chunk_arr_26_idx, idx20_26, s->ci26_dup, s->level26_chunk_count, chunk_id);
++		err = update_chunk(s->chunks26, cnk_idx, cnk_off, s->ci26_dup, s->level26_chunk_count, chunk_id);
 +		if (err)
 +			goto error;              
 +	}
 +
 +	/*Extract 6 bit from MSB and calculate index to level 32*/
-+        idx32 = (s->ci26_dup[get_arr_idx(s->chunks26[chunk_arr_26_idx], idx20_26)] - 1) *
++        idx32 = (s->ci26_dup[get_arr_idx(s->chunks26[cnk_idx], cnk_off)] - 1) *
 +                CHUNK_SIZE + (key & 63);
 +
 +	if (prefix_len <= 32) {
@@ -2089,7 +2097,7 @@ index 0000000..bcc0d1a
 +		idx26 = cnk_idx * CHUNK_SIZE + cnk_off;
 +	} else {
 +		goto finish;
-+ 	}
++	}
 +
 +	/*Find corresponding next-hop in level 26*/
 +	n26 = rcu_dereference(s->nh26);
@@ -2099,7 +2107,7 @@ index 0000000..bcc0d1a
 +	/*Check if there is a longer prefix; if yes, extract 6 bits
 +	 * from MSB and calculate index for level 26
 +	 */
-+        chunks26 = rcu_dereference(s->chunks26);
++	chunks26 = rcu_dereference(s->chunks26);
 +	if (likely(chunks26[cnk_idx].ci_bm & IDX_TO_BM(cnk_off))) {
 +		c26 = rcu_dereference(s->ci26_dup);
 +		c26_idx = chunks26[cnk_idx].ci_off +
