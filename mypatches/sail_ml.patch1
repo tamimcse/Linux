@@ -1260,10 +1260,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..df7da37
+index 0000000..02a9300
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,905 @@
+@@ -0,0 +1,928 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1626,8 +1626,8 @@ index 0000000..df7da37
 +	return 0;
 +}
 +
-+/*Finds the chunk ID for the index*/
-+static u32 get_chunk_id(u32 *chunk_ids, u32 arr_size, u32 index)
++/*Calculate level 26 chunk ID based on N20*/
++static u32 level26_calc_chunkid(u32 *chunk_ids, u32 arr_size, u32 index)
 +{
 +	long long i;
 +
@@ -1646,7 +1646,94 @@ index 0000000..df7da37
 +	return 1;
 +}
 +
-+static u32 find_chunk_id(struct chunk *chunks, u32 cnk_idx, u32 cnk_off,
++/*Update level 26 chunk ID in N20*/
++static int level26_update_chunkid(u32 *chunk_ids, u32 arr_size,
++			    u32 index, u32 chunk_id)
++{
++	long long i;
++
++	if (index >= arr_size) {
++		pr_err("Index needs to be smaller than arr_size");
++		return -EINVAL;
++	}
++
++	/*Check if the chunk ID already exists*/
++	for (i = (long long)index - 1; i >= 0; i--) {
++		if (chunk_ids[i] > 0) {
++			if (chunk_ids[i] >= chunk_id) {
++				pr_err("The chunk ID is already exist");
++				return -EINVAL;
++			}
++			break;
++		}
++	}
++
++	chunk_ids[index] = chunk_id;
++
++	/* Increment chunk ID to the right */
++	for (i = index + 1; i < arr_size; i++) {
++		if (chunk_ids[i] > 0)
++			chunk_ids[i]++;
++	}
++
++	return 0;
++}
++
++/*Remove Chunk ID for level 20 and level 32*/
++static int remove_chunk_ids(u32 *chunk_ids, u32 arr_size, u32 chunk_id)
++{
++	long long i;
++	bool found = false;
++
++	/*Check if the chunk ID already exists*/
++	for (i = 0; i < arr_size; i++) {
++		if (found && chunk_ids[i] > 0) {
++			chunk_ids[i]--;
++		} else if (chunk_ids[i] == chunk_id) {
++			chunk_ids[i] = 0;
++			found = true;
++		}
++	}
++
++	return 0;
++}
++
++ /* Check if a chunk is being used by looking at its nh array
++  * @param nh next-hop array on which the chunk is sitting
++  * @param chunk_id The chunk ID will be found in the chunk ID array in the
++  * upper level
++  * @return true if it is being used, false otherwise
++  */
++static bool is_chunk_being_used(u8 *nh, u32 chunk_id)
++{
++	long long i;
++	long long start_index, end_index;
++
++	if (chunk_id < 1) {
++		pr_err("Invalid chunk ID");
++		return -EINVAL;
++	}
++
++	start_index = (long long)(chunk_id - 1) * CHUNK_SIZE;
++	end_index = (long long)chunk_id * CHUNK_SIZE - 1;
++	for (i = start_index; i <= end_index; i++) {
++		/*The chunk is being used*/
++		if (nh[i] > 0)
++			return false;
++	}
++
++	return true;
++}
++
++/**
++ * Find the chunk ID for level 32 based on CK26
++ * @param chunks CK26 array
++ * @param cnk_idx index to CK26
++ * @param cnk_off offset inside the chunk
++ * @param ci C26 array
++ * @return Chunk ID
++ */
++static u32 level32_calc_chunkid(struct chunk *chunks, u32 cnk_idx, u32 cnk_off,
 +			 u32 *ci)
 +{
 +	long long i;
@@ -1688,7 +1775,15 @@ index 0000000..df7da37
 +	return 1;
 +}
 +
-+static int update_chunk(struct chunk *chunks, u32 cnk_idx, u32 cnk_off,
++/**
++ * Update level 32 chunk ID in CK26
++ * @param chunks CK26 array
++ * @param cnk_idx index to CK26
++ * @param cnk_off offset inside the chunk
++ * @param ci C26 array
++ * @return success/failure
++ */
++static int level32_update_chunkid(struct chunk *chunks, u32 cnk_idx, u32 cnk_off,
 +			u32 *ci, u32 chunk_count, u32 chunk_id)
 +{
 +	long long i;
@@ -1736,83 +1831,6 @@ index 0000000..df7da37
 +	return 0;
 +}
 +
-+static int update_chunk_ids(u32 *chunk_ids, u32 arr_size,
-+			    u32 index, u32 chunk_id)
-+{
-+	long long i;
-+
-+	if (index >= arr_size) {
-+		pr_err("Index needs to be smaller than arr_size");
-+		return -EINVAL;
-+	}
-+
-+	/*Check if the chunk ID already exists*/
-+	for (i = (long long)index - 1; i >= 0; i--) {
-+		if (chunk_ids[i] > 0) {
-+			if (chunk_ids[i] >= chunk_id) {
-+				pr_err("The chunk ID is already exist");
-+				return -EINVAL;
-+			}
-+			break;
-+		}
-+	}
-+
-+	chunk_ids[index] = chunk_id;
-+
-+	/* Increment chunk ID to the right */
-+	for (i = index + 1; i < arr_size; i++) {
-+		if (chunk_ids[i] > 0)
-+			chunk_ids[i]++;
-+	}
-+
-+	return 0;
-+}
-+
-+static int remove_chunk_ids(u32 *chunk_ids, u32 arr_size, u32 chunk_id)
-+{
-+	long long i;
-+	bool found = false;
-+
-+	/*Check if the chunk ID already exists*/
-+	for (i = 0; i < arr_size; i++) {
-+		if (found && chunk_ids[i] > 0) {
-+			chunk_ids[i]--;
-+		} else if (chunk_ids[i] == chunk_id) {
-+			chunk_ids[i] = 0;
-+			found = true;
-+		}
-+	}
-+
-+	return 0;
-+}
-+
-+ /* Check if a chunk is being used by looking at its nh array
-+  * @param nh next-hop array on which the chunk is sitting
-+  * @param chunk_id The chunk ID will be found in the chunk ID array in the
-+  * upper level
-+  * @return true if it is being used, false otherwise
-+  */
-+static bool is_chunk_being_used(u8 *nh, u32 chunk_id)
-+{
-+	long long i;
-+	long long start_index, end_index;
-+
-+	if (chunk_id < 1) {
-+		pr_err("Invalid chunk ID");
-+		return -EINVAL;
-+	}
-+
-+	start_index = (long long)(chunk_id - 1) * CHUNK_SIZE;
-+	end_index = (long long)chunk_id * CHUNK_SIZE - 1;
-+	for (i = start_index; i <= end_index; i++) {
-+		/*The chunk is being used*/
-+		if (nh[i] > 0)
-+			return false;
-+	}
-+
-+	return true;
-+}
-+
 +static u64 get_arr_idx(struct chunk c, u32 idx)
 +{
 +	return c.ci_off + IDX_FRM_MASK(idx, c.ci_bm);
@@ -1824,7 +1842,7 @@ index 0000000..df7da37
 +	int i;
 +	u8 *n20, *p20;
 +	u32 *c20;
-+	u32 *c26_dup;
++	u32 *c26;
 +	u32 chunk_id;
 +	/*Index to level 20*/
 +	u32 idx20;
@@ -1850,13 +1868,13 @@ index 0000000..df7da37
 +		n20 = kcalloc(LEVEL20_SIZE, sizeof(*n20), GFP_ATOMIC);
 +		p20 = kcalloc(LEVEL20_SIZE, sizeof(*p20), GFP_ATOMIC);
 +		c20 = kcalloc(LEVEL20_SIZE, sizeof(*c20), GFP_ATOMIC);
-+		c26_dup = kcalloc(CI_ARR_SIZE, sizeof(*c26_dup), GFP_ATOMIC);
++		c26 = kcalloc(CI_ARR_SIZE, sizeof(*c26), GFP_ATOMIC);
 +
-+		if (!n20 || !c20 || !p20 || !c26_dup) {
++		if (!n20 || !c20 || !p20 || !c26) {
 +			kfree(n20);
 +			kfree(c20);
 +			kfree(p20);
-+			kfree(c26_dup);
++			kfree(c26);
 +			pr_err("Out of memory while allocating level 20");
 +			goto error;
 +		}
@@ -1864,7 +1882,7 @@ index 0000000..df7da37
 +		RCU_INIT_POINTER(s->nh20, n20);
 +		RCU_INIT_POINTER(s->pl20, p20);
 +		RCU_INIT_POINTER(s->ci20, c20);
-+		RCU_INIT_POINTER(s->ci26_dup, c26_dup);
++		RCU_INIT_POINTER(s->ci26_dup, c26);
 +		synchronize_rcu();
 +	}
 +
@@ -1888,13 +1906,13 @@ index 0000000..df7da37
 +	 * chunk for this index in level 26
 +	 */
 +	if (s->ci20[idx20] == 0) {
-+		chunk_id = get_chunk_id(s->ci20, LEVEL20_SIZE, idx20);
++		chunk_id = level26_calc_chunkid(s->ci20, LEVEL20_SIZE, idx20);
 +		if (!chunk_id)
 +			goto error;
 +		err = level26_chunk_insert(s, chunk_id);
 +		if (err)
 +			goto error;
-+		err = update_chunk_ids(s->ci20, LEVEL20_SIZE, idx20, chunk_id);
++		err = level26_update_chunkid(s->ci20, LEVEL20_SIZE, idx20, chunk_id);
 +		if (err)
 +			goto error;
 +	}
@@ -1921,14 +1939,14 @@ index 0000000..df7da37
 +	 * chunk for this index in level 32
 +	 */
 +	if (!(s->chunks26[cnk_idx].ci_bm & IDX_TO_BM(cnk_off))) {
-+		chunk_id = find_chunk_id(s->chunks26, cnk_idx, cnk_off,
++		chunk_id = level32_calc_chunkid(s->chunks26, cnk_idx, cnk_off,
 +					 s->ci26_dup);
 +		if (!chunk_id)
 +			goto error;
 +		err = level32_chunk_insert(s, chunk_id);
 +		if (err)
 +			goto error;
-+		err = update_chunk(s->chunks26, cnk_idx, cnk_off, s->ci26_dup,
++		err = level32_update_chunkid(s->chunks26, cnk_idx, cnk_off, s->ci26_dup,
 +				   s->level26_chunk_count, chunk_id);
 +		if (err)
 +			goto error;
@@ -2053,6 +2071,7 @@ index 0000000..df7da37
 +{
 +	u8 *n20_old, *p20_old, *n26_old, *p26_old, *n32_old, *p32_old;
 +	u32 *c20_old, *c26_old;
++	struct chunk *chunks26_old;
 +
 +	spin_lock(&s->lock);
 +
@@ -2064,6 +2083,7 @@ index 0000000..df7da37
 +	n26_old = s->nh26;
 +	p26_old = s->pl26;
 +	c26_old = s->ci26_dup;
++        chunks26_old = s->chunks26;
 +
 +	n32_old = s->nh32;
 +	p32_old = s->pl32;
@@ -2080,6 +2100,8 @@ index 0000000..df7da37
 +	rcu_assign_pointer(s->nh26, NULL);
 +	rcu_assign_pointer(s->pl26, NULL);
 +	rcu_assign_pointer(s->ci26_dup, NULL);
++	rcu_assign_pointer(s->ci26, NULL);
++	rcu_assign_pointer(s->chunks26, NULL);
 +
 +	rcu_assign_pointer(s->nh32, NULL);
 +	rcu_assign_pointer(s->pl32, NULL);
@@ -2094,6 +2116,7 @@ index 0000000..df7da37
 +	kfree(n26_old);
 +	kfree(p26_old);
 +	kfree(c26_old);
++	kfree(chunks26_old);
 +	kfree(n32_old);
 +	kfree(p32_old);
 +
