@@ -729,7 +729,7 @@ index 0f7a27f..64100d7 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..9ede139 100644
+index 69c91d1..cdfafb4 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -741,7 +741,7 @@ index 69c91d1..9ede139 100644
  
  struct fib_config {
  	u8			fc_dst_len;
-@@ -197,6 +199,60 @@ struct fib_entry_notifier_info {
+@@ -197,6 +199,59 @@ struct fib_entry_notifier_info {
  	u32 tb_id;
  };
  
@@ -775,7 +775,6 @@ index 69c91d1..9ede139 100644
 +	u8 __rcu *nh26;
 +	u8 __rcu *pl26;
 +	u32 __rcu *ci26;
-+	u32 __rcu *ci26_dup;
 +	/*Total number of chunks allocated*/
 +	u32 level26_chunk_total;
 +	/*Total number of chunks being used*/
@@ -802,7 +801,7 @@ index 69c91d1..9ede139 100644
  struct fib_nh_notifier_info {
  	struct fib_notifier_info info; /* must be first */
  	struct fib_nh *fib_nh;
-@@ -219,6 +275,10 @@ struct fib_table {
+@@ -219,6 +274,10 @@ struct fib_table {
  	int			tb_num_default;
  	struct rcu_head		rcu;
  	unsigned long 		*tb_data;
@@ -813,7 +812,7 @@ index 69c91d1..9ede139 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +319,337 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +318,337 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -1260,10 +1259,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..02a9300
+index 0000000..6d5e4da
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,928 @@
+@@ -0,0 +1,1032 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1306,6 +1305,12 @@ index 0000000..02a9300
 +
 +/*Converts an index and bitmap to actual index*/
 +#define IDX_FRM_MASK(X, Y) (hweight64(((1ULL << (X)) - 1) & (Y)))
++
++/*Converts an index to CK26 to index to C26 */
++static u64 get_arr_idx(struct chunk c, u32 idx)
++{
++	return c.ci_off + IDX_FRM_MASK(idx, c.ci_bm);
++}
 +
 +/*Insert net_device to the net-device array.
 + *This function returns the index to the net_device array
@@ -1560,7 +1565,7 @@ index 0000000..02a9300
 +	return -EINVAL;
 +}
 +
-+static int level26_chunk_delete(struct sail *s, u32 chunk_id)
++static int N26_delete(struct sail *s, u32 chunk_id)
 +{
 +	long long m;
 +	u64 end_idx;
@@ -1571,13 +1576,12 @@ index 0000000..02a9300
 +	}
 +
 +	if (chunk_id < s->level26_chunk_count) {
-+		/*shift each chunk one step left*/
++		/*shift each chunk one step left*/                
 +		m = (long long)chunk_id * CHUNK_SIZE;
 +		end_idx = s->level26_chunk_count * CHUNK_SIZE - 1;
 +		for (; m <= end_idx; m++) {
 +			s->nh26[m - CHUNK_SIZE] = s->nh26[m];
 +			s->pl26[m - CHUNK_SIZE] = s->pl26[m];
-+//			s->ci26[m - CHUNK_SIZE] = s->ci26[m];
 +		}
 +	}
 +
@@ -1587,9 +1591,38 @@ index 0000000..02a9300
 +	for (; m <= end_idx; m++) {
 +		s->nh26[m] = 0;
 +		s->pl26[m] = 0;
-+//		s->ci26[m] = 0;
 +	}
 +
++	return 0;
++}
++
++static int CK26_delete(struct sail *s, u32 chunk_id)
++{
++	long long m;
++
++	if (chunk_id > s->level26_chunk_count) {
++		pr_err("Invalid chunk_id to level 26");
++		return -EINVAL;
++	}
++
++	if (chunk_id < s->level26_chunk_count) {
++		/*shift each chunk one step left*/                
++		m = (long long)chunk_id;
++		for (; m <= s->level26_chunk_count - 1; m++)
++			s->chunks26[m - 1] = s->chunks26[m];
++	}
++
++	/*Reset the the last chunk*/
++	s->chunks26[s->level26_chunk_count - 1].ci_off = 0;
++	s->chunks26[s->level26_chunk_count - 1].ci_bm = 0;
++
++	return 0;
++}
++
++static int level26_chunk_delete(struct sail *s, u32 chunk_id)
++{
++	N26_delete(s, chunk_id);
++	CK26_delete(s, chunk_id);
 +	--s->level26_chunk_count;
 +	return 0;
 +}
@@ -1679,8 +1712,8 @@ index 0000000..02a9300
 +	return 0;
 +}
 +
-+/*Remove Chunk ID for level 20 and level 32*/
-+static int remove_chunk_ids(u32 *chunk_ids, u32 arr_size, u32 chunk_id)
++/*Remove Chunk ID for level 20*/
++static int C20_remove_chunkid(u32 *chunk_ids, u32 arr_size, u32 chunk_id)
 +{
 +	long long i;
 +	bool found = false;
@@ -1698,13 +1731,51 @@ index 0000000..02a9300
 +	return 0;
 +}
 +
++static int C26_remove_chunkid(struct sail *s, u32 cnk_idx, u64 cnk_off)
++{
++	long long i;
++	bool found = false;
++        u32 chunk_id;
++
++	s->chunks26[cnk_idx].ci_bm &= ~IDX_TO_BM(cnk_off);
++	chunk_id = s->ci26[get_arr_idx(s->chunks26[cnk_idx], cnk_off)];
++
++	for (i = 0; i < CI_ARR_SIZE; i++) {
++		if (s->ci26[i] == chunk_id)
++			found = true;
++		else if (found)
++                    s->ci26[i - 1] = s->ci26[i];
++	}
++        
++
++
++	return 0;
++}
++
++
++//static int C26_remove_chunkid(struct sail *s,  u32 chunk_id)
++//{
++//	long long i;
++//	bool found = false;
++//
++//	/*Check if the chunk ID already exists*/
++//	for (i = 0; i < CI_ARR_SIZE; i++) {
++//		if (s->ci26[i] == chunk_id)
++//			found = true;
++//		else if (found)
++//                    s->ci26[i - 1] = s->ci26[i];
++//	}
++//
++//	return 0;
++//}
++
 + /* Check if a chunk is being used by looking at its nh array
 +  * @param nh next-hop array on which the chunk is sitting
 +  * @param chunk_id The chunk ID will be found in the chunk ID array in the
 +  * upper level
 +  * @return true if it is being used, false otherwise
 +  */
-+static bool is_chunk_being_used(u8 *nh, u32 chunk_id)
++static bool level32_is_chunk_unused(u8 *nh, u32 chunk_id)
 +{
 +	long long i;
 +	long long start_index, end_index;
@@ -1721,6 +1792,37 @@ index 0000000..02a9300
 +		if (nh[i] > 0)
 +			return false;
 +	}
++
++	return true;
++}
++
++ /* Check if a chunk is being used by looking at its nh array
++  * @param nh N26 array on which the chunk is sitting
++  * @param ck Chunk
++  * @param chunk_id The chunk ID will be found in the chunk ID array in the
++  * upper level
++  * @return true/false
++  */
++static bool level26_is_chunk_unused(u8 *nh, struct chunk *ck, u32 chunk_id)
++{
++	long long i;
++	long long start_index, end_index;
++
++	if (chunk_id < 1) {
++		pr_err("Invalid chunk ID");
++		return -EINVAL;
++	}
++
++	start_index = (long long)(chunk_id - 1) * CHUNK_SIZE;
++	end_index = (long long)chunk_id * CHUNK_SIZE - 1;
++	for (i = start_index; i <= end_index; i++) {
++		/*The chunk is being used*/
++		if (nh[i] > 0)
++			return false;
++	}
++        
++        if (ck->ci_bm)
++            return false;
 +
 +	return true;
 +}
@@ -1831,11 +1933,6 @@ index 0000000..02a9300
 +	return 0;
 +}
 +
-+static u64 get_arr_idx(struct chunk c, u32 idx)
-+{
-+	return c.ci_off + IDX_FRM_MASK(idx, c.ci_bm);
-+}
-+
 +int sail_ml_insert(struct sail *s, u32 key, u8 prefix_len,
 +		   struct net_device *dev)
 +{
@@ -1882,7 +1979,7 @@ index 0000000..02a9300
 +		RCU_INIT_POINTER(s->nh20, n20);
 +		RCU_INIT_POINTER(s->pl20, p20);
 +		RCU_INIT_POINTER(s->ci20, c20);
-+		RCU_INIT_POINTER(s->ci26_dup, c26);
++		RCU_INIT_POINTER(s->ci26, c26);
 +		synchronize_rcu();
 +	}
 +
@@ -1940,20 +2037,20 @@ index 0000000..02a9300
 +	 */
 +	if (!(s->chunks26[cnk_idx].ci_bm & IDX_TO_BM(cnk_off))) {
 +		chunk_id = level32_calc_chunkid(s->chunks26, cnk_idx, cnk_off,
-+					 s->ci26_dup);
++					 s->ci26);
 +		if (!chunk_id)
 +			goto error;
 +		err = level32_chunk_insert(s, chunk_id);
 +		if (err)
 +			goto error;
-+		err = level32_update_chunkid(s->chunks26, cnk_idx, cnk_off, s->ci26_dup,
++		err = level32_update_chunkid(s->chunks26, cnk_idx, cnk_off, s->ci26,
 +				   s->level26_chunk_count, chunk_id);
 +		if (err)
 +			goto error;
 +	}
 +
 +	/*Extract 6 bit from MSB and calculate index to level 32*/
-+	idx32 = (s->ci26_dup[get_arr_idx(s->chunks26[cnk_idx], cnk_off)] - 1) *
++	idx32 = (s->ci26[get_arr_idx(s->chunks26[cnk_idx], cnk_off)] - 1) *
 +			CHUNK_SIZE + (key & 63);
 +
 +	if (prefix_len <= 32) {
@@ -2012,8 +2109,14 @@ index 0000000..02a9300
 +	if (s->ci20[idx20] == 0)
 +		goto error;
 +
++	/*Index to chunk array*/
++	u32 cnk_idx = s->ci20[idx20] - 1;
++	/*offset inside a chunk is initialized by extracting 21-26 bit*/
++	u64 cnk_off = (key & 4032) >> 6;
++        
 +	/*Extract 21-26 bit and calculate level 26 index*/
-+	idx26 = (s->ci20[idx20] - 1) * CHUNK_SIZE + ((key & 4032) >> 6);
++	idx26 = cnk_idx * CHUNK_SIZE + cnk_off;
++
 +
 +	if (prefix_len <= 26) {
 +		/*Level pushing*/
@@ -2025,20 +2128,22 @@ index 0000000..02a9300
 +			s->nh26[idx26 + i] = 0;
 +			s->pl26[idx26 + i] = 0;
 +		}
-+		if (!is_chunk_being_used(s->nh26, s->ci20[idx20])) {
++		if (level26_is_chunk_unused(s->nh26, &s->chunks26[cnk_idx], s->ci20[idx20])) {
 +			level26_chunk_delete(s, s->ci20[idx20]);
-+			remove_chunk_ids(s->ci20, LEVEL20_SIZE,
++			C20_remove_chunkid(s->ci20, LEVEL20_SIZE,
 +					 s->ci20[idx20]);
 +		}
 +		goto finish;
 +	}
 +
 +	/* The prefix_len is 27-32. but no chunk for the prefix */
-+	if (s->ci26[idx26] == 0)
++	if (!(s->chunks26[cnk_idx].ci_bm & IDX_TO_BM(cnk_off)))
 +		goto error;
 +
-+	/*Extract 6 bit from MSB and calculate level 32 index*/
-+	idx32 = (s->ci26[idx26] - 1) * CHUNK_SIZE + (key & 63);
++        u32 chunkid = s->ci26[get_arr_idx(s->chunks26[cnk_idx], cnk_off)];
++
++	/*Extract 6 bit from MSB and calculate index to level 32*/
++	idx32 = (chunkid - 1) * CHUNK_SIZE + (key & 63);
 +
 +	if (prefix_len <= 32) {
 +		/*Level pushing*/
@@ -2051,10 +2156,9 @@ index 0000000..02a9300
 +			s->nh32[idx32 + i] = 0;
 +			s->pl32[idx32 + i] = 0;
 +		}
-+		if (!is_chunk_being_used(s->nh32, s->ci26[idx26])) {
-+			level32_chunk_delete(s, s->ci26[idx26]);
-+			remove_chunk_ids(s->ci26, LEVEL26_ARR_SIZE(s),
-+					 s->ci26[idx26]);
++		if (level32_is_chunk_unused(s->nh32, chunkid)) {
++			level32_chunk_delete(s, chunkid);
++			C26_remove_chunkid(s, cnk_idx, cnk_off);
 +		}
 +		goto finish;
 +	}
@@ -2082,7 +2186,7 @@ index 0000000..02a9300
 +
 +	n26_old = s->nh26;
 +	p26_old = s->pl26;
-+	c26_old = s->ci26_dup;
++	c26_old = s->ci26;
 +        chunks26_old = s->chunks26;
 +
 +	n32_old = s->nh32;
@@ -2099,7 +2203,6 @@ index 0000000..02a9300
 +
 +	rcu_assign_pointer(s->nh26, NULL);
 +	rcu_assign_pointer(s->pl26, NULL);
-+	rcu_assign_pointer(s->ci26_dup, NULL);
 +	rcu_assign_pointer(s->ci26, NULL);
 +	rcu_assign_pointer(s->chunks26, NULL);
 +
@@ -2175,7 +2278,7 @@ index 0000000..02a9300
 +	 */
 +	chunks26 = rcu_dereference(s->chunks26);
 +	if (likely(chunks26[cnk_idx].ci_bm & IDX_TO_BM(cnk_off))) {
-+		c26 = rcu_dereference(s->ci26_dup);
++		c26 = rcu_dereference(s->ci26);
 +		c26_idx = chunks26[cnk_idx].ci_off +
 +			IDX_FRM_MASK(cnk_off, chunks26[cnk_idx].ci_bm);
 +		idx32 = (c26[c26_idx] - 1) * CHUNK_SIZE + (key & 63);
@@ -2193,7 +2296,7 @@ index 0000000..02a9300
 +	return 0;
 +}
 diff --git a/net/ipv4/fib_trie.c b/net/ipv4/fib_trie.c
-index 5bc0c89..098cf03 100644
+index 5bc0c89..40cf7cf 100644
 --- a/net/ipv4/fib_trie.c
 +++ b/net/ipv4/fib_trie.c
 @@ -1280,6 +1280,10 @@ int fib_table_insert(struct net *net, struct fib_table *tb,
@@ -2212,7 +2315,7 @@ index 5bc0c89..098cf03 100644
  	pr_debug("Deleting %08x/%d tos=%d t=%p\n", key, plen, tos, t);
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+//	sail_ml_delete(&tb->sail, key, plen);
++	sail_ml_delete(&tb->sail, key, plen);
 +#endif
 +
  	fa_to_delete = NULL;
