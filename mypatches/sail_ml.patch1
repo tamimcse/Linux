@@ -729,7 +729,7 @@ index 0f7a27f..64100d7 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..2a2ebb0 100644
+index 69c91d1..f66d383 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -1070,7 +1070,7 @@ index 69c91d1..2a2ebb0 100644
 +		}
 +	}
 +
-+	for (j = 97; j < 97; j++) {
++	for (j = 0; j < 97; j++) {
 +		ip_addr = in_aton(wtf_26[j]);
 +
 +		if (tb) {
@@ -1100,11 +1100,11 @@ index 69c91d1..2a2ebb0 100644
 +			       res->fi->fib_dev->name);
 +		}
 +//Uncomment this block
-+//		if (tb && dev && !err && res && res->fi && res->fi->fib_dev
-+//		    && (tsc_end > tsc_begin))
-+//			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
-+//			       &ip_addr, dev->name, res->prefixlen,
-+//			       tsc_end - tsc_begin);
++		if (tb && dev && !err && res && res->fi && res->fi->fib_dev
++		    && (tsc_end > tsc_begin))
++			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
++			       &ip_addr, dev->name, res->prefixlen,
++			       tsc_end - tsc_begin);
 +	}
 +
 +	for (j = 0; j < 1000; j++) {
@@ -1256,7 +1256,7 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..abf8af1
+index 0000000..786bf30
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
 @@ -0,0 +1,1004 @@
