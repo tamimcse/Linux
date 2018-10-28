@@ -1256,10 +1256,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..09fcc7e
+index 0000000..cb8e4fb
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,1030 @@
+@@ -0,0 +1,1008 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1749,23 +1749,6 @@ index 0000000..09fcc7e
 +	return 0;
 +}
 +
-+
-+//static int C26_remove_chunkid(struct sail *s,  u32 chunk_id)
-+//{
-+//	long long i;
-+//	bool found = false;
-+//
-+//	/*Check if the chunk ID already exists*/
-+//	for (i = 0; i < CI_ARR_SIZE; i++) {
-+//		if (s->ci26[i] == chunk_id)
-+//			found = true;
-+//		else if (found)
-+//                    s->ci26[i - 1] = s->ci26[i];
-+//	}
-+//
-+//	return 0;
-+//}
-+
 + /* Check if a chunk is being used by looking at its nh array
 +  * @param nh next-hop array on which the chunk is sitting
 +  * @param chunk_id The chunk ID will be found in the chunk ID array in the
@@ -1938,14 +1921,12 @@ index 0000000..09fcc7e
 +	u32 *c20;
 +	u32 *c26;
 +	u32 chunk_id;
-+	/*Index to level 20*/
-+	u32 idx20;
-+	/*Index to level 26 and level 32*/
-+	u64 idx26, idx32;
-+	/*Index to chunk array*/
-+	u32 cnk_idx;
-+	/*offset inside a chunk*/
-+	u64 cnk_off;
++	u32 n20_idx;/*Index to N20, P20 and C20*/
++	u64 n26_idx;/*Index to N26 and P26*/
++	u64 c26_idx;/*Index to C26*/
++	u32 ck26_idx;/*Index to CK26*/
++	u64 ck26_off;/*offset inside a chunk*/
++        u64 n32_idx;/*Index to N32 and P32*/
 +	u32 consecutive_leafs;
 +	u8 netdev_index = get_netdev_index(s, dev);
 +	int err = 0;
@@ -1981,17 +1962,17 @@ index 0000000..09fcc7e
 +	}
 +
 +	/*Eextract 20 bits from LSB.*/
-+	idx20 = key >> 12;
++	n20_idx = key >> 12;
 +
 +	if (prefix_len <= 20) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (20 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Longer prefix exists*/
-+			if (s->P20[idx20 + i] > prefix_len)
++			if (s->P20[n20_idx + i] > prefix_len)
 +				continue;
-+			s->N20[idx20 + i] = netdev_index;
-+			s->P20[idx20 + i] = prefix_len;
++			s->N20[n20_idx + i] = netdev_index;
++			s->P20[n20_idx + i] = prefix_len;
 +		}
 +		goto finish;
 +	}
@@ -1999,32 +1980,32 @@ index 0000000..09fcc7e
 +	/* The prefix_len is 21-32. So we need to check if if there is any
 +	 * chunk for this index in level 26
 +	 */
-+	if (s->C20[idx20] == 0) {
-+		chunk_id = level26_calc_chunkid(s->C20, LEVEL20_SIZE, idx20);
++	if (s->C20[n20_idx] == 0) {
++		chunk_id = level26_calc_chunkid(s->C20, LEVEL20_SIZE, n20_idx);
 +		if (!chunk_id)
 +			goto error;
 +		err = level26_chunk_insert(s, chunk_id);
 +		if (err)
 +			goto error;
-+		err = level26_update_chunkid(s->C20, LEVEL20_SIZE, idx20, chunk_id);
++		err = level26_update_chunkid(s->C20, LEVEL20_SIZE, n20_idx, chunk_id);
 +		if (err)
 +			goto error;
 +	}
 +
 +	/*Extract 21-26 bit and calculate index to level 26*/
-+	idx26 = (s->C20[idx20] - 1) * CHUNK_SIZE + ((key & 4032) >> 6);
-+	cnk_idx = s->C20[idx20] - 1;
-+	cnk_off = (key & 4032) >> 6;
++	n26_idx = (s->C20[n20_idx] - 1) * CHUNK_SIZE + ((key & 4032) >> 6);
++	ck26_idx = s->C20[n20_idx] - 1;
++	ck26_off = (key & 4032) >> 6;
 +
 +	if (prefix_len <= 26) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (26 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Longer prefix exists*/
-+			if (s->P26[idx26 + i] > prefix_len)
++			if (s->P26[n26_idx + i] > prefix_len)
 +				continue;
-+			s->N26[idx26 + i] = netdev_index;
-+			s->P26[idx26 + i] = prefix_len;
++			s->N26[n26_idx + i] = netdev_index;
++			s->P26[n26_idx + i] = prefix_len;
 +		}
 +		goto finish;
 +	}
@@ -2032,33 +2013,33 @@ index 0000000..09fcc7e
 +	/* The prefix_len is 27-32. So we need to check if if there is any
 +	 * chunk for this index in level 32
 +	 */
-+	if (!(s->CK26[cnk_idx].ci_bm & IDX_TO_BM(cnk_off))) {
-+		chunk_id = level32_calc_chunkid(s->CK26, cnk_idx, cnk_off,
++	if (!(s->CK26[ck26_idx].ci_bm & IDX_TO_BM(ck26_off))) {
++		chunk_id = level32_calc_chunkid(s->CK26, ck26_idx, ck26_off,
 +					 s->C26);
 +		if (!chunk_id)
 +			goto error;
 +		err = level32_chunk_insert(s, chunk_id);
 +		if (err)
 +			goto error;
-+		err = level32_update_chunkid(s->CK26, cnk_idx, cnk_off, s->C26,
++		err = level32_update_chunkid(s->CK26, ck26_idx, ck26_off, s->C26,
 +				   s->ck26_count, chunk_id);
 +		if (err)
 +			goto error;
 +	}
 +
 +	/*Extract 6 bit from MSB and calculate index to level 32*/
-+	idx32 = (s->C26[get_arr_idx(s->CK26[cnk_idx], cnk_off)] - 1) *
-+			CHUNK_SIZE + (key & 63);
++        c26_idx = get_arr_idx(s->CK26[ck26_idx], ck26_off);
++	n32_idx = (s->C26[c26_idx] - 1) * CHUNK_SIZE + (key & 63);
 +
 +	if (prefix_len <= 32) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (32 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Longer prefix exists*/
-+			if (s->P32[idx32 + i] > prefix_len)
++			if (s->P32[n32_idx + i] > prefix_len)
 +				continue;
-+			s->N32[idx32 + i] = netdev_index;
-+			s->P32[idx32 + i] = prefix_len;
++			s->N32[n32_idx + i] = netdev_index;
++			s->P32[n32_idx + i] = prefix_len;
 +		}
 +		goto finish;
 +	}
@@ -2073,10 +2054,11 @@ index 0000000..09fcc7e
 +int sail_ml_delete(struct sail *s, u32 key, u8 prefix_len)
 +{
 +	int i;
-+	/*Index to level 20*/
-+	u32 idx20;
-+	/*Index to level 26 and level 32*/
-+	u64 idx26, idx32;
++	u32 n20_idx;/*Index to N20, P20 and C20*/
++	u64 n26_idx;/*Index to level N26 and P26*/
++	u32 ck26_idx;/*Index to CK26*/
++        u64 ck26_off;/*Offset inside chunk in level 26*/
++        u64 n32_idx;/*Index to level N32 and P32*/
 +	u32 consecutive_leafs;
 +	int err = 0;
 +
@@ -2087,32 +2069,29 @@ index 0000000..09fcc7e
 +		goto error;
 +
 +	/*Eextract 20 bits from LSB.*/
-+	idx20 = key >> 12;
++	n20_idx = key >> 12;
 +
 +	if (prefix_len <= 20) {
 +		/*Level pushing*/
 +		consecutive_leafs = 1U << (20 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Prefix len doesn't match*/
-+			if (s->P20[idx20 + i] != prefix_len)
++			if (s->P20[n20_idx + i] != prefix_len)
 +				continue;
-+			s->N20[idx20 + i] = 0;
-+			s->P20[idx20 + i] = 0;
++			s->N20[n20_idx + i] = 0;
++			s->P20[n20_idx + i] = 0;
 +		}
 +		goto finish;
 +	}
 +
 +	/* The prefix_len is 21-32 but no chunk for the prefix*/
-+	if (s->C20[idx20] == 0)
++	if (s->C20[n20_idx] == 0)
 +		goto error;
 +
-+	/*Index to chunk array*/
-+	u32 cnk_idx = s->C20[idx20] - 1;
-+	/*offset inside a chunk is initialized by extracting 21-26 bit*/
-+	u64 cnk_off = (key & 4032) >> 6;
-+        
-+	/*Extract 21-26 bit and calculate level 26 index*/
-+	idx26 = cnk_idx * CHUNK_SIZE + cnk_off;
++	
++	ck26_idx = s->C20[n20_idx] - 1;
++	ck26_off = (key & 4032) >> 6;/*Extract 21-26 bit from the prefix*/
++	n26_idx = ck26_idx * CHUNK_SIZE + ck26_off;
 +
 +
 +	if (prefix_len <= 26) {
@@ -2120,27 +2099,27 @@ index 0000000..09fcc7e
 +		consecutive_leafs = 1U << (26 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Prefix len doesn't match*/
-+			if (s->P26[idx26 + i] != prefix_len)
++			if (s->P26[n26_idx + i] != prefix_len)
 +				continue;
-+			s->N26[idx26 + i] = 0;
-+			s->P26[idx26 + i] = 0;
++			s->N26[n26_idx + i] = 0;
++			s->P26[n26_idx + i] = 0;
 +		}
-+		if (level26_is_chunk_unused(s->N26, &s->CK26[cnk_idx], s->C20[idx20])) {
-+			level26_chunk_delete(s, s->C20[idx20]);
++		if (level26_is_chunk_unused(s->N26, &s->CK26[ck26_idx], s->C20[n20_idx])) {
++			level26_chunk_delete(s, s->C20[n20_idx]);
 +			C20_remove_chunkid(s->C20, LEVEL20_SIZE,
-+					 s->C20[idx20]);
++					 s->C20[n20_idx]);
 +		}
 +		goto finish;
 +	}
 +
 +	/* The prefix_len is 27-32. but no chunk for the prefix */
-+	if (!(s->CK26[cnk_idx].ci_bm & IDX_TO_BM(cnk_off)))
++	if (!(s->CK26[ck26_idx].ci_bm & IDX_TO_BM(ck26_off)))
 +		goto error;
 +
-+        u32 chunkid = s->C26[get_arr_idx(s->CK26[cnk_idx], cnk_off)];
++        u32 chunkid_level32 = s->C26[get_arr_idx(s->CK26[ck26_idx], ck26_off)];
 +
 +	/*Extract 6 bit from MSB and calculate index to level 32*/
-+	idx32 = (chunkid - 1) * CHUNK_SIZE + (key & 63);
++	n32_idx = (chunkid_level32 - 1) * CHUNK_SIZE + (key & 63);
 +
 +	if (prefix_len <= 32) {
 +		/*Level pushing*/
@@ -2148,14 +2127,14 @@ index 0000000..09fcc7e
 +
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Prefix len doesn't match*/
-+			if (s->P32[idx32 + i] != prefix_len)
++			if (s->P32[n32_idx + i] != prefix_len)
 +				continue;
-+			s->N32[idx32 + i] = 0;
-+			s->P32[idx32 + i] = 0;
++			s->N32[n32_idx + i] = 0;
++			s->P32[n32_idx + i] = 0;
 +		}
-+		if (level32_is_chunk_unused(s->N32, chunkid)) {
-+			level32_chunk_delete(s, chunkid);
-+			C26_remove_chunkid(s, cnk_idx, cnk_off);
++		if (level32_is_chunk_unused(s->N32, chunkid_level32)) {
++			level32_chunk_delete(s, chunkid_level32);
++			C26_remove_chunkid(s, ck26_idx, ck26_off);
 +		}
 +		goto finish;
 +	}
@@ -2172,7 +2151,7 @@ index 0000000..09fcc7e
 +{
 +	u8 *n20_old, *p20_old, *n26_old, *p26_old, *n32_old, *p32_old;
 +	u32 *c20_old, *c26_old;
-+	struct chunk *chunks26_old;
++	struct chunk *ck26_old;
 +
 +	spin_lock(&s->lock);
 +
@@ -2184,7 +2163,7 @@ index 0000000..09fcc7e
 +	n26_old = s->N26;
 +	p26_old = s->P26;
 +	c26_old = s->C26;
-+        chunks26_old = s->CK26;
++        ck26_old = s->CK26;
 +
 +	n32_old = s->N32;
 +	p32_old = s->P32;
@@ -2216,7 +2195,7 @@ index 0000000..09fcc7e
 +	kfree(n26_old);
 +	kfree(p26_old);
 +	kfree(c26_old);
-+	kfree(chunks26_old);
++	kfree(ck26_old);
 +	kfree(n32_old);
 +	kfree(p32_old);
 +
@@ -2243,7 +2222,6 @@ index 0000000..09fcc7e
 +
 +	/*extract 20 bits from LSB*/
 +	n20_idx = key >> 12;
-+	/*Find corresponding next-hop in level 20*/
 +	n20 = rcu_dereference(s->N20);
 +	if (unlikely(!n20))
 +		goto finish;
@@ -2252,7 +2230,7 @@ index 0000000..09fcc7e
 +		netdev_index = n20[n20_idx];
 +
 +	/*Check if there is a longer prefix; if yes, extract 21-26 bit
-+	 *  and calculate index for level 26
++	 *  and calculate index to N26
 +	 */
 +	c20 = rcu_dereference(s->C20);
 +	if (likely(c20[n20_idx] != 0)) {
@@ -2269,7 +2247,7 @@ index 0000000..09fcc7e
 +		netdev_index = n26[n26_idx];
 +
 +	/*Check if there is a longer prefix; if yes, extract 6 bits
-+	 * from MSB and calculate index for level 26
++	 * from MSB and calculate index to N32
 +	 */
 +	chunks26 = rcu_dereference(s->CK26);
 +	if (likely(chunks26[ck26_idx].ci_bm & IDX_TO_BM(ck26_off))) {
