@@ -729,7 +729,7 @@ index 0f7a27f..64100d7 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..f66d383 100644
+index 69c91d1..797b38a 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -809,7 +809,7 @@ index 69c91d1..f66d383 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +315,337 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +315,340 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -1025,8 +1025,8 @@ index 69c91d1..f66d383 100644
 +		 */
 +	};
 +	struct net_device *dev;
-+	u64 tsc_begin = 0, tsc_end = 0;
-+	u64 tsc_trie_begin = 0, tsc_trie_end = 0;
++	u64 tsc_begin = 0, tsc_end = 0, tot_tsc = 0;
++	u64 tsc_trie_begin = 0, tsc_trie_end = 0, tot_tsc_trie = 0;
 +	int j = 0;
 +	u32 ip_addr, temp;
 +#endif
@@ -1102,10 +1102,13 @@ index 69c91d1..f66d383 100644
 +//Uncomment this block
 +		if (tb && dev && !err && res && res->fi && res->fi->fib_dev
 +		    && (tsc_end > tsc_begin))
-+			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
++			pr_err("lookup_cost: %pI4=>%s depth=%d SAIL=%llu",
 +			       &ip_addr, dev->name, res->prefixlen,
 +			       tsc_end - tsc_begin);
++		tot_tsc += (tsc_end - tsc_begin);
++		tot_tsc_trie += (tsc_trie_end - tsc_trie_begin);
 +	}
++	pr_err("AVG_COST: SAIL=%llu trie=%llu !!!!!!!!", tot_tsc/97, tot_tsc_trie/97);
 +
 +	for (j = 0; j < 1000; j++) {
 +//		get_random_bytes(&ip_addr, 4);
@@ -1256,10 +1259,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..786bf30
+index 0000000..33dfbc5
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,1004 @@
+@@ -0,0 +1,1001 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1291,9 +1294,6 @@ index 0000000..786bf30
 +
 +/*Number of new chunks allocated each time*/
 +#define NUM_CHUNKS 1024
-+//
-+//#define LEVEL26_ARR_SIZE(S) ((S)->level26_chunk_count * CHUNK_SIZE)
-+//#define LEVEL32_ARR_SIZE(S) ((S)->level32_chunk_count * CHUNK_SIZE)
 +
 +/*Converts an index to bitmap*/
 +#define IDX_TO_BM(X) (1ULL << (X))
