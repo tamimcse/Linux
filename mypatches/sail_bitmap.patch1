@@ -1,0 +1,2341 @@
+diff --git a/MAINTAINERS b/MAINTAINERS
+index b22e7fd..843f4a2 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -7630,6 +7630,11 @@ M:	Juanjo Ciarlante <jjciarla@raiz.uncu.edu.ar>
+ S:	Maintained
+ F:	net/ipv4/netfilter/ipt_MASQUERADE.c
+ 
++SAIL_ML FIB LOOKUP
++M:	MD Iftakharul Islam (Tamim) <tamim@csebuet.org>
++S:	Maintained
++F:	net/ipv4/fib_sail_ml.c
++
+ IPMI SUBSYSTEM
+ M:	Corey Minyard <minyard@acm.org>
+ L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
+diff --git a/arch/x86/configs/x86_64_defconfig b/arch/x86/configs/x86_64_defconfig
+index 0f7a27f..64100d7 100644
+--- a/arch/x86/configs/x86_64_defconfig
++++ b/arch/x86/configs/x86_64_defconfig
+@@ -61,6 +61,11 @@ CONFIG_HIBERNATION=y
+ CONFIG_PM_DEBUG=y
+ CONFIG_PM_TRACE_RTC=y
+ CONFIG_ACPI_DOCK=y
++CONFIG_CPU_FREQ=y
++# CONFIG_CPU_FREQ_STAT is not set
++CONFIG_CPU_FREQ_DEFAULT_GOV_USERSPACE=y
++CONFIG_CPU_FREQ_GOV_PERFORMANCE=y
++CONFIG_CPU_FREQ_GOV_ONDEMAND=y
+ CONFIG_X86_ACPI_CPUFREQ=y
+ CONFIG_PCI_MMCONFIG=y
+ CONFIG_PCIEPORTBUS=y
+@@ -70,13 +75,12 @@ CONFIG_HOTPLUG_PCI=y
+ CONFIG_BINFMT_MISC=y
+ CONFIG_IA32_EMULATION=y
+ CONFIG_NET=y
++CONFIG_PACKET=y
+ CONFIG_UNIX=y
+ CONFIG_XFRM_USER=y
+ CONFIG_INET=y
+ CONFIG_IP_MULTICAST=y
+ CONFIG_IP_ADVANCED_ROUTER=y
+-#CONFIG_IP_ROUTE_CLASSID=y
+-#CONFIG_IP_MULTIPLE_TABLES=y
+ #CONFIG_IP_ROUTE_MULTIPATH=y
+ CONFIG_IP_ROUTE_VERBOSE=y
+ CONFIG_IP_PNP=y
+@@ -96,8 +100,7 @@ CONFIG_TCP_CONG_ADVANCED=y
+ # CONFIG_TCP_CONG_WESTWOOD is not set
+ # CONFIG_TCP_CONG_HTCP is not set
+ CONFIG_TCP_MD5SIG=y
+-#CONFIG_IPV6=y
+-#CONFIG_IPV6_MULTIPLE_TABLES=y
++CONFIG_IPV6=y
+ CONFIG_INET6_AH=y
+ CONFIG_INET6_ESP=y
+ CONFIG_NETLABEL=y
+@@ -130,6 +133,7 @@ CONFIG_IP6_NF_TARGET_REJECT=y
+ CONFIG_IP6_NF_MANGLE=y
+ CONFIG_NET_SCHED=y
+ CONFIG_NET_EMATCH=y
++CONFIG_NET_CLS_ACT=y
+ CONFIG_HAMRADIO=y
+ CONFIG_CFG80211=y
+ CONFIG_MAC80211=y
+@@ -171,6 +175,7 @@ CONFIG_E1000E=y
+ CONFIG_SKY2=y
+ CONFIG_FORCEDETH=y
+ CONFIG_8139TOO=y
++CONFIG_R8169=y
+ CONFIG_FDDI=y
+ CONFIG_INPUT_POLLDEV=y
+ # CONFIG_INPUT_MOUSEDEV_PSAUX is not set
+@@ -194,11 +199,15 @@ CONFIG_HW_RANDOM=y
+ # CONFIG_HW_RANDOM_INTEL is not set
+ # CONFIG_HW_RANDOM_AMD is not set
+ CONFIG_NVRAM=y
++CONFIG_HPET=y
++# CONFIG_HPET_MMAP is not set
+ CONFIG_I2C_I801=y
+ CONFIG_WATCHDOG=y
+ CONFIG_AGP=y
+ CONFIG_AGP_AMD64=y
+ CONFIG_AGP_INTEL=y
++CONFIG_DRM=y
++CONFIG_DRM_I915=y
+ CONFIG_FB_MODE_HELPERS=y
+ CONFIG_FB_TILEBLITTING=y
+ CONFIG_FB_EFI=y
+@@ -207,7 +216,16 @@ CONFIG_VGACON_SOFT_SCROLLBACK=y
+ CONFIG_LOGO=y
+ # CONFIG_LOGO_LINUX_MONO is not set
+ # CONFIG_LOGO_LINUX_VGA16 is not set
+-
++CONFIG_SOUND=y
++CONFIG_SND=y
++CONFIG_SND_SEQUENCER=y
++CONFIG_SND_SEQ_DUMMY=y
++CONFIG_SND_MIXER_OSS=y
++CONFIG_SND_PCM_OSS=y
++CONFIG_SND_SEQUENCER_OSS=y
++CONFIG_SND_HRTIMER=y
++CONFIG_SND_HDA_INTEL=y
++CONFIG_SND_HDA_HWDEP=y
+ CONFIG_HIDRAW=y
+ CONFIG_HID_GYRATION=y
+ CONFIG_LOGITECH_FF=y
+@@ -236,6 +254,7 @@ CONFIG_RTC_CLASS=y
+ CONFIG_DMADEVICES=y
+ CONFIG_EEEPC_LAPTOP=y
+ CONFIG_AMD_IOMMU=y
++CONFIG_INTEL_IOMMU=y
+ # CONFIG_INTEL_IOMMU_DEFAULT_ON is not set
+ CONFIG_EFI_VARS=y
+ CONFIG_EXT4_FS=y
+@@ -253,6 +272,7 @@ CONFIG_MSDOS_FS=y
+ CONFIG_VFAT_FS=y
+ CONFIG_PROC_KCORE=y
+ CONFIG_TMPFS_POSIX_ACL=y
++CONFIG_HUGETLBFS=y
+ CONFIG_NFS_FS=y
+ CONFIG_NFS_V3_ACL=y
+ CONFIG_NFS_V4=y
+@@ -278,6 +298,7 @@ CONFIG_DEBUG_STACKOVERFLOW=y
+ # CONFIG_DEBUG_RODATA_TEST is not set
+ CONFIG_DEBUG_BOOT_PARAMS=y
+ CONFIG_OPTIMIZE_INLINING=y
++CONFIG_UNWINDER_ORC=y
+ CONFIG_SECURITY=y
+ CONFIG_SECURITY_NETWORK=y
+ CONFIG_SECURITY_SELINUX=y
+@@ -305,292 +326,21 @@ CONFIG_ATH9K_HTC=m
+ CONFIG_ATH9K_HTC_DEBUGFS=y
+ 
+ 
+-CONFIG_TCP_INIGO=y
+-
+-#Veth, Network namespace, and NetEm setup (Needed for Mininet)
+ CONFIG_VETH=m
+ CONFIG_NET_NS=y
++CONFIG_FIB_SAIL_ML=y
+ 
+-#Packet scheduling
+-CONFIG_NET_SCH_NETEM=m
+-CONFIG_NET_SCH_HTB=m
+-CONFIG_NET_SCH_TBF=m 
+-CONFIG_NET_SCH_MF=m
+-#CONFIG_NET_SCH_CLK_JIFFIES=y 
+-#CONFIG_NET_SCH_CLK_GETTIMEOFDAY=y
+-#CONFIG_NET_SCH_CLK_CPU=y
+-CONFIG_NET_SCH_HFSC=m 
+-CONFIG_NET_SCH_PRIO=m 
+-CONFIG_NET_SCH_RED=m 
+-CONFIG_NET_SCH_SFQ=m
+-CONFIG_NET_SCH_CBQ=m
+-CONFIG_NET_SCH_PIE=m
+-CONFIG_NET_SCH_FQ=m  
+-#CONFIG_NET_SCH_TEQL=y 
+-#CONFIG_NET_SCH_GRED=y 
+-CONFIG_NET_SCH_CODEL=m
+-CONFIG_NET_SCH_FQ_CODEL=m
+-
+-#packet classification
+-CONFIG_NET_CLS_RSVP=m
+-CONFIG_NET_CLS_RSVP6=m
+-CONFIG_NET_CLS_U32=m
+-CONFIG_NET_CLS_FLOW=m
+-CONFIG_NET_CLS_CGROUP=m
+-CONFIG_NET_ACT_PEDIT=m
+-CONFIG_NET_ACT_NAT=m
+-CONFIG_NET_ACT_SKBEDIT=m
+-CONFIG_NET_ACT_CSUM=m
+-CONFIG_NET_ACT_VLAN=m
+-CONFIG_NET_ACT_CONNMARK=m
+-CONFIG_NET_ACT_SKBMOD=m
+-
+-
+-#Add DiffServ (apply packet classifier) 
+-#CONFIG_NET_QOS=y 
+-#CONFIG_NET_SCH_INGRESS=y
+-#CONFIG_NET_SCH_DSMARK=y 
+-
+-#V4L2 and UVC driver
+-CONFIG_VIDEO_DEV=m
+-CONFIG_MEDIA_SUPPORT=m
+-CONFIG_MEDIA_CAMERA_SUPPORT=y
+-CONFIG_MEDIA_USB_SUPPORT=y
+-CONFIG_USB_VIDEO_CLASS=m
+-CONFIG_USB_VIDEO_CLASS_INPUT_EDEV=y
+-CONFIG_VIDEOBUF2_CORE=m
+-CONFIG_VIDEOBUF2_MEMOPS=m
+-CONFIG_VIDEOBUF2_VMALLOC=m
+-
+-#Enable tcp_probe
+-CONFIG_NET_TCPPROBE=m
+-
+-#enable switchdev
+-CONFIG_NET_SWITCHDEV=y
+-CONFIG_NET_DEVLINK=m
+-CONFIG_VLAN_8021Q=m
+-
+-CONFIG_ROCKER_DEV=n
+-
+-#Ethernet card
+-CONFIG_ETHERNET=y
+-CONFIG_X86=y
+-CONFIG_PCI=y
+-
+-#PCI card virtualization
+-CONFIG_PCI_IOV=y
+-
+-#enable RTL8111/8168/8411 PCI Express Gigabit Ethernet Interface
+-CONFIG_R8169=m
+-
+-#Mellanox NIC and Switch. Requisite modules such as I2C, PCI, IOMMU, HWMON enabled by default
+-CONFIG_NET_VENDOR_MELLANOX=y
+-CONFIG_MLXSW_PCI=m
+-CONFIG_MLXSW_CORE=m
+-CONFIG_MLXSW_SWITCHX2=m
+-CONFIG_MLXSW_SPECTRUM=m
+-CONFIG_MLX5_CORE=m
+-CONFIG_MLX5_CORE_EN=y
+-
+-#Netronome
+-CONFIG_NET_VENDOR_NETRONOME=y
+-CONFIG_NFP=m
+-CONFIG_NFP_DEBUG=y
+-CONFIG_NFP_NETVF=m
+-CONFIG_NFP_NET_DEBUG=y
+-CONFIG_NFP_NET=y
+-CONFIG_PCI_MSI=y
+-CONFIG_GENERIC_MSI_IRQ=y
+-
+-#Intel Ethernet cards 
+-
+-#Intel FlexPipe
+-CONFIG_FM10K=m
+-
+-#Intel XL710 family 
+-CONFIG_I40E=m
+-CONFIG_I40E_DCB=y
+-CONFIG_I40EVF=m
+-CONFIG_I40E_FCOE=y
+ 
+-#Intel 10GbE family NIC
+-CONFIG_IXGBE=m
+-CONFIG_IXGBEVF=m
+-
+-#NVIDIA
+-CONFIG_DRM_NOUVEAU=m
+-CONFIG_DRM_NOUVEAU_BACKLIGHT=y
+-
+-#intel GPU
+-CONFIG_DRM=y
+-CONFIG_DRM_I915=y
+-CONFIG_DRM_I915_PRELIMINARY_HW_SUPPORT=y
+-CONFIG_DRM_I915_USERPTR=y
+-
+-#Intel Communication controller
+-CONFIG_WATCHDOG_CORE=y
+-CONFIG_INTEL_MEI=y
+-CONFIG_INTEL_MEI_ME=y
+-CONFIG_VXLAN=m
+-
+-#USB
+-CONFIG_USB_ARCH_HAS_XHCI=y
+-CONFIG_USB_XHCI_HCD=y
+-
+-#DCCP
+-CONFIG_IP_DCCP=m
+-CONFIG_NET_DCCPPROBE=m
+-CONFIG_IP_DCCP_DEBUG=y
+-CONFIG_IP_DCCP_CCID2_DEBUG=y
+-CONFIG_IP_DCCP_CCID3=y
+-CONFIG_IP_DCCP_CCID3_DEBUG=y
+-
+-#SCTP
+-CONFIG_IP_SCTP=m
+-
+-#BBR
+-CONFIG_TCP_CONG_BBR=y
+-CONFIG_TCP_CONG_CDG=y
+-
+-#Wireguard Prereq
+-CONFIG_NET_UDP_TUNNEL=m
+-CONFIG_NETFILTER_XT_MATCH_HASHLIMIT=y
+-CONFIG_CRYPTO_BLKCIPHER=y
+-CONFIG_PADATA=y
+-
+-#Wireguard
+-CONFIG_WIREGUARD=n
+-CONFIG_WIREGUARD_DEBUG=n
+-CONFIG_WIREGUARD_PARALLEL=n 
+-
+-#netfilter
+-CONFIG_NETFILTER_XT_MATCH_IPRANGE=m
+-CONFIG_NETFILTER_NETLINK=m
+-CONFIG_NETFILTER_XTABLES=m
+-CONFIG_NETFILTER_XT_MATCH_CLUSTER=m
+-CONFIG_NETFILTER_XT_TARGET_CLASSIFY=m
+-CONFIG_NETFILTER_XT_TARGET_CONNMARK=m
+-CONFIG_NETFILTER_XT_MATCH_BPF=m
+-CONFIG_NETFILTER_XT_TARGET_DSCP=m
+-CONFIG_NETFILTER_XT_MATCH_DSCP=m
+-CONFIG_NETFILTER_XT_TARGET_TCPOPTSTRIP=m
+-CONFIG_NETFILTER_XT_MATCH_IPVS=m
+-CONFIG_IP_NF_TARGET_CLUSTERIP=y
+-CONFIG_IP_NF_TARGET_ECN=y
+-CONFIG_IP_NF_TARGET_TTL=y
+-CONFIG_IP_NF_RAW=y
+-
+-
+-#nftable
+-CONFIG_NF_TABLES=m
+-CONFIG_NFT_PAYLOAD=m
+-CONFIG_NFT_EXTHDR=m
+-CONFIG_NFT_META=m
+-CONFIG_NFT_CT=m
+-CONFIG_NFT_RBTREE=m
+-CONFIG_NFT_HASH=m
+-CONFIG_NFT_SET_HASH=m
+-CONFIG_NFT_COUNTER=m
+-CONFIG_NFT_LOG=m
+-CONFIG_NFT_LIMIT=m
+-CONFIG_NFT_NAT=m
+-CONFIG_NFT_REDIR=m
+-CONFIG_NFT_QUEUE=m
+-CONFIG_NFT_MASQ=m
+-CONFIG_NFT_QUOTA=m
+-CONFIG_NFT_COMPAT=m
+-CONFIG_NFT_REJECT=m
+-CONFIG_NFT_REJECT_IPV4=m
+-CONFIG_NFT_CHAIN_ROUTE_IPV4=m
+-CONFIG_NFT_CHAIN_NAT_IPV4=m
+-CONFIG_NFT_CHAIN_ROUTE_IPV6=m
+-CONFIG_NFT_CHAIN_NAT_IPV6=m
+-CONFIG_NF_TABLES_BRIDGE=y
+-CONFIG_NF_TABLES_NETDEV=y
+-CONFIG_NF_TABLES_INET=y
+-CONFIG_NF_TABLES_IPV4=y
+-CONFIG_NF_TABLES_IPV6=y
+-CONFIG_NF_DUP_NETDEV=m
+-CONFIG_NFT_DUP_NETDEV=m
+-CONFIG_NFT_FWD_NETDEV=m
+-CONFIG_NF_CONNTRACK_BROADCAST=m
+-CONFIG_NF_CONNTRACK_H323=m
+-CONFIG_NFT_REJECT_IPV6=m
+-CONFIG_NFT_REJECT_INET=m
+-CONFIG_NFT_MASQ_IPV4=m
+-CONFIG_NFT_REDIR_IPV4=m
+-CONFIG_NFT_MASQ_IPV6=m
+-CONFIG_NFT_REDIR_IPV6=m
+-CONFIG_NFT_BRIDGE_META=m
+-CONFIG_NFT_BRIDGE_REJECT=m
+-
+-#IPVS
+-CONFIG_IP_VS=m
+-CONFIG_IP_VS_IPV6=y
+-CONFIG_IP_VS_DEBUG=y
+-CONFIG_IP_VS_TAB_BITS=12
+-CONFIG_IP_VS_PROTO_TCP
+-CONFIG_IP_VS_RR=m
+-CONFIG_IP_VS_DH=m
+-CONFIG_IP_VS_SH=m
+-CONFIG_IP_VS_NQ=m
+-CONFIG_IP_VS_NFCT=y
+-
+-# Open vSwitch
+-CONFIG_OPENVSWITCH=m
+-CONFIG_OPENVSWITCH_GRE=m
+-CONFIG_OPENVSWITCH_GENEVE=m
+-
+-#Enable protocols in switch
+-CONFIG_MPLS_ROUTING=m
+-CONFIG_NET_DSA=m
+-CONFIG_NET_DSA_TAG_BRCM=y
+-CONFIG_NET_DSA_TAG_DSA=y
+-CONFIG_NET_DSA_TAG_EDSA=y
+-CONFIG_NET_DSA_TAG_TRAILER=y
+-CONFIG_NET_DSA_TAG_QCA=y
+-#CONFIG_BRIDGE_VLAN_FILTERING=y
+-CONFIG_GENEVE=m
+-CONFIG_BONDING=m
+-CONFIG_IPVLAN=m
+-CONFIG_IPVTAP=m
+-CONFIG_MACVLAN=m
+-CONFIG_MACVTAP=m
+-CONFIG_TUN=m
+-CONFIG_TAP=m
+-
+-
+-#IP options
+-#CONFIG_IP_FIB_TRIE_STATS=y
+-
+-#Enable VRF
+-CONFIG_NET_VRF=m
+-CONFIG_NET_L3_MASTER_DEV=y
+-
+-
+-#Enable rocker switch
+-CONFIG_NET_VENDOR_ROCKER=y
+-CONFIG_ROCKER=m
+-CONFIG_BRIDGE=y
+-
+-#DCB
+-CONFIG_DCB=y
+-
+-#FCOE RDMA
+-CONFIG_FCOE=m
+-CONFIG_LIBFCOE=m
+-CONFIG_LIBFC=m 
+-
+-#Enable Qlogic
+-CONFIG_NET_VENDOR_QLOGIC=y
+-CONFIG_QED=m
+-CONFIG_QED_LL2=y
+-CONFIG_QED_SRIOV=y
+-CONFIG_QEDE=m
+-CONFIG_QED_RDMA=y
+-
+-#Mellanox Infiniband
+-CONFIG_MLX5_INFINIBAND=m
++#Needed for tc bpf classifier and action
++CONFIG_NET_CLS=y
++CONFIG_NET_EGRESS=y
++CONFIG_NET_INGRESS=y
++#enable sch_clsact
++CONFIG_NET_SCH_INGRESS=m
++#bpf classifier
++CONFIG_NET_CLS_BPF=m
++#bpf action
++CONFIG_NET_ACT_BPF=y
+ 
+ #Enable init options
+ CONFIG_EPOLL=y
+@@ -606,294 +356,3 @@ CONFIG_HAVE_EBPF_JIT=y
+ CONFIG_NET_ACT_POLICE=m
+ CONFIG_NET_ACT_GACT=m
+ CONFIG_DUMMY=m
+-
+-#Enable Sample
+-CONFIG_SAMPLES=y
+-
+-#Enable Crypto API (AF_ALG sock)
+-CONFIG_CRYPTO_USER_API=m
+-CONFIG_CRYPTO_USER_API_HASH=m
+-CONFIG_CRYPTO_USER_API_SKCIPHER=m
+-
+-#Enable IOMMU, VFIO, Virtio and eventfd
+-CONFIG_IOMMU_SUPPORT=y
+-CONFIG_IOMMU_API=y
+-CONFIG_INTEL_IOMMU=y
+-CONFIG_INTEL_IOMMU_SVM=y
+-CONFIG_IRQ_REMAP=y
+-CONFIG_VFIO=m
+-CONFIG_VFIO_PLATFORM=m
+-CONFIG_VFIO_PCI=m
+-CONFIG_VGA_ARB=y
+-CONFIG_VFIO_PCI_VGA=y
+-CONFIG_EVENTFD=y
+-CONFIG_VIRTIO=m
+-CONFIG_VIRTIO_PCI=m
+-CONFIG_VIRTIO_NET=m
+-CONFIG_VIRTIO_RING=m
+-CONFIG_VIRTIO_BALLOON=m
+-CONFIG_VIRTIO_BLK=m 
+-
+-#
+-# HD-Audio
+-#
+-CONFIG_SND_PCI=y
+-CONFIG_SOUND=y
+-CONFIG_SND=y
+-#CONFIG_SND_SEQUENCER=y
+-#CONFIG_SND_SEQ_DUMMY=y
+-#CONFIG_SND_MIXER_OSS=y
+-#CONFIG_SND_PCM_OSS=y
+-#CONFIG_SND_SEQUENCER_OSS=y
+-#CONFIG_SND_HRTIMER=y
+-CONFIG_SND_HDA=m
+-CONFIG_SND_HDA_INTEL=m
+-CONFIG_SND_HDA_HWDEP=y
+-CONFIG_SND_HDA_RECONFIG=y
+-CONFIG_SND_HDA_INPUT_BEEP=y
+-CONFIG_SND_HDA_INPUT_BEEP_MODE=0
+-CONFIG_SND_HDA_PATCH_LOADER=y
+-CONFIG_SND_HDA_CODEC_REALTEK=m
+-CONFIG_SND_HDA_CODEC_ANALOG=m
+-CONFIG_SND_HDA_CODEC_SIGMATEL=m
+-CONFIG_SND_HDA_CODEC_VIA=m
+-CONFIG_SND_HDA_CODEC_HDMI=m
+-CONFIG_SND_HDA_CODEC_CIRRUS=m
+-CONFIG_SND_HDA_CODEC_CONEXANT=m
+-CONFIG_SND_HDA_CODEC_CA0110=m
+-CONFIG_SND_HDA_CODEC_CA0132=m
+-CONFIG_SND_HDA_CODEC_CA0132_DSP=y
+-CONFIG_SND_HDA_CODEC_CMEDIA=m
+-CONFIG_SND_HDA_CODEC_SI3054=m
+-CONFIG_SND_HDA_GENERIC=m
+-CONFIG_SND_HDA_POWER_SAVE_DEFAULT=0
+-CONFIG_SND_HDA_CORE=m
+-CONFIG_SND_HDA_DSP_LOADER=y
+-CONFIG_SND_HDA_I915=y
+-#CONFIG_SND_HDA_EXT_CORE=m
+-#CONFIG_SND_HDA_PREALLOC_SIZE=64
+-#CONFIG_SND_SPI=y
+-#CONFIG_SND_USB=y
+-#CONFIG_SND_USB_AUDIO=m
+-#CONFIG_SND_USB_UA101=m
+-#CONFIG_SND_USB_USX2Y=m
+-#CONFIG_SND_USB_CAIAQ=m
+-#CONFIG_SND_USB_CAIAQ_INPUT=y
+-#CONFIG_SND_USB_US122L=m
+-#CONFIG_SND_USB_6FIRE=m
+-#CONFIG_SND_USB_HIFACE=m
+-#CONFIG_SND_BCD2000=m
+-#CONFIG_SND_USB_LINE6=m
+-#CONFIG_SND_USB_POD=m
+-#CONFIG_SND_USB_PODHD=m
+-#CONFIG_SND_USB_TONEPORT=m
+-#CONFIG_SND_USB_VARIAX=m
+-#CONFIG_SND_FIREWIRE=y
+-#CONFIG_SND_FIREWIRE_LIB=m
+-#CONFIG_SND_DICE=m
+-#CONFIG_SND_OXFW=m
+-#CONFIG_SND_ISIGHT=m
+-#CONFIG_SND_SCS1X=m
+-#CONFIG_SND_FIREWORKS=m
+-#CONFIG_SND_BEBOB=m
+-#CONFIG_SND_FIREWIRE_DIGI00X=m
+-#CONFIG_SND_FIREWIRE_TASCAM=m
+-CONFIG_SND_PCMCIA=y
+-#CONFIG_SND_VXPOCKET=m
+-#CONFIG_SND_PDAUDIOCF=m
+-#CONFIG_SND_SOC=m
+-#CONFIG_SND_SOC_AC97_BUS=y
+-#CONFIG_SND_SOC_GENERIC_DMAENGINE_PCM=y
+-#CONFIG_SND_SOC_COMPRESS=y
+-#CONFIG_SND_SOC_TOPOLOGY=y
+-#CONFIG_SND_ATMEL_SOC=m
+-#CONFIG_SND_DESIGNWARE_I2S=m
+-
+-
+-#Needed for tc bpf classifier and action
+-CONFIG_NET_CLS=y
+-CONFIG_NET_CLS_ACT=y
+-CONFIG_NET_EGRESS=y
+-CONFIG_NET_INGRESS=y
+-#enable sch_clsact
+-CONFIG_NET_SCH_INGRESS=m
+-#bpf classifier
+-CONFIG_NET_CLS_BPF=m
+-#bpf action
+-CONFIG_NET_ACT_BPF=y
+-#Transmit Packet Steering
+-#CONFIG_XPS=y
+-#PF_PACKET socket
+-CONFIG_PACKET=y
+-
+-#KVM
+-CONFIG_KVM=y
+-CONFIG_KVM_INTEL=m
+-#CONFIG_IKCONFIG=y
+-#CONFIG_IKCONFIG_PROC=y
+-
+-
+-
+-#sysfs
+-#CONFIG_SYSFS_SYSCALL=y
+-#CONFIG_SYSFS=y
+-
+-#Packet generator
+-CONFIG_NET_PKTGEN=m
+-CONFIG_PROC_FS=y
+-
+-CONFIG_CFS_BANDWIDTH=y
+-CONFIG_FAIR_GROUP_SCHED=y
+-CONFIG_PROC_PID_CPUSET=y
+-#CONFIG_RT_GROUP_SCHED=y
+-#CONFIG_PREEMPT_RT_FULL=y
+-
+-
+-#Needed for embedded Linux
+-
+-CONFIG_ARCH_MULTIPLATFORM=y
+-CONFIG_MMU=y
+-CONFIG_BLOCK=y
+-CONFIG_RAMFS=y
+-CONFIG_SCSI_FC_ATTRS=m
+-CONFIG_SCSI=m
+-
+-CONFIG_JFFS2_FS=y
+-CONFIG_JFFS2_FS_DEBUG=1
+-CONFIG_JFFS2_FS_WBUF_VERIFY=y
+-CONFIG_JFFS2_SUMMARY=y
+-CONFIG_JFFS2_FS_XATTR=y
+-CONFIG_JFFS2_COMPRESSION_OPTIONS=y
+-CONFIG_JFFS2_LZO=y
+-CONFIG_JFFS2_RUBIN=y
+-
+-
+-CONFIG_SQUASHFS=y
+-CONFIG_SQUASHFS_LZO=y
+-CONFIG_SQUASHFS_XZ=y
+-CONFIG_ROMFS_FS=y
+-
+-CONFIG_MTD=y
+-CONFIG_MTD_CHAR=y
+-CONFIG_MTD_MTDRAM=y
+-CONFIG_MTD_BLOCK=y
+-CONFIG_MTD_BLOCK_RO=y
+-CONFIG_MTD_DEVICE=y
+-CONFIG_ETRAX_AXISFLASHMAP=y
+-CONFIG_ETRAX_ARCH_V32=y
+-CONFIG_ETRAX_ARCH_V10=y
+-CONFIG_GENERIC_IO=y
+-CONFIG_MTD_PARTITIONS=y
+-CONFIG_FTL=y
+-CONFIG_NFTL_RW=y
+-
+-CONFIG_LOGFS=y
+-
+-CONFIG_MTD_UBI=y
+-CONFIG_UBIFS_FS=y
+-CONFIG_UBIFS_FS_ADVANCED_COMPR=y
+-CONFIG_UBIFS_FS_LZO=y
+-CONFIG_UBIFS_FS_ZLIB=y
+-CONFIG_UBIFS_FS_ENCRYPTION=y
+-
+-CONFIG_YAFFS_FS=y
+-CONFIG_YAFFS_YAFFS1=y
+-CONFIG_YAFFS_YAFFS2=y
+-CONFIG_LZO=y
+-
+-CONFIG_HAVE_KERNEL_GZIP=y
+-CONFIG_HAVE_KERNEL_BZIP2=y
+-CONFIG_HAVE_KERNEL_LZMA=y
+-CONFIG_HAVE_KERNEL_XZ=y
+-CONFIG_HAVE_KERNEL_LZO=y
+-CONFIG_HAVE_KERNEL_LZ4=y
+-
+-
+-#Enable CPU shutdown if it's idle
+-CONFIG_CPU_IDLE=y
+-CONFIG_CPU_HOTPLUG=y
+-#Enable dynamic CPU freequency to conserve power
+-CONFIG_CPU_FREQ=y
+-# CONFIG_CPU_FREQ_STAT is not set
+-CONFIG_CPU_FREQ_DEFAULT_GOV_USERSPACE=y
+-CONFIG_CPU_FREQ_GOV_PERFORMANCE=y
+-CONFIG_CPU_FREQ_GOV_ONDEMAND=y
+-
+-#Copied from NPS-400 config
+-CONFIG_BLK_DEV_RAM=y
+-CONFIG_BLK_DEV_RAM_COUNT=1
+-CONFIG_BLK_DEV_RAM_SIZE=2048
+-CONFIG_DEBUG_INFO=y
+-CONFIG_DEBUG_MEMORY_INIT=y
+-CONFIG_ENABLE_DEFAULT_TRACERS=y
+-#CONFIG_PREEMPT=y
+-#CONFIG_EMBEDDED=y
+-CONFIG_IKCONFIG=y
+-CONFIG_IKCONFIG_PROC=y
+-CONFIG_SYSCTL_SYSCALL=y
+-#CONFIG_NO_HZ_IDLE=y
+-CONFIG_PERF_EVENTS=y
+-#CONFIG_ARC_PLAT_EZNPS=y
+-#CONFIG_ARC_CACHE_LINE_SHIFT=5
+-#CONFIG_ARC_KVADDR_SIZE=402
+-#CONFIG_ARC_EMUL_UNALIGNED=y
+-#CONFIG_ARC_UBOOT_SUPPORT=y
+-
+-#DPDK
+-CONFIG_RTE_LIBRTE_PMD_PCAP=y
+-CONFIG_HUGETLB_PAGE=y
+-CONFIG_HUGETLBFS=y
+-CONFIG_PROC_PAGE_MONITOR=y 
+-CONFIG_HPET=y
+-CONFIG_HPET_MMAP=y
+-CONFIG_HPET_MMAP_DEFAULT=y
+-#Enables userspace IO
+-CONFIG_UIO_PCI_GENERIC=m
+-CONFIG_UIO=m
+-
+-#Freescale DPAA
+-#CONFIG_FSL_DPAA_ETH=m
+-#CONFIG_FSL_DPAA=y
+-#CONFIG_FSL_FMAN=m
+-#CONFIG_NET_VENDOR_FREESCALE=y
+-#CONFIG_FSL_SOC=y
+-#CONFIG_FSL_SOC_BOOKE=y
+-#CONFIG_PPC_85xx=y
+-#CONFIG_PPC_BOOK3E=y
+-#CONFIG_PPC_BOOK3E_64=y
+-#CONFIG_ARCH_LAYERSCAPE=y
+-#This is needed for drivers relevent to other architecture
+-#CONFIG_COMPILE_TEST=y
+-#CONFIG_FS_ENET=m
+-#CONFIG_PPC_MPC512x=y
+-#CONFIG_6xx=y
+-#CONFIG_CPM1=y
+-#CONFIG_CPM2=y
+-#CONFIG_MPC8560=y
+-#CONFIG_MPC8560_ADS=y
+-#Freescale IOMMU
+-#CONFIG_FSL_PAMU=y
+-
+-#Enable NIC DMA (On my laptop, enabling these makes things slow)
+-#CONFIG_NET_DMA=y
+-#CONFIG_DMA_ENGINE=y
+-#CONFIG_INTEL_IOATDMA=m
+-
+-#Enable Intel DDIO (DCA), although y by default (On my laptop, enabling these makes things slow)
+-#CONFIG_DCA=m
+-#CONFIG_IXGBE_DCA=y
+-#CONFIG_IGB=m
+-
+-#Disable the timer ticks. Convert RCU callback and interrupts to kernel threads.
+-CONFIG_NO_HZ_FULL=y
+-CONFIG_RCU_NOCB_CPU=y
+-CONFIG_IRQ_FORCED_THREADING=y
+-
+-#Processor family
+-#Intel Processor family 6 or higher
+-#CONFIG_MCORE2=y
+-#Optimize for AMD Opteron/Athlon64/Hammer/K8 CPUs
+-#CONFIG_MK8=y
+-#Following are generated by default, so change it if appropiate 
+-#CONFIG_X86_L1_CACHE_SHIFT=7 
+-
+diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
+index 69c91d1..8841d3a 100644
+--- a/include/net/ip_fib.h
++++ b/include/net/ip_fib.h
+@@ -25,6 +25,8 @@
+ #include <linux/percpu.h>
+ #include <linux/notifier.h>
+ #include <linux/refcount.h>
++#include <linux/net.h>
++#include <linux/inet.h>
+ 
+ struct fib_config {
+ 	u8			fc_dst_len;
+@@ -197,6 +199,58 @@ struct fib_entry_notifier_info {
+ 	u32 tb_id;
+ };
+ 
++#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++/*
++ * The router can have upto 255 ports. This limitation
++ * allows us to represent netdev_index as an u8
++ */
++#define NETDEV_COUNT_MAX 255
++struct chunk {
++	u64 ci_bm;
++	u64 ci_off;
++	u64 ci_bm1[4];
++	u64 ci_off1[4];        
++};
++
++struct sail {
++	/*default next-hop (Level 0)*/
++	u8	def_nh;
++
++	/*Level 20*/
++	u8 __rcu *N20;
++	u8 __rcu *P20;
++	u32 __rcu *C20;
++
++	/*Level 26*/
++	u8 __rcu *N26;
++	u8 __rcu *P26;
++	struct chunk __rcu *CK26;
++	u32 __rcu *C26;
++	u32 ck26_total;/*Total number of chunks allocated*/
++	u32 ck26_count;/*Total number of chunks being used*/
++
++	/*Level 32*/
++	u8 __rcu *N32;
++	u8 __rcu *P32;
++	u32 ck32_total;/*Total number of chunks allocated*/
++	u32 ck32_count;/*Total number of chunks being used*/
++
++	/*Index to this array is stored in N20, N26 and N32*/
++	struct net_device	*netdevs[NETDEV_COUNT_MAX];
++	u8 netdev_count;/*Number of netdevs*/
++
++	spinlock_t lock;
++};
++
++int sail_ml_insert(struct sail *s, u32 key,
++		u8 prefix_len, struct net_device *dev);
++int sail_ml_delete(struct sail *s, u32 key,
++		u8 prefix_len);
++int sail_ml_flush(struct sail *s);
++int sail_ml_lookup(const struct sail *s, const __be32 dest,
++		struct net_device **dev);
++#endif
++
+ struct fib_nh_notifier_info {
+ 	struct fib_notifier_info info; /* must be first */
+ 	struct fib_nh *fib_nh;
+@@ -219,6 +273,10 @@ struct fib_table {
+ 	int			tb_num_default;
+ 	struct rcu_head		rcu;
+ 	unsigned long 		*tb_data;
++#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++	/*Each FIB table will have its own SAIL structure.*/
++	struct sail	sail;
++#endif
+ 	unsigned long		__data[0];
+ };
+ 
+@@ -259,15 +317,340 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+ 	return fib_get_table(net, id);
+ }
+ 
+-static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
++#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++	static u32 global_ip = 0;
++#endif
++
++
++static inline int fib_lookup(struct net *net, struct flowi4 *flp,
+ 			     struct fib_result *res, unsigned int flags)
+ {
+ 	struct fib_table *tb;
+ 	int err = -ENETUNREACH;
++#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++	static const char * const wtf_26[] = {
++		"1.11.8.173",
++		"1.22.229.12",
++		"1.45.169.125",
++		"1.65.197.30",
++		"1.240.4.85",
++		"1.176.220.116",
++		"1.177.136.19",
++		"1.177.171.40",
++		"1.22.243.78",
++		"1.23.236.70",
++		"1.186.77.25",
++		"1.45.34.87",
++		"2.92.43.229",
++		"2.93.39.69",
++		"2.16.40.38",
++		"8.8.200.239",
++		"8.18.46.215",
++		"8.24.237.210",
++		"2.20.17.221",
++		"12.5.59.16",
++		"12.27.187.190",
++		"12.28.71.153",
++		"12.66.72.54",
++		"12.111.165.26",
++		"12.150.213.3",
++		"12.151.79.144",
++		"12.156.6.107",
++		"12.196.167.182",
++		"12.164.67.242",
++		"12.204.197.211",
++		"12.222.202.223",
++		"12.230.239.213",
++		"12.232.99.210",
++		"13.2.113.242",
++		"14.0.195.0",
++		"14.102.76.238",
++		"14.102.25.227",
++		"14.53.93.198",
++		"17.69.61.193",
++		"23.38.95.180",
++		"24.40.241.31",
++		"24.116.194.178",
++		"20.143.240.47",
++		"23.12.157.217",
++		"23.53.130.100",
++		"23.47.183.138",
++		"23.34.136.217",
++		"23.49.94.4",
++		"23.53.99.180",
++		"23.54.3.205",
++		"24.116.223.55",
++		"24.143.27.120",
++		"24.233.187.149",
++		"31.132.6.83",
++		"24.123.112.2",
++		"31.25.36.14",
++		"12.157.193.76",
++		"31.13.139.145",
++		"12.191.56.206",
++		"20.139.5.220",
++		"27.6.64.52",
++		"23.49.104.208",
++		"14.35.130.15",
++		"24.192.51.174",
++		"24.206.129.112",
++		"27.113.242.2",
++		"24.187.70.182",
++		"24.213.245.105",
++		"2.92.110.18",
++		"27.101.114.16",
++		"8.3.161.100",
++		"1.176.245.176",
++		"23.52.19.106",
++		"27.123.248.92",
++		"23.36.247.134",
++		"8.10.70.42",
++		"23.19.201.139",
++		"23.51.221.161",
++		"31.13.165.223",
++		"8.27.163.183",
++		"24.48.194.238",
++		"24.177.33.67",
++		"12.159.195.230",
++		"1.11.78.94",
++		"24.138.119.240",
++		"23.49.104.57",
++		"2.23.127.48",
++		"2.20.135.23",
++		"23.51.201.82",
++		"24.100.138.68",
++		"12.176.226.110",
++		"14.201.39.9",
++		"12.197.249.101",
++		"24.192.163.220",
++		"24.249.47.255",
++		"8.21.243.224",
++		"8.19.13.233",
++	};
++
++	 static const char * const wtf[] = {
++		"95.78.8.4",
++		"46.147.83.0",
++		"176.213.96.1",
++		"95.77.104.0",
++		"202.56.53.0",
++		"115.89.96.0",
++		"122.102.24.1",
++		"23.22.111.212",
++		"203.194.49.0",
++		"173.247.112.5",
++		"23.22.144.145",
++		"173.247.48.0",
++		"188.66.48.10",
++		"27.45.166.74",
++		"143.3.207.0",
++		"175.146.0.0",
++		"175.146.0.3",
++		"175.145.0.0",
++		"27.146.0.0",
++		"25.176.0.0",
++		"223.32.0.1",
++		"220.32.0.0",
++		"223.16.0.0",
++		"223.0.0.0",
++		"203.33.186.250",
++		"27.160.0.0",
++		"27.128.0.0",
++		"20.128.0.0",
++		"203.226.255.61",
++		"203.226.255.49",
++		"203.226.255.60",
++		"152.99.4.47",
++		"124.137.102.252",
++		"124.137.100.240",
++		"2.52.96.130",
++		"2.53.103.76",
++		"32.211.62.211",
++		"27.251.66.158",
++		"32.243.228.88",
++		"32.191.106.198",
++		"8.87.189.26",
++		"8.177.203.8",
++		"8.203.73.108",
++		"24.23.43.245",
++		"24.22.50.154",
++		"24.104.156.0",
++		"24.104.156.1",
++		"24.104.151.2",
++		"60.0.0.3",
++		"60.244.93.218",
++		"58.68.133.37",
++		"14.66.147.199",
++		"15.63.7.51",
++		"15.18.35.189",
++		"64.254.27.242",
++		"64.254.27.8",
++		"64.254.27.234",
++		"64.87.55.185",
++		"24.123.93.189",
++		"24.123.91.191",
++		"24.106.95.125",
++		"24.106.95.243",
++		"24.106.95.192",
++		"24.106.95.90",
++		"16.3.110.176",
++		"16.111.221.8",
++		"16.102.86.234",
++		"16.251.110.31",
++		"16.90.156.79",
++		"16.76.252.91",
++		"16.102.86.234",
++		"60.194.233.156",
++		"66.243.187.157",
++		"66.243.187.197",
++		"66.199.31.185",
++		"66.199.31.140",
++		"66.147.219.46",
++		"78.24.215.246",
++		"78.24.214.248",
++		"90.188.31.245",
++		"144.243.215.191",
++		"144.243.215.127",
++		"2.91.97.138",
++		"1.22.184.78",
++		"2.94.1.165",
++		"153.7.226.249",
++		"153.43.248.144",
++		"155.6.105.118",
++		"2.78.35.60",
++		"78.33.51.2",
++		"78.33.46.2",
++		"78.33.42.0",
++		"78.33.10.1",
++		/*
++		 *"169.254.221.211",
++		 *"169.254.231.253",
++		 */
++	};
++	struct net_device *dev;
++	u64 tsc_begin = 0, tsc_end = 0, tot_tsc = 0;
++	u64 tsc_trie_begin = 0, tsc_trie_end = 0, tot_tsc_trie = 0;
++	int j = 0;
++	u32 ip_addr, temp;
++#endif
+ 
+ 	rcu_read_lock();
+ 
+ 	tb = fib_get_table(net, RT_TABLE_MAIN);
++
++#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++	for (j = 93; j < 93; j++) {
++		ip_addr = in_aton(wtf[j]);
++
++		if (tb) {
++			tsc_begin = rdtsc();
++			sail_ml_lookup(&tb->sail, ip_addr, &dev);
++			tsc_end = rdtsc();
++		}
++
++		temp = flp->daddr;
++		flp->daddr = ip_addr;
++		flp->flowi4_flags |= FLOWI_FLAG_SKIP_NH_OIF;
++		if (tb) {
++			tsc_trie_begin = rdtsc();
++			err = fib_table_lookup(tb, flp, res,
++					       flags | FIB_LOOKUP_NOREF);
++			tsc_trie_end = rdtsc();
++		}
++//		if (res->fi)
++//			pr_err("lookup_cost: %pI4=>%s depth=%d TSC=%llu",
++//				   &flp->daddr, res->fi->fib_dev->name,
++//				   res->prefixlen, tsc_end - tsc_begin);
++		flp->daddr = temp;
++
++		if (tb && dev && !err && res && res->fi && res->fi->fib_dev &&
++				strcmp(res->fi->fib_dev->name, dev->name) &&
++				strcmp(res->fi->fib_dev->name, "lo") &&
++				strcmp(res->fi->fib_dev->name, "wlo1")) {
++			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
++			pr_err("fib_lookup: %pI4 => %s", &ip_addr,
++			       res->fi->fib_dev->name);
++		}
++	}
++
++	for (j = 97; j < 97; j++) {
++		ip_addr = in_aton(wtf_26[j]);
++
++		if (tb) {
++			tsc_begin = rdtsc();
++			sail_ml_lookup(&tb->sail, ip_addr, &dev);
++			tsc_end = rdtsc();
++		}
++
++		temp = flp->daddr;
++		flp->daddr = ip_addr;
++		flp->flowi4_flags |= FLOWI_FLAG_SKIP_NH_OIF;
++		if (tb) {
++			tsc_trie_begin = rdtsc();
++			err = fib_table_lookup(tb, flp, res,
++					       flags | FIB_LOOKUP_NOREF);
++			tsc_trie_end = rdtsc();
++		}
++
++		flp->daddr = temp;
++
++		if (tb && dev && !err && res && res->fi && res->fi->fib_dev &&
++				strcmp(res->fi->fib_dev->name, dev->name) &&
++				strcmp(res->fi->fib_dev->name, "lo") &&
++				strcmp(res->fi->fib_dev->name, "wlo1")) {
++			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
++			pr_err("fib_lookup: %pI4 => %s", &ip_addr,
++			       res->fi->fib_dev->name);
++		}
++//Uncomment this block
++		if (tb && dev && !err && res && res->fi && res->fi->fib_dev
++		    && (tsc_end > tsc_begin))
++			pr_err("lookup_cost: %pI4=>%s depth=%d SAIL=%llu",
++			       &ip_addr, dev->name, res->prefixlen,
++			       tsc_end - tsc_begin);
++		tot_tsc += (tsc_end - tsc_begin);
++		tot_tsc_trie += (tsc_trie_end - tsc_trie_begin);
++	}
++//	pr_err("AVG_COST: SAIL=%llu trie=%llu !!!!!!!!", tot_tsc/97, tot_tsc_trie/97);
++
++	for (j = 0; j < 1000; j++) {
++//		get_random_bytes(&ip_addr, 4);
++		ip_addr = global_ip;
++		if (global_ip == 4294967295)
++			global_ip = 0;
++		else
++			global_ip++;
++
++		if (tb) {
++			tsc_begin = rdtsc();
++			sail_ml_lookup(&tb->sail, ip_addr, &dev);
++			tsc_end = rdtsc();
++		}
++
++		temp = flp->daddr;
++		flp->daddr = ip_addr;
++		flp->flowi4_flags |= FLOWI_FLAG_SKIP_NH_OIF;
++		if (tb) {
++			tsc_trie_begin = rdtsc();
++			err = fib_table_lookup(tb, flp, res,
++					       flags | FIB_LOOKUP_NOREF);
++			tsc_trie_end = rdtsc();
++		}
++
++		flp->daddr = temp;
++
++		if (tb && dev && !err && res && res->fi && res->fi->fib_dev &&
++		    strcmp(res->fi->fib_dev->name, dev->name) &&
++		    strcmp(res->fi->fib_dev->name, "lo") &&
++		    strcmp(res->fi->fib_dev->name, "wlo1") &&
++		    strcmp(dev->name, "wlo1")) {
++			pr_err("sail_lookup %pI4 => %s", &ip_addr, dev->name);
++			pr_err("fib_lookup: %pI4 => %s",
++				&ip_addr, res->fi->fib_dev->name);
++		}
++	}
++
++#endif
+ 	if (tb)
+ 		err = fib_table_lookup(tb, flp, res, flags | FIB_LOOKUP_NOREF);
+ 
+diff --git a/net/core/filter.c b/net/core/filter.c
+index 5e00f2b..584309d 100644
+--- a/net/core/filter.c
++++ b/net/core/filter.c
+@@ -4236,6 +4236,49 @@ static int bpf_fib_set_fwd_params(struct bpf_fib_lookup *params,
+ }
+ #endif
+ 
++#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++static int sail_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
++			   u32 flags, bool check_mtu)
++{
++	struct net_device *dev_in, *dev_out;
++	struct fib_table *tb;
++	struct neighbour *neigh;
++	u32 tbid;
++	int err;
++	u32 mtu;
++
++	if (flags & BPF_FIB_LOOKUP_DIRECT) {
++		dev_in = dev_get_by_index_rcu(net, params->ifindex);
++		if (unlikely(!dev_in))
++			return -ENODEV;
++		tbid = l3mdev_fib_table_rcu(dev_in) ? : RT_TABLE_MAIN;
++	} else {
++		tbid = RT_TABLE_MAIN;
++	}
++
++	tb = fib_get_table(net, tbid);
++	if (unlikely(!tb))
++		return BPF_FIB_LKUP_RET_NOT_FWDED;
++
++	err = sail_ml_lookup(&tb->sail, params->ipv4_dst, &dev_out);
++	if (err)
++		return -ENOENT;
++
++	if (check_mtu) {
++		mtu = min(READ_ONCE(dev_out->mtu), IP_MAX_MTU);
++		if (params->tot_len > mtu)
++			return BPF_FIB_LKUP_RET_FRAG_NEEDED;
++	}
++
++	neigh = __ipv4_neigh_lookup_noref(dev_out,
++					  (__force u32)params->ipv4_dst);
++	if (!neigh)
++		return BPF_FIB_LKUP_RET_NO_NEIGH;
++
++	return bpf_fib_set_fwd_params(params, neigh, dev_out);
++}
++#endif
++
+ #if IS_ENABLED(CONFIG_INET)
+ static int bpf_ipv4_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
+ 			       u32 flags, bool check_mtu)
+@@ -4468,9 +4511,15 @@ BPF_CALL_4(bpf_xdp_fib_lookup, struct xdp_buff *, ctx,
+ 	switch (params->family) {
+ #if IS_ENABLED(CONFIG_INET)
+ 	case AF_INET:
++#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++		return sail_fib_lookup(dev_net(ctx->rxq->dev), params,
++				       flags, true);
++#else
+ 		return bpf_ipv4_fib_lookup(dev_net(ctx->rxq->dev), params,
+ 					   flags, true);
+ #endif
++
++#endif
+ #if IS_ENABLED(CONFIG_IPV6)
+ 	case AF_INET6:
+ 		return bpf_ipv6_fib_lookup(dev_net(ctx->rxq->dev), params,
+diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
+index 32cae39..f6985d8 100644
+--- a/net/ipv4/Kconfig
++++ b/net/ipv4/Kconfig
+@@ -52,6 +52,19 @@ config IP_ADVANCED_ROUTER
+ 
+ 	  If unsure, say N here.
+ 
++config FIB_SAIL_ML
++	bool "SAIL_ML FIB lookup"
++	depends on !IP_ROUTE_MULTIPATH && !LWTUNNEL
++	default y
++	help
++	  This will store FIB table as a SAIL_ML (along with LC-trie). This is
++	  useful if you want fast routing table lookup in XDP forwarding.
++	  XDP along with fast routing table lookup will enable Linux to work as
++	  a carrier router (similar to DPDK/VPP based routers).
++	  Currently this option only supports up to 255 ports. Currently it does
++	  not support multi-path routing. It also does not support
++	  light-weight tunnels such as MPLS.
++
+ config IP_FIB_TRIE_STATS
+ 	bool "FIB TRIE statistics"
+ 	depends on IP_ADVANCED_ROUTER
+diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
+index 7446b98..59fa277 100644
+--- a/net/ipv4/Makefile
++++ b/net/ipv4/Makefile
+@@ -64,6 +64,7 @@ obj-$(CONFIG_TCP_CONG_LP) += tcp_lp.o
+ obj-$(CONFIG_TCP_CONG_YEAH) += tcp_yeah.o
+ obj-$(CONFIG_TCP_CONG_ILLINOIS) += tcp_illinois.o
+ obj-$(CONFIG_NETLABEL) += cipso_ipv4.o
++obj-$(CONFIG_FIB_SAIL_ML) += fib_sail_ml.o
+ 
+ obj-$(CONFIG_XFRM) += xfrm4_policy.o xfrm4_state.o xfrm4_input.o \
+ 		      xfrm4_output.o xfrm4_protocol.o
+diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
+new file mode 100644
+index 0000000..b56018e
+--- /dev/null
++++ b/net/ipv4/fib_sail_ml.c
+@@ -0,0 +1,1037 @@
++// SPDX-License-Identifier: GPL-2.0
++/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
++ *
++ * This program is free software; you can redistribute it and/or
++ *   modify it under the terms of the GNU General Public License
++ *   as published by the Free Software Foundation; either version
++ *   2 of the License, or (at your osion) any later version.
++ *
++ *
++ * This is a variant of SAIL_L called SAIL_ML. SAIL_L is
++ * originally described in:
++ *
++ * Yang, Tong, Gaogang Xie, YanBiao Li, Qiaobin Fu, Alex X. Liu, Qi Li,
++ * and Laurent Mathy. "Guarantee IP lookup performance with FIB explosion."
++ * In ACM SIGCOMM Computer Communication Review, vol. 44, no. 4, pp. 39-50.
++ * ACM, 2014.
++ */
++
++#include <net/ip_fib.h>
++
++/*The length of N20, P20 and C20 is 2^20*/
++#define LEVEL20_SIZE 65536
++
++/*Length of CK26*/
++#define CK26_SIZE 2048
++
++/*chunk size is 2^6*/
++#define CHUNK_SIZE 256
++
++/*Number of new chunks allocated each time*/
++#define NUM_CHUNKS 256
++
++/*Converts an index to bitmap*/
++#define IDX_TO_BM(X) (1ULL << (X))
++
++/*Calculates number of bits set to 1*/
++#define POPCNT(X) (hweight64(X))
++
++/*Converts an index and bitmap to actual index*/
++#define IDX_FRM_MASK(X, Y) (hweight64(((1ULL << (X)) - 1) & (Y)))
++
++/*Converts an index to CK26 to index to C26 */
++static u64 get_arr_idx(struct chunk c, u32 idx)
++{
++	u8 part_idx, part_off;
++
++        part_idx = idx / 64;
++        part_off = idx % 64;
++
++	return c.ci_off1[part_idx] + IDX_FRM_MASK(part_off, c.ci_bm1[part_idx]);
++}
++
++/*Insert net_device to the net-device array.
++ *This function returns the index to the net_device array
++ */
++static u8 get_netdev_index(struct sail *s, struct net_device *dev)
++{
++	u8 i;
++
++	/*checks if the net_device is already seen; if yes then return the
++	 *corresponding index
++	 */
++	for (i = 0; i < s->netdev_count; i++) {
++		if (s->netdevs[i] == dev)
++			return i;
++	}
++	/*If the net_device is not previously seen, then add it to the array*/
++	s->netdevs[s->netdev_count++] = dev;
++	return s->netdev_count - 1;
++}
++
++/* Insert a chunk to N26 and P26.*/
++static int N26_insert(struct sail *s, u32 chunk_id)
++{
++	long long m;
++
++	if (chunk_id > (s->ck26_count + 1) || chunk_id < 1) {
++		pr_err("Invalid chunk_id for level 26");
++		return -EINVAL;
++	}
++
++	/* No need to allocate memory*/
++	if (s->ck26_count < s->ck26_total) {
++		/*shift each element one step right to make
++		 *space for the new one
++		 */
++		m = (long long)s->ck26_count * CHUNK_SIZE - 1;
++		for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
++			s->N26[m + CHUNK_SIZE] = s->N26[m];
++			s->P26[m + CHUNK_SIZE] = s->P26[m];
++		}
++
++		/*Reset the newly created chunk*/
++		m = (chunk_id - 1) * CHUNK_SIZE;
++		for (; m < chunk_id * CHUNK_SIZE; m++) {
++			s->N26[m] = 0;
++			s->P26[m] = 0;
++		}
++		return 0;
++	} else if (s->ck26_count == s->ck26_total) {
++		/*Previously allocated memory is full.
++		 *So need to reallocate the array
++		 */
++		u8 *n, *p;
++		u8 *nh_old = s->N26;
++		u8 *pl_old = s->P26;
++		u64 arr_size, i, j, k, chunk_start;
++
++		arr_size = (s->ck26_count + NUM_CHUNKS) * CHUNK_SIZE;
++		n = kcalloc(arr_size, sizeof(*n), GFP_ATOMIC);
++		p = kcalloc(arr_size, sizeof(*p), GFP_ATOMIC);
++
++		if (!n || !p) {
++			kfree(n);
++			kfree(p);
++			return -ENOMEM;
++		}
++
++		/*Iterate over the new array and copy from the old array*/
++		for (i = 1, j = 0, chunk_start = 0;
++		     i <= (s->ck26_count + 1); i++) {
++			/*Copy the chunk*/
++			if (i != chunk_id) {
++				for (k = 0; k < CHUNK_SIZE; k++, j++) {
++					n[j] = nh_old[chunk_start + k];
++					p[j] = pl_old[chunk_start + k];
++				}
++				chunk_start += CHUNK_SIZE;
++			} else {
++				/*skip copying*/
++				j += CHUNK_SIZE;
++			}
++		}
++
++		/*Update the pointers with new pointer*/
++		rcu_assign_pointer(s->N26, n);
++		rcu_assign_pointer(s->P26, p);
++
++		/* Wait for all readers to be finished */
++		synchronize_rcu();
++
++		/*Remove old arrays*/
++		kfree(nh_old);
++		kfree(pl_old);
++		return 0;
++	}
++	return -EINVAL;
++}
++
++/* Insert a chunk in CK26.*/
++static int C26_insert(struct sail *s, u32 chunk_id)
++{
++	long long m;
++
++	if (chunk_id > (s->ck26_count + 1) || chunk_id < 1) {
++		pr_err("Invalid chunk_id for level 26");
++		return -EINVAL;
++	}
++
++	/* No need to allocate memory*/
++	if (s->ck26_count < s->ck26_total) {
++		/*shift each chunk one step right to make
++		 *space for the new one
++		 */
++		m = (long long)s->ck26_count - 1;
++		for (; m >= (chunk_id - 1); m--)
++			s->CK26[m + 1] = s->CK26[m];
++
++		/*Reset the newly created empty chunk*/
++		s->CK26[chunk_id - 1].ci_bm = 0;
++		s->CK26[chunk_id - 1].ci_off = 0;
++		return 0;
++	} else if (s->ck26_count == s->ck26_total) {
++		/*Previously allocated memory is full.
++		 *So need to reallocate the array
++		 */
++		struct chunk *chunks_old = s->CK26;
++		struct chunk *chunks;
++		u64 i;
++
++		chunks = kcalloc(s->ck26_count + NUM_CHUNKS,
++				 sizeof(*chunks), GFP_ATOMIC);
++		if (!chunks) {
++			kfree(chunks);
++			return -ENOMEM;
++		}
++
++		/*Iterate over the new array and copy from the old array*/
++		for (i = 1; i <= (s->ck26_count + 1); i++) {
++			if (i != chunk_id)
++				chunks[i - 1] = chunks_old[i - 1];
++		}
++
++		/*Update the pointers with new pointer*/
++		rcu_assign_pointer(s->CK26, chunks);
++
++		/* Wait for all readers to be finished */
++		synchronize_rcu();
++
++		/*Remove old arrays*/
++		kfree(chunks_old);
++		return 0;
++	}
++	return -EINVAL;
++}
++
++/* Insert a chunk to level 26. Note that chunk_id starts from 1, not 0 */
++static int level26_chunk_insert(struct sail *s, u32 chunk_id)
++{
++	int err = 0;
++
++	err = N26_insert(s, chunk_id);
++	if (!err)
++		err = C26_insert(s, chunk_id);
++	if (!err) {
++		if (s->ck26_count == s->ck26_total)
++			s->ck26_total += NUM_CHUNKS;
++		++s->ck26_count;
++	} else {
++		pr_err("Something is really wrong in level 26 insertion");
++	}
++	return err;
++}
++
++/* Insert a chunk at index. Note that chunk_id starts from 1, not 0 */
++static int level32_chunk_insert(struct sail *s, u32 chunk_id)
++{
++	long long m;
++
++	if (chunk_id > (s->ck32_count + 1) || chunk_id < 1) {
++		pr_err("Invalid chunk_id for level 32");
++		return -EINVAL;
++	}
++
++	if (s->ck32_count < s->ck32_total) {
++		/*shift each element one step right to make
++		 *space for the new one
++		 */
++		m = (long long)s->ck32_count * CHUNK_SIZE - 1;
++		for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
++			s->N32[m + CHUNK_SIZE] = s->N32[m];
++			s->P32[m + CHUNK_SIZE] = s->P32[m];
++		}
++
++		/*Reset the newly created empty chunk*/
++		m = (chunk_id - 1) * CHUNK_SIZE;
++		for (; m < chunk_id * CHUNK_SIZE; m++) {
++			s->N32[m] = 0;
++			s->P32[m] = 0;
++		}
++
++		++s->ck32_count;
++		return 0;
++	} else if (s->ck32_count == s->ck32_total) {
++		/*Previously allocated memory is full.
++		 *So need to reallocate the array
++		 */
++		u8 *nh_old = s->N32;
++		u8 *pl_old = s->P32;
++		u8 *n, *p;
++		u64 arrsize, i, j, k, chunk_start;
++
++		arrsize = (s->ck32_count + NUM_CHUNKS) * CHUNK_SIZE;
++		n = kcalloc(arrsize, sizeof(*n), GFP_ATOMIC);
++		p = kcalloc(arrsize, sizeof(*p), GFP_ATOMIC);
++
++		if (!n || !p) {
++			kfree(n);
++			kfree(p);
++			return -ENOMEM;
++		}
++
++		/*Iterate over the new array and copy from the old array*/
++		for (i = 1, j = 0, chunk_start = 0;
++		     i <= (s->ck32_count + 1); i++) {
++			/*copy the chunk*/
++			if (i != chunk_id) {
++				for (k = 0; k < CHUNK_SIZE; k++, j++) {
++					n[j] = nh_old[chunk_start + k];
++					p[j] = pl_old[chunk_start + k];
++				}
++				chunk_start += CHUNK_SIZE;
++			} else {
++				/*skip copying*/
++				j += CHUNK_SIZE;
++			}
++		}
++
++		rcu_assign_pointer(s->N32, n);
++		rcu_assign_pointer(s->P32, p);
++		/* Wait for all references to be released */
++		synchronize_rcu();
++		/*Increment the counter after chunk has been inserted*/
++		++s->ck32_count;
++		s->ck32_total += NUM_CHUNKS;
++		kfree(nh_old);
++		kfree(pl_old);
++		return 0;
++	}
++
++	pr_err("Something is really wrong in level 32 insertion");
++	return -EINVAL;
++}
++
++static int N26_delete(struct sail *s, u32 chunk_id)
++{
++	long long m;
++	u64 end_idx;
++
++	if (chunk_id > s->ck26_count) {
++		pr_err("Invalid chunk_id to level 26");
++		return -EINVAL;
++	}
++
++	if (chunk_id < s->ck26_count) {
++		/*shift each chunk one step left*/
++		m = (long long)chunk_id * CHUNK_SIZE;
++		end_idx = s->ck26_count * CHUNK_SIZE - 1;
++		for (; m <= end_idx; m++) {
++			s->N26[m - CHUNK_SIZE] = s->N26[m];
++			s->P26[m - CHUNK_SIZE] = s->P26[m];
++		}
++	}
++
++	/*Reset the the last chunk*/
++	end_idx = s->ck26_count * CHUNK_SIZE - 1;
++	m = (s->ck26_count - 1) * CHUNK_SIZE;
++	for (; m <= end_idx; m++) {
++		s->N26[m] = 0;
++		s->P26[m] = 0;
++	}
++
++	return 0;
++}
++
++static int CK26_delete(struct sail *s, u32 chunk_id)
++{
++	long long m;
++
++	if (chunk_id > s->ck26_count) {
++		pr_err("Invalid chunk_id to level 26");
++		return -EINVAL;
++	}
++
++	if (chunk_id < s->ck26_count) {
++		/*shift each chunk one step left*/
++		m = (long long)chunk_id;
++		for (; m <= s->ck26_count - 1; m++)
++			s->CK26[m - 1] = s->CK26[m];
++	}
++
++	/*Reset the the last chunk*/
++	s->CK26[s->ck26_count - 1].ci_off = 0;
++	s->CK26[s->ck26_count - 1].ci_bm = 0;
++
++	return 0;
++}
++
++static int level26_chunk_delete(struct sail *s, u32 chunk_id)
++{
++	N26_delete(s, chunk_id);
++	CK26_delete(s, chunk_id);
++	--s->ck26_count;
++	return 0;
++}
++
++static int level32_chunk_delete(struct sail *s, u32 chunk_id)
++{
++	long long m;
++	u64 end_idx;
++
++	if (chunk_id > s->ck32_count) {
++		pr_err("Invalid chunk_id to level 32");
++		return -EINVAL;
++	}
++
++	if (chunk_id < s->ck32_count) {
++		/*shift each chunk one step left*/
++		m = (long long)chunk_id * CHUNK_SIZE;
++		end_idx = s->ck32_count * CHUNK_SIZE - 1;
++		for (; m <= end_idx; m++) {
++			s->N32[m - CHUNK_SIZE] = s->N32[m];
++			s->P32[m - CHUNK_SIZE] = s->P32[m];
++		}
++	}
++
++	/*Reset the the last chunk*/
++	end_idx = s->ck32_count * CHUNK_SIZE - 1;
++	m = (s->ck32_count - 1) * CHUNK_SIZE;
++	for (; m <= end_idx; m++) {
++		s->N32[m] = 0;
++		s->P32[m] = 0;
++	}
++
++	--s->ck32_count;
++	return 0;
++}
++
++/*Calculate level 26 chunk ID based on N20*/
++static u32 level26_calc_chunkid(u32 *chunk_ids, u32 arr_size, u32 index)
++{
++	long long i;
++
++	if (index >= arr_size) {
++		pr_err("Index needs to be smaller than arr_size");
++		return 0;
++	}
++
++	/*Find the first chunk_no > 0 to the left*/
++	for (i = (long long)index - 1; i >= 0; i--) {
++		if (chunk_ids[i] > 0)
++			return chunk_ids[i] + 1;
++	}
++
++	/*If there is no chunk to the left, then this is the first chunk*/
++	return 1;
++}
++
++/*Update level 26 chunk ID in N20*/
++static int level26_update_chunkid(u32 *chunk_ids, u32 arr_size,
++				  u32 index, u32 chunk_id)
++{
++	long long i;
++
++	if (index >= arr_size) {
++		pr_err("Index needs to be smaller than arr_size");
++		return -EINVAL;
++	}
++
++	/*Check if the chunk ID already exists*/
++	for (i = (long long)index - 1; i >= 0; i--) {
++		if (chunk_ids[i] > 0) {
++			if (chunk_ids[i] >= chunk_id) {
++				pr_err("The chunk ID is already exist");
++				return -EINVAL;
++			}
++			break;
++		}
++	}
++
++	chunk_ids[index] = chunk_id;
++
++	/* Increment chunk ID to the right */
++	for (i = index + 1; i < arr_size; i++) {
++		if (chunk_ids[i] > 0)
++			chunk_ids[i]++;
++	}
++
++	return 0;
++}
++
++/*Remove Chunk ID for level 20*/
++static int C20_remove_chunkid(u32 *chunk_ids, u32 arr_size, u32 chunk_id)
++{
++	long long i;
++	bool found = false;
++
++	/*Check if the chunk ID already exists*/
++	for (i = 0; i < arr_size; i++) {
++		if (found && chunk_ids[i] > 0) {
++			chunk_ids[i]--;
++		} else if (chunk_ids[i] == chunk_id) {
++			chunk_ids[i] = 0;
++			found = true;
++		}
++	}
++
++	return 0;
++}
++
++static int C26_remove_chunkid(struct sail *s, u32 cnk_idx, u64 cnk_off)
++{
++	long long i;
++	bool found = false;
++	u32 chunk_id;
++
++	s->CK26[cnk_idx].ci_bm &= ~IDX_TO_BM(cnk_off);
++	chunk_id = s->C26[get_arr_idx(s->CK26[cnk_idx], cnk_off)];
++
++	for (i = 0; i < CK26_SIZE; i++) {
++		if (s->C26[i] == chunk_id)
++			found = true;
++		else if (found)
++			s->C26[i - 1] = s->C26[i];
++	}
++
++	return 0;
++}
++
++ /* Check if a chunk in level 32 is being unused
++  * @param nh N32
++  * @param chunk_idchunk ID that is being checked
++  * @return true/false
++  */
++static bool is_chunk_unused_level32(u8 *nh, u32 chunk_id)
++{
++	long long i;
++	long long start_index, end_index;
++
++	if (chunk_id < 1) {
++		pr_err("Invalid chunk ID");
++		return -EINVAL;
++	}
++
++	start_index = (long long)(chunk_id - 1) * CHUNK_SIZE;
++	end_index = (long long)chunk_id * CHUNK_SIZE - 1;
++	for (i = start_index; i <= end_index; i++) {
++		/*The chunk is being used*/
++		if (nh[i] > 0)
++			return false;
++	}
++
++	return true;
++}
++
++ /* Check if a chunk in level 26 is being unused
++  * @param nh N26
++  * @param ck CK26
++  * @param chunk_id chunk ID that is being checked
++  * @return true/false
++  */
++static bool is_chunk_unused_level26(u8 *nh, struct chunk *ck, u32 chunk_id)
++{
++	long long i;
++	long long start_index, end_index;
++
++	if (chunk_id < 1) {
++		pr_err("Invalid chunk ID");
++		return -EINVAL;
++	}
++
++	start_index = (long long)(chunk_id - 1) * CHUNK_SIZE;
++	end_index = (long long)chunk_id * CHUNK_SIZE - 1;
++	for (i = start_index; i <= end_index; i++) {
++		/*The chunk is being used*/
++		if (nh[i] > 0)
++			return false;
++	}
++
++	if (ck->ci_bm)
++		return false;
++
++	return true;
++}
++
++/**
++ * Find the chunk ID for level 32 based on CK26
++ * @param chunks CK26 array
++ * @param cnk_idx index to CK26
++ * @param cnk_off offset inside the chunk
++ * @param ci C26 array
++ * @return Chunk ID
++ */
++static u32 level32_calc_chunkid(struct chunk *chunks,
++				u32 cnk_idx, u32 cnk_off, u32 *ci)
++{
++	long long i, j;
++	long long index = 0;
++	bool found = false;
++	u8 part_idx, part_off;
++	struct chunk c;
++
++        part_idx = cnk_off / 64;
++        part_off = cnk_off % 64;
++        c = chunks[cnk_idx];
++
++	/*The chunk is not empty*/
++	if (c.ci_bm1[part_idx]) {
++            index = c.ci_off1[part_idx] +
++                    IDX_FRM_MASK(part_off, c.ci_bm1[part_idx]) - 1;
++            if(index < 0)
++                return 1;
++	}
++        
++        for (j = part_idx - 1; j >= 0; j--) {
++            if (c.ci_bm1[j]) {
++                index = c.ci_off1[j] + POPCNT(c.ci_bm1[j]) - 1;
++                goto found;
++            }
++        }
++        
++        /*Find a chunk to the left whose offset is not 0*/
++        for (i = (long long)cnk_idx - 1; i >= 0; i--) {
++            for (j = 3; j >= 0; j--) {
++                if (chunks[i].ci_bm1[j]) {
++                        index = chunks[i].ci_off1[j] +
++                                POPCNT(chunks[i].ci_bm1[j]) - 1;
++                        goto found;
++                }
++            }
++        }
++
++	/*If there is no chunk to the left, then this is the first chunk*/
++	return 1;
++found:
++        if (index >= CK26_SIZE) {
++                pr_err("Invalid Index");
++                return 0;
++        } else if (ci[index] <= 0) {
++                pr_err("Chunk ID says its zero which is not right");
++                return 0;
++        } else {
++                return ci[index] + 1;
++        }
++}
++
++/**
++ * Update level 32 chunk ID in CK26
++ * @param chunks CK26 array
++ * @param cnk_idx index to CK26
++ * @param cnk_off offset inside the chunk
++ * @param ci C26 array
++ * @return success/failure
++ */
++static int level32_update_chunkid(struct chunk *chunks,
++				  u32 cnk_idx, u32 cnk_off,
++				  u32 *ci, u32 chunk_count, u32 chunk_id)
++{
++	long long i, j;
++	u64 index = 0;
++	u8 part_idx, part_off;
++
++        part_idx = cnk_off / 64;
++        part_off = cnk_off % 64;
++
++	if (chunks[cnk_idx].ci_bm1[part_idx] & IDX_TO_BM(part_off)) {
++		pr_err("Error: bitmap is already set");
++		return -EINVAL;
++	}
++        
++	/*Calculate the actual index to chunk array*/
++	if (chunks[cnk_idx].ci_bm1[part_idx]) {
++		index = chunks[cnk_idx].ci_off1[part_idx] +
++			IDX_FRM_MASK(part_off, chunks[cnk_idx].ci_bm1[part_idx]);
++	} else {
++		/*Find a chunk to the left which is not empty*/
++		for (i = (long long)cnk_idx - 1; i >= 0; i--) {
++                    for (j = 3; j >= 0; j--) {
++			if (chunks[i].ci_bm1[j]) {
++				index = chunks[i].ci_off1[j] +
++					POPCNT(chunks[i].ci_bm1[j]);
++				break;
++			}   
++                    }
++		}
++	}
++
++	/* Move each elemenmt one step to the right to create a space for
++	 * new element. Also increment chunk IDs by 1
++	 */
++	for (i = CK26_SIZE - 2 ; i >= (long long)index; i--)
++		ci[i + 1] = (ci[i] > 0) ? ci[i] + 1 : ci[i];
++	ci[index] = chunk_id;
++
++	/*This is the first element of this chunk*/
++	if (!chunks[cnk_idx].ci_bm1[part_idx])
++		chunks[cnk_idx].ci_off1[part_idx] = index;
++
++	chunks[cnk_idx].ci_bm1[part_idx] |= IDX_TO_BM(part_off);
++
++	/*Update offset of the chunks to the right*/
++        for (j = part_idx + 1; j < 4; j++) {
++		if (chunks[i].ci_bm1[j])
++			chunks[i].ci_off1[j]++;
++        }
++        
++	/*Update offset of the chunks to the right*/
++	for (i = (long long)cnk_idx + 1; i < chunk_count; i++) {
++            for (j = 0; j < 4; j++) {
++		if (chunks[i].ci_bm1[j])
++			chunks[i].ci_off1[j]++;   
++            }
++	}
++
++	return 0;
++}
++
++int sail_ml_insert(struct sail *s, u32 key, u8 prefix_len,
++		   struct net_device *dev)
++{
++	int i;
++	u8 *n20, *p20;
++	u32 *c20;
++	u32 *c26;
++	u32 chunk_id;
++	u32 n20_idx;/*Index to N20, P20 and C20*/
++	u64 n26_idx;/*Index to N26 and P26*/
++	u64 c26_idx;/*Index to C26*/
++	u32 ck26_idx;/*Index to CK26*/
++	u64 ck26_off;/*offset inside a chunk*/
++	u8 part_idx, part_off;
++	u64 n32_idx;/*Index to N32 and P32*/
++	u32 consecutive_leafs;
++	u8 netdev_index = get_netdev_index(s, dev);
++	int err = 0;
++
++	spin_lock(&s->lock);
++
++	/* Default route */
++	if (prefix_len == 0) {
++		s->def_nh = netdev_index;
++		goto finish;
++	}
++
++	if (!s->N20) {
++		n20 = kcalloc(LEVEL20_SIZE, sizeof(*n20), GFP_ATOMIC);
++		p20 = kcalloc(LEVEL20_SIZE, sizeof(*p20), GFP_ATOMIC);
++		c20 = kcalloc(LEVEL20_SIZE, sizeof(*c20), GFP_ATOMIC);
++		c26 = kcalloc(CK26_SIZE, sizeof(*c26), GFP_ATOMIC);
++
++		if (!n20 || !c20 || !p20 || !c26) {
++			kfree(n20);
++			kfree(c20);
++			kfree(p20);
++			kfree(c26);
++			pr_err("Out of memory while allocating level 20");
++			goto error;
++		}
++
++		RCU_INIT_POINTER(s->N20, n20);
++		RCU_INIT_POINTER(s->P20, p20);
++		RCU_INIT_POINTER(s->C20, c20);
++		RCU_INIT_POINTER(s->C26, c26);
++		synchronize_rcu();
++	}
++
++	/*Eextract 20 bits from LSB.*/
++	n20_idx = key >> 16;
++
++	if (prefix_len <= 16) {
++		/*Level pushing*/
++		consecutive_leafs = 1U << (16 - prefix_len);
++		for (i = 0; i < consecutive_leafs; i++) {
++			/*Longer prefix exists*/
++			if (s->P20[n20_idx + i] > prefix_len)
++				continue;
++			s->N20[n20_idx + i] = netdev_index;
++			s->P20[n20_idx + i] = prefix_len;
++		}
++		goto finish;
++	}
++
++	/* The prefix_len is 21-32. So we need to check if if there is any
++	 * chunk for this index in level 26
++	 */
++	if (s->C20[n20_idx] == 0) {
++		chunk_id = level26_calc_chunkid(s->C20, LEVEL20_SIZE, n20_idx);
++		if (!chunk_id)
++			goto error;
++		err = level26_chunk_insert(s, chunk_id);
++		if (err)
++			goto error;
++		err = level26_update_chunkid(s->C20,
++					     LEVEL20_SIZE, n20_idx, chunk_id);
++		if (err)
++			goto error;
++	}
++
++	/*Extract 21-26 bit and calculate index to level 26*/
++	n26_idx = (s->C20[n20_idx] - 1) * CHUNK_SIZE + ((key & 65280) >> 8);
++	ck26_idx = s->C20[n20_idx] - 1;
++	ck26_off = (key & 65280) >> 8;
++
++	if (prefix_len <= 24) {
++		/*Level pushing*/
++		consecutive_leafs = 1U << (24 - prefix_len);
++		for (i = 0; i < consecutive_leafs; i++) {
++			/*Longer prefix exists*/
++			if (s->P26[n26_idx + i] > prefix_len)
++				continue;
++			s->N26[n26_idx + i] = netdev_index;
++			s->P26[n26_idx + i] = prefix_len;
++		}
++		goto finish;
++	}
++
++	/* The prefix_len is 27-32. So we need to check if if there is any
++	 * chunk for this index in level 32
++	 */
++        part_idx = ck26_off / 64;
++        part_off = ck26_off % 64;
++	if (!(s->CK26[ck26_idx].ci_bm1[part_idx] & IDX_TO_BM(part_off))) {
++		chunk_id = level32_calc_chunkid(s->CK26, ck26_idx,
++						ck26_off, s->C26);
++		if (!chunk_id)
++			goto error;
++		err = level32_chunk_insert(s, chunk_id);
++		if (err)
++			goto error;
++		err = level32_update_chunkid(s->CK26, ck26_idx, ck26_off,
++					     s->C26, s->ck26_count, chunk_id);
++		if (err)
++			goto error;
++	}
++
++	/*Extract 6 bit from MSB and calculate index to level 32*/
++	c26_idx = get_arr_idx(s->CK26[ck26_idx], ck26_off);
++	n32_idx = (s->C26[c26_idx] - 1) * CHUNK_SIZE + (key & 255);
++
++	if (prefix_len <= 32) {
++		/*Level pushing*/
++		consecutive_leafs = 1U << (32 - prefix_len);
++		for (i = 0; i < consecutive_leafs; i++) {
++			/*Longer prefix exists*/
++			if (s->P32[n32_idx + i] > prefix_len)
++				continue;
++			s->N32[n32_idx + i] = netdev_index;
++			s->P32[n32_idx + i] = prefix_len;
++		}
++		goto finish;
++	}
++
++error:
++	pr_err("Something is very wrong");
++finish:
++	spin_unlock(&s->lock);
++	return err;
++}
++
++int sail_ml_delete(struct sail *s, u32 key, u8 prefix_len)
++{
++	int i;
++	u32 n20_idx;/*Index to N20, P20 and C20*/
++	u64 n26_idx;/*Index to level N26 and P26*/
++	u32 ck26_idx;/*Index to CK26*/
++	u64 ck26_off;/*Offset inside chunk in level 26*/
++	u64 n32_idx;/*Index to level N32 and P32*/
++	u32 consecutive_leafs;
++	int err = 0;
++	u32 chunkid_level32;
++
++	spin_lock(&s->lock);
++
++	/* Simply ignore */
++	if (prefix_len == 0 || !s->N20)
++		goto error;
++
++	/*Eextract 20 bits from LSB.*/
++	n20_idx = key >> 12;
++
++	if (prefix_len <= 20) {
++		/*Level pushing*/
++		consecutive_leafs = 1U << (20 - prefix_len);
++		for (i = 0; i < consecutive_leafs; i++) {
++			/*Prefix len doesn't match*/
++			if (s->P20[n20_idx + i] != prefix_len)
++				continue;
++			s->N20[n20_idx + i] = 0;
++			s->P20[n20_idx + i] = 0;
++		}
++		goto finish;
++	}
++
++	/* The prefix_len is 21-32 but no chunk for the prefix*/
++	if (s->C20[n20_idx] == 0)
++		goto error;
++
++	ck26_idx = s->C20[n20_idx] - 1;
++	ck26_off = (key & 4032) >> 6;/*Extract 21-26 bit from the prefix*/
++	n26_idx = ck26_idx * CHUNK_SIZE + ck26_off;
++
++	if (prefix_len <= 26) {
++		/*Level pushing*/
++		consecutive_leafs = 1U << (26 - prefix_len);
++		for (i = 0; i < consecutive_leafs; i++) {
++			/*Prefix len doesn't match*/
++			if (s->P26[n26_idx + i] != prefix_len)
++				continue;
++			s->N26[n26_idx + i] = 0;
++			s->P26[n26_idx + i] = 0;
++		}
++		if (is_chunk_unused_level26(s->N26, &s->CK26[ck26_idx],
++					    s->C20[n20_idx])) {
++			level26_chunk_delete(s, s->C20[n20_idx]);
++			C20_remove_chunkid(s->C20, LEVEL20_SIZE,
++					   s->C20[n20_idx]);
++		}
++		goto finish;
++	}
++
++	/* The prefix_len is 27-32. but no chunk for the prefix */
++	if (!(s->CK26[ck26_idx].ci_bm & IDX_TO_BM(ck26_off)))
++		goto error;
++
++	chunkid_level32 = s->C26[get_arr_idx(s->CK26[ck26_idx], ck26_off)];
++
++	/*Extract 6 bit from MSB and calculate index to level 32*/
++	n32_idx = (chunkid_level32 - 1) * CHUNK_SIZE + (key & 63);
++
++	if (prefix_len <= 32) {
++		/*Level pushing*/
++		consecutive_leafs = 1U << (32 - prefix_len);
++
++		for (i = 0; i < consecutive_leafs; i++) {
++			/*Prefix len doesn't match*/
++			if (s->P32[n32_idx + i] != prefix_len)
++				continue;
++			s->N32[n32_idx + i] = 0;
++			s->P32[n32_idx + i] = 0;
++		}
++		if (is_chunk_unused_level32(s->N32, chunkid_level32)) {
++			level32_chunk_delete(s, chunkid_level32);
++			C26_remove_chunkid(s, ck26_idx, ck26_off);
++		}
++		goto finish;
++	}
++
++/*The prefix was not found*/
++error:
++	err = -ENOENT;
++finish:
++	spin_unlock(&s->lock);
++	return err;
++}
++
++int sail_ml_flush(struct sail *s)
++{
++	u8 *n20_old, *p20_old, *n26_old, *p26_old, *n32_old, *p32_old;
++	u32 *c20_old, *c26_old;
++	struct chunk *ck26_old;
++
++	spin_lock(&s->lock);
++
++	/*Save old pointers*/
++	n20_old = s->N20;
++	p20_old = s->P20;
++	c20_old = s->C20;
++	n26_old = s->N26;
++	p26_old = s->P26;
++	c26_old = s->C26;
++	ck26_old = s->CK26;
++	n32_old = s->N32;
++	p32_old = s->P32;
++
++	/*Set the counter before the chunk are deleted*/
++	s->ck32_count = 0;
++	s->ck26_count = 0;
++
++	/*Set the pointers to NULL*/
++	rcu_assign_pointer(s->N20, NULL);
++	rcu_assign_pointer(s->P20, NULL);
++	rcu_assign_pointer(s->C20, NULL);
++
++	rcu_assign_pointer(s->N26, NULL);
++	rcu_assign_pointer(s->P26, NULL);
++	rcu_assign_pointer(s->C26, NULL);
++	rcu_assign_pointer(s->CK26, NULL);
++
++	rcu_assign_pointer(s->N32, NULL);
++	rcu_assign_pointer(s->P32, NULL);
++
++	/* Wait for all references to be released */
++	synchronize_rcu();
++
++	/* Deallocate old references after setting them NULL*/
++	kfree(n20_old);
++	kfree(p20_old);
++	kfree(c20_old);
++	kfree(n26_old);
++	kfree(p26_old);
++	kfree(c26_old);
++	kfree(ck26_old);
++	kfree(n32_old);
++	kfree(p32_old);
++
++	spin_unlock(&s->lock);
++	return 0;
++}
++
++int sail_ml_lookup(const struct sail *s,
++		   const __be32 dest, struct net_device **dev)
++{
++	u8 *n20, *n26, *n32;
++	u32 *c20, *c26;
++	struct chunk *chunks26;
++	const u32 key = ntohl(dest);
++	u8 netdev_index = s->def_nh;
++	u32 n20_idx;/*Index to N20 and C20*/
++	u64 n26_idx;/*Index to N26*/
++	u32 ck26_idx;/*Index to CK26*/
++	u64 ck26_off;/*Offset inside a chunk*/
++	u64 c26_idx;/*Index to C26*/
++	u64 n32_idx;/*Index to N32*/
++	u8 part_idx, part_off;
++
++	rcu_read_lock();
++
++	/*extract 20 bits from LSB*/
++	n20_idx = key >> 16;
++	n20 = rcu_dereference(s->N20);
++	if (unlikely(!n20))
++		goto finish;
++
++	if (likely(n20[n20_idx] != 0))
++		netdev_index = n20[n20_idx];
++
++	/*Check if there is a longer prefix; if yes, extract 21-26 bit
++	 *  and calculate index to N26
++	 */
++	c20 = rcu_dereference(s->C20);
++	if (likely(c20[n20_idx] != 0)) {
++		ck26_idx = c20[n20_idx] - 1;
++		ck26_off = (key & 65280) >> 8;
++		n26_idx = ck26_idx * CHUNK_SIZE + ck26_off;
++	} else {
++		goto finish;
++	}
++
++	/*Find corresponding next-hop in level 26*/
++	n26 = rcu_dereference(s->N26);
++	if (likely(n26[n26_idx] != 0))
++		netdev_index = n26[n26_idx];
++
++	/*Check if there is a longer prefix; if yes, extract 6 bits
++	 * from MSB and calculate index to N32
++	 */
++	chunks26 = rcu_dereference(s->CK26);
++        part_idx = ck26_off / 64;
++        part_off = ck26_off % 64;
++	if (likely(chunks26[ck26_idx].ci_bm1[part_idx] & IDX_TO_BM(part_off))) {
++		c26 = rcu_dereference(s->C26);
++		c26_idx = chunks26[ck26_idx].ci_off1[part_idx] +
++			IDX_FRM_MASK(part_off, chunks26[ck26_idx].ci_bm1[part_idx]);
++		n32_idx = (c26[c26_idx] - 1) * CHUNK_SIZE + (key & 255);
++	} else {
++		goto finish;
++	}
++
++	n32 = rcu_dereference(s->N32);
++	if (likely(n32[n32_idx] != 0))
++		netdev_index = n32[n32_idx];
++
++finish:
++	*dev = s->netdevs[netdev_index];
++	rcu_read_unlock();
++	return 0;
++}
+diff --git a/net/ipv4/fib_trie.c b/net/ipv4/fib_trie.c
+index 5bc0c89..4762adc 100644
+--- a/net/ipv4/fib_trie.c
++++ b/net/ipv4/fib_trie.c
+@@ -1280,6 +1280,10 @@ int fib_table_insert(struct net *net, struct fib_table *tb,
+ 	if (err)
+ 		goto out_fib_notif;
+ 
++#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++	sail_ml_insert(&tb->sail, key, plen, fi->fib_dev);
++#endif
++
+ 	if (!plen)
+ 		tb->tb_num_default++;
+ 
+@@ -1568,6 +1572,10 @@ int fib_table_delete(struct net *net, struct fib_table *tb,
+ 
+ 	pr_debug("Deleting %08x/%d tos=%d t=%p\n", key, plen, tos, t);
+ 
++#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++//	sail_ml_delete(&tb->sail, key, plen);
++#endif
++
+ 	fa_to_delete = NULL;
+ 	hlist_for_each_entry_from(fa, fa_list) {
+ 		struct fib_info *fi = fa->fa_info;
+@@ -1929,6 +1937,10 @@ int fib_table_flush(struct net *net, struct fib_table *tb)
+ 		}
+ 	}
+ 
++#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++//	sail_ml_flush(&tb->sail);
++#endif
++
+ 	pr_debug("trie_flush found=%d\n", found);
+ 	return found;
+ }
