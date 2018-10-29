@@ -729,7 +729,7 @@ index 0f7a27f..64100d7 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..3549460 100644
+index 69c91d1..d3684ec 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -1039,7 +1039,7 @@ index 69c91d1..3549460 100644
  	tb = fib_get_table(net, RT_TABLE_MAIN);
 +
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+	for (j = 0; j < 94; j++) {
++	for (j = 94; j < 94; j++) {
 +		ip_addr = in_aton(wtf[j]);
 +
 +		if (tb) {
@@ -1262,10 +1262,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..bc8b2d7
+index 0000000..b01f0b7
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,1038 @@
+@@ -0,0 +1,1048 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1897,23 +1897,33 @@ index 0000000..bc8b2d7
 +		return -EINVAL;
 +	}
 +        
-+	/*Calculate the actual index to chunk array*/
++	/*looking for the index where Chunk ID will be copied*/
 +	if (chunks[cnk_idx].ci_bm1[part_idx]) {
 +		index = chunks[cnk_idx].ci_off1[part_idx] +
 +			IDX_FRM_MASK(part_off, chunks[cnk_idx].ci_bm1[part_idx]);
-+	} else {
-+		/*Find a chunk to the left which is not empty*/
-+		for (i = (long long)cnk_idx - 1; i >= 0; i--) {
-+                    for (j = 3; j >= 0; j--) {
-+			if (chunks[i].ci_bm1[j]) {
-+				index = chunks[i].ci_off1[j] +
-+					POPCNT(chunks[i].ci_bm1[j]);
-+				break;
-+			}   
-+                    }
-+		}
++                goto index_found;
 +	}
 +
++	/*check the other parts of the chunk*/        
++        for (j = part_idx - 1; j >= 0; j--) {
++            if (chunks[cnk_idx].ci_bm1[j]) {
++                index = chunks[cnk_idx].ci_off1[j] + POPCNT(chunks[cnk_idx].ci_bm1[j]);
++                goto index_found;
++            }
++        }
++        
++        /*Find a chunk to the left which is not empty*/
++        for (i = (long long)cnk_idx - 1; i >= 0; i--) {
++            for (j = 3; j >= 0; j--) {
++                if (chunks[i].ci_bm1[j]) {
++                        index = chunks[i].ci_off1[j] +
++                                POPCNT(chunks[i].ci_bm1[j]);
++                        goto index_found;
++                }   
++            }
++        }
++
++index_found:        
 +	/* Move each elemenmt one step to the right to create a space for
 +	 * new element. Also increment chunk IDs by 1
 +	 */
