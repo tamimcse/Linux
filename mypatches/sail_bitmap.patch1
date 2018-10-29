@@ -729,7 +729,7 @@ index 0f7a27f..64100d7 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..8841d3a 100644
+index 69c91d1..3549460 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -811,7 +811,7 @@ index 69c91d1..8841d3a 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +317,340 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +317,341 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -1021,6 +1021,7 @@ index 69c91d1..8841d3a 100644
 +		"78.33.46.2",
 +		"78.33.42.0",
 +		"78.33.10.1",
++		"8.3.16.0",
 +		/*
 +		 *"169.254.221.211",
 +		 *"169.254.231.253",
@@ -1038,7 +1039,7 @@ index 69c91d1..8841d3a 100644
  	tb = fib_get_table(net, RT_TABLE_MAIN);
 +
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+	for (j = 93; j < 93; j++) {
++	for (j = 0; j < 94; j++) {
 +		ip_addr = in_aton(wtf[j]);
 +
 +		if (tb) {
@@ -1261,10 +1262,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..b56018e
+index 0000000..bc8b2d7
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,1037 @@
+@@ -0,0 +1,1038 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1835,10 +1836,11 @@ index 0000000..b56018e
 +	if (c.ci_bm1[part_idx]) {
 +            index = c.ci_off1[part_idx] +
 +                    IDX_FRM_MASK(part_off, c.ci_bm1[part_idx]) - 1;
-+            if(index < 0)
-+                return 1;
++            if(index >= 0)
++                goto found;
 +	}
 +        
++	/*check the other parts of the chunk*/        
 +        for (j = part_idx - 1; j >= 0; j--) {
 +            if (c.ci_bm1[j]) {
 +                index = c.ci_off1[j] + POPCNT(c.ci_bm1[j]) - 1;
@@ -1925,10 +1927,10 @@ index 0000000..b56018e
 +
 +	chunks[cnk_idx].ci_bm1[part_idx] |= IDX_TO_BM(part_off);
 +
-+	/*Update offset of the chunks to the right*/
++	/*Update parts of the chunks to the right*/
 +        for (j = part_idx + 1; j < 4; j++) {
-+		if (chunks[i].ci_bm1[j])
-+			chunks[i].ci_off1[j]++;
++		if (chunks[cnk_idx].ci_bm1[j])
++			chunks[cnk_idx].ci_off1[j]++;
 +        }
 +        
 +	/*Update offset of the chunks to the right*/
