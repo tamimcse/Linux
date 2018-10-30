@@ -1267,10 +1267,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..2846758
+index 0000000..0892eda
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,1061 @@
+@@ -0,0 +1,1063 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1756,14 +1756,16 @@ index 0000000..2846758
 +        part_idx = cnk_off / 64;
 +        part_off = cnk_off % 64;
 +
-+	s->CK24[cnk_idx].c_bm[part_idx] &= ~IDX_TO_BM(part_off);
 +	chunk_id = s->C24[get_arr_idx(s->CK24[cnk_idx], cnk_off)];
++	s->CK24[cnk_idx].c_bm[part_idx] &= ~IDX_TO_BM(part_off);
 +
 +	for (i = 0; i < CK24_SIZE; i++) {
 +		if (s->C24[i] == chunk_id)
 +			found = true;
-+		else if (found)
++		else if (found && s->C24[i] > 0)
 +			s->C24[i - 1] = s->C24[i];
++                else if (found && !s->C24[i])
++                    break;
 +	}
 +
 +	return 0;
