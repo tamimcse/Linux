@@ -729,7 +729,7 @@ index 0f7a27f..64100d7 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..d6be28b 100644
+index 69c91d1..797b38a 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -741,7 +741,7 @@ index 69c91d1..d6be28b 100644
  
  struct fib_config {
  	u8			fc_dst_len;
-@@ -197,6 +199,63 @@ struct fib_entry_notifier_info {
+@@ -197,6 +199,56 @@ struct fib_entry_notifier_info {
  	u32 tb_id;
  };
  
@@ -751,34 +751,27 @@ index 69c91d1..d6be28b 100644
 + * allows us to represent netdev_index as an u8
 + */
 +#define NETDEV_COUNT_MAX 255
-+
-+
-+/*
-+ * A chunk has 4 parts. Each part can have up to 64 elements. c_bm contains
-+ * a bitmap and c_off contains the offset for the part. Together a chunk
-+ * can represent up to 256 elements.
-+ */
 +struct chunk {
-+	u64 c_bm[4];
-+	u64 c_off[4];        
++	u64 ci_bm;
++	u64 ci_off;
 +};
 +
 +struct sail {
 +	/*default next-hop (Level 0)*/
 +	u8	def_nh;
 +
-+	/*Level 16*/
-+	u8 __rcu *N16;
-+	u8 __rcu *P16;
-+	u16 __rcu *C16;
++	/*Level 20*/
++	u8 __rcu *N20;
++	u8 __rcu *P20;
++	u32 __rcu *C20;
 +
-+	/*Level 24*/
-+	u8 __rcu *N24;
-+	u8 __rcu *P24;
-+	struct chunk __rcu *CK24;
-+	u32 __rcu *C24;
-+	u32 ck24_total;/*Total number of chunks allocated*/
-+	u32 ck24_count;/*Total number of chunks being used*/
++	/*Level 26*/
++	u8 __rcu *N26;
++	u8 __rcu *P26;
++	struct chunk __rcu *CK26;
++	u32 __rcu *C26;
++	u32 ck26_total;/*Total number of chunks allocated*/
++	u32 ck26_count;/*Total number of chunks being used*/
 +
 +	/*Level 32*/
 +	u8 __rcu *N32;
@@ -786,7 +779,7 @@ index 69c91d1..d6be28b 100644
 +	u32 ck32_total;/*Total number of chunks allocated*/
 +	u32 ck32_count;/*Total number of chunks being used*/
 +
-+	/*Index to this array is stored in N16, N24 and N32*/
++	/*Index to this array is stored in N20, N26 and N32*/
 +	struct net_device	*netdevs[NETDEV_COUNT_MAX];
 +	u8 netdev_count;/*Number of netdevs*/
 +
@@ -805,7 +798,7 @@ index 69c91d1..d6be28b 100644
  struct fib_nh_notifier_info {
  	struct fib_notifier_info info; /* must be first */
  	struct fib_nh *fib_nh;
-@@ -219,6 +278,10 @@ struct fib_table {
+@@ -219,6 +271,10 @@ struct fib_table {
  	int			tb_num_default;
  	struct rcu_head		rcu;
  	unsigned long 		*tb_data;
@@ -816,7 +809,7 @@ index 69c91d1..d6be28b 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +322,341 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +315,340 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -1026,7 +1019,6 @@ index 69c91d1..d6be28b 100644
 +		"78.33.46.2",
 +		"78.33.42.0",
 +		"78.33.10.1",
-+		"8.3.16.0",
 +		/*
 +		 *"169.254.221.211",
 +		 *"169.254.231.253",
@@ -1044,7 +1036,7 @@ index 69c91d1..d6be28b 100644
  	tb = fib_get_table(net, RT_TABLE_MAIN);
 +
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+	for (j = 94; j < 94; j++) {
++	for (j = 93; j < 93; j++) {
 +		ip_addr = in_aton(wtf[j]);
 +
 +		if (tb) {
@@ -1078,7 +1070,7 @@ index 69c91d1..d6be28b 100644
 +		}
 +	}
 +
-+	for (j = 97; j < 97; j++) {
++	for (j = 0; j < 97; j++) {
 +		ip_addr = in_aton(wtf_26[j]);
 +
 +		if (tb) {
@@ -1116,7 +1108,7 @@ index 69c91d1..d6be28b 100644
 +		tot_tsc += (tsc_end - tsc_begin);
 +		tot_tsc_trie += (tsc_trie_end - tsc_trie_begin);
 +	}
-+//	pr_err("AVG_COST: SAIL=%llu trie=%llu !!!!!!!!", tot_tsc/97, tot_tsc_trie/97);
++	pr_err("AVG_COST: SAIL=%llu trie=%llu !!!!!!!!", tot_tsc/97, tot_tsc_trie/97);
 +
 +	for (j = 0; j < 1000; j++) {
 +//		get_random_bytes(&ip_addr, 4);
@@ -1267,10 +1259,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..0892eda
+index 0000000..33dfbc5
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,1063 @@
+@@ -0,0 +1,1001 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1291,17 +1283,17 @@ index 0000000..0892eda
 +
 +#include <net/ip_fib.h>
 +
-+/*The length of N16, P16 and C16 is 2^16*/
-+#define LEVEL16_SIZE 65536
++/*The length of N20, P20 and C20 is 2^20*/
++#define LEVEL20_SIZE 1048576
 +
-+/*Length of CK24*/
-+#define CK24_SIZE 2048
++/*Length of CK26*/
++#define CK26_SIZE 2048
 +
-+/*chunk size is 2^8*/
-+#define CHUNK_SIZE 256
++/*chunk size is 2^6*/
++#define CHUNK_SIZE 64
 +
 +/*Number of new chunks allocated each time*/
-+#define NUM_CHUNKS 256
++#define NUM_CHUNKS 1024
 +
 +/*Converts an index to bitmap*/
 +#define IDX_TO_BM(X) (1ULL << (X))
@@ -1315,12 +1307,7 @@ index 0000000..0892eda
 +/*Converts an index to CK26 to index to C26 */
 +static u64 get_arr_idx(struct chunk c, u32 idx)
 +{
-+	u8 part_idx, part_off;
-+
-+        part_idx = idx / 64;
-+        part_off = idx % 64;
-+
-+	return c.c_off[part_idx] + IDX_FRM_MASK(part_off, c.c_bm[part_idx]);
++	return c.ci_off + IDX_FRM_MASK(idx, c.ci_bm);
 +}
 +
 +/*Insert net_device to the net-device array.
@@ -1343,43 +1330,43 @@ index 0000000..0892eda
 +}
 +
 +/* Insert a chunk to N26 and P26.*/
-+static int N24_insert(struct sail *s, u16 chunk_id)
++static int N26_insert(struct sail *s, u32 chunk_id)
 +{
 +	long long m;
 +
-+	if (chunk_id > (s->ck24_count + 1) || chunk_id < 1) {
++	if (chunk_id > (s->ck26_count + 1) || chunk_id < 1) {
 +		pr_err("Invalid chunk_id for level 26");
 +		return -EINVAL;
 +	}
 +
 +	/* No need to allocate memory*/
-+	if (s->ck24_count < s->ck24_total) {
++	if (s->ck26_count < s->ck26_total) {
 +		/*shift each element one step right to make
 +		 *space for the new one
 +		 */
-+		m = (long long)s->ck24_count * CHUNK_SIZE - 1;
++		m = (long long)s->ck26_count * CHUNK_SIZE - 1;
 +		for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
-+			s->N24[m + CHUNK_SIZE] = s->N24[m];
-+			s->P24[m + CHUNK_SIZE] = s->P24[m];
++			s->N26[m + CHUNK_SIZE] = s->N26[m];
++			s->P26[m + CHUNK_SIZE] = s->P26[m];
 +		}
 +
 +		/*Reset the newly created chunk*/
 +		m = (chunk_id - 1) * CHUNK_SIZE;
 +		for (; m < chunk_id * CHUNK_SIZE; m++) {
-+			s->N24[m] = 0;
-+			s->P24[m] = 0;
++			s->N26[m] = 0;
++			s->P26[m] = 0;
 +		}
 +		return 0;
-+	} else if (s->ck24_count == s->ck24_total) {
++	} else if (s->ck26_count == s->ck26_total) {
 +		/*Previously allocated memory is full.
 +		 *So need to reallocate the array
 +		 */
 +		u8 *n, *p;
-+		u8 *nh_old = s->N24;
-+		u8 *pl_old = s->P24;
++		u8 *nh_old = s->N26;
++		u8 *pl_old = s->P26;
 +		u64 arr_size, i, j, k, chunk_start;
 +
-+		arr_size = (s->ck24_count + NUM_CHUNKS) * CHUNK_SIZE;
++		arr_size = (s->ck26_count + NUM_CHUNKS) * CHUNK_SIZE;
 +		n = kcalloc(arr_size, sizeof(*n), GFP_ATOMIC);
 +		p = kcalloc(arr_size, sizeof(*p), GFP_ATOMIC);
 +
@@ -1391,7 +1378,7 @@ index 0000000..0892eda
 +
 +		/*Iterate over the new array and copy from the old array*/
 +		for (i = 1, j = 0, chunk_start = 0;
-+		     i <= (s->ck24_count + 1); i++) {
++		     i <= (s->ck26_count + 1); i++) {
 +			/*Copy the chunk*/
 +			if (i != chunk_id) {
 +				for (k = 0; k < CHUNK_SIZE; k++, j++) {
@@ -1406,8 +1393,8 @@ index 0000000..0892eda
 +		}
 +
 +		/*Update the pointers with new pointer*/
-+		rcu_assign_pointer(s->N24, n);
-+		rcu_assign_pointer(s->P24, p);
++		rcu_assign_pointer(s->N26, n);
++		rcu_assign_pointer(s->P26, p);
 +
 +		/* Wait for all readers to be finished */
 +		synchronize_rcu();
@@ -1421,40 +1408,37 @@ index 0000000..0892eda
 +}
 +
 +/* Insert a chunk in CK26.*/
-+static int C24_insert(struct sail *s, u16 chunk_id)
++static int C26_insert(struct sail *s, u32 chunk_id)
 +{
 +	long long m;
 +
-+	if (chunk_id > (s->ck24_count + 1) || chunk_id < 1) {
++	if (chunk_id > (s->ck26_count + 1) || chunk_id < 1) {
 +		pr_err("Invalid chunk_id for level 26");
 +		return -EINVAL;
 +	}
 +
 +	/* No need to allocate memory*/
-+	if (s->ck24_count < s->ck24_total) {
++	if (s->ck26_count < s->ck26_total) {
 +		/*shift each chunk one step right to make
 +		 *space for the new one
 +		 */
-+		m = (long long)s->ck24_count - 1;
++		m = (long long)s->ck26_count - 1;
 +		for (; m >= (chunk_id - 1); m--)
-+			s->CK24[m + 1] = s->CK24[m];
++			s->CK26[m + 1] = s->CK26[m];
 +
 +		/*Reset the newly created empty chunk*/
-+                for (m = 0; m < 4; m++) {
-+                    s->CK24[chunk_id - 1].c_bm[m] = 0;
-+                    s->CK24[chunk_id - 1].c_off[m] = 0;                    
-+                }
-+
++		s->CK26[chunk_id - 1].ci_bm = 0;
++		s->CK26[chunk_id - 1].ci_off = 0;
 +		return 0;
-+	} else if (s->ck24_count == s->ck24_total) {
++	} else if (s->ck26_count == s->ck26_total) {
 +		/*Previously allocated memory is full.
 +		 *So need to reallocate the array
 +		 */
-+		struct chunk *chunks_old = s->CK24;
++		struct chunk *chunks_old = s->CK26;
 +		struct chunk *chunks;
 +		u64 i;
 +
-+		chunks = kcalloc(s->ck24_count + NUM_CHUNKS,
++		chunks = kcalloc(s->ck26_count + NUM_CHUNKS,
 +				 sizeof(*chunks), GFP_ATOMIC);
 +		if (!chunks) {
 +			kfree(chunks);
@@ -1462,13 +1446,13 @@ index 0000000..0892eda
 +		}
 +
 +		/*Iterate over the new array and copy from the old array*/
-+		for (i = 1; i <= (s->ck24_count + 1); i++) {
++		for (i = 1; i <= (s->ck26_count + 1); i++) {
 +			if (i != chunk_id)
 +				chunks[i - 1] = chunks_old[i - 1];
 +		}
 +
 +		/*Update the pointers with new pointer*/
-+		rcu_assign_pointer(s->CK24, chunks);
++		rcu_assign_pointer(s->CK26, chunks);
 +
 +		/* Wait for all readers to be finished */
 +		synchronize_rcu();
@@ -1481,17 +1465,17 @@ index 0000000..0892eda
 +}
 +
 +/* Insert a chunk to level 26. Note that chunk_id starts from 1, not 0 */
-+static int level24_chunk_insert(struct sail *s, u16 chunk_id)
++static int level26_chunk_insert(struct sail *s, u32 chunk_id)
 +{
 +	int err = 0;
 +
-+	err = N24_insert(s, chunk_id);
++	err = N26_insert(s, chunk_id);
 +	if (!err)
-+		err = C24_insert(s, chunk_id);
++		err = C26_insert(s, chunk_id);
 +	if (!err) {
-+		if (s->ck24_count == s->ck24_total)
-+			s->ck24_total += NUM_CHUNKS;
-+		++s->ck24_count;
++		if (s->ck26_count == s->ck26_total)
++			s->ck26_total += NUM_CHUNKS;
++		++s->ck26_count;
 +	} else {
 +		pr_err("Something is really wrong in level 26 insertion");
 +	}
@@ -1578,67 +1562,65 @@ index 0000000..0892eda
 +	return -EINVAL;
 +}
 +
-+static int N24_delete(struct sail *s, u16 chunk_id)
++static int N26_delete(struct sail *s, u32 chunk_id)
 +{
 +	long long m;
 +	u64 end_idx;
 +
-+	if (chunk_id > s->ck24_count) {
++	if (chunk_id > s->ck26_count) {
 +		pr_err("Invalid chunk_id to level 26");
 +		return -EINVAL;
 +	}
 +
-+	if (chunk_id < s->ck24_count) {
++	if (chunk_id < s->ck26_count) {
 +		/*shift each chunk one step left*/
 +		m = (long long)chunk_id * CHUNK_SIZE;
-+		end_idx = s->ck24_count * CHUNK_SIZE - 1;
++		end_idx = s->ck26_count * CHUNK_SIZE - 1;
 +		for (; m <= end_idx; m++) {
-+			s->N24[m - CHUNK_SIZE] = s->N24[m];
-+			s->P24[m - CHUNK_SIZE] = s->P24[m];
++			s->N26[m - CHUNK_SIZE] = s->N26[m];
++			s->P26[m - CHUNK_SIZE] = s->P26[m];
 +		}
 +	}
 +
 +	/*Reset the the last chunk*/
-+	end_idx = s->ck24_count * CHUNK_SIZE - 1;
-+	m = (s->ck24_count - 1) * CHUNK_SIZE;
++	end_idx = s->ck26_count * CHUNK_SIZE - 1;
++	m = (s->ck26_count - 1) * CHUNK_SIZE;
 +	for (; m <= end_idx; m++) {
-+		s->N24[m] = 0;
-+		s->P24[m] = 0;
++		s->N26[m] = 0;
++		s->P26[m] = 0;
 +	}
 +
 +	return 0;
 +}
 +
-+static int CK24_delete(struct sail *s, u16 chunk_id)
++static int CK26_delete(struct sail *s, u32 chunk_id)
 +{
 +	long long m;
 +
-+	if (chunk_id > s->ck24_count) {
++	if (chunk_id > s->ck26_count) {
 +		pr_err("Invalid chunk_id to level 26");
 +		return -EINVAL;
 +	}
 +
-+	if (chunk_id < s->ck24_count) {
++	if (chunk_id < s->ck26_count) {
 +		/*shift each chunk one step left*/
 +		m = (long long)chunk_id;
-+		for (; m <= s->ck24_count - 1; m++)
-+			s->CK24[m - 1] = s->CK24[m];
++		for (; m <= s->ck26_count - 1; m++)
++			s->CK26[m - 1] = s->CK26[m];
 +	}
 +
 +	/*Reset the the last chunk*/
-+        for (m = 0; m < 4; m++) {
-+            s->CK24[s->ck24_count - 1].c_off[m] = 0;
-+            s->CK24[s->ck24_count - 1].c_bm[m] = 0;
-+        }
++	s->CK26[s->ck26_count - 1].ci_off = 0;
++	s->CK26[s->ck26_count - 1].ci_bm = 0;
 +
 +	return 0;
 +}
 +
-+static int level24_chunk_delete(struct sail *s, u16 chunk_id)
++static int level26_chunk_delete(struct sail *s, u32 chunk_id)
 +{
-+	N24_delete(s, chunk_id);
-+	CK24_delete(s, chunk_id);
-+	--s->ck24_count;
++	N26_delete(s, chunk_id);
++	CK26_delete(s, chunk_id);
++	--s->ck26_count;
 +	return 0;
 +}
 +
@@ -1674,8 +1656,8 @@ index 0000000..0892eda
 +	return 0;
 +}
 +
-+/*Calculate level 24 chunk ID based on N20*/
-+static u16 level24_calc_chunkid(u16 *chunk_ids, u32 arr_size, u16 index)
++/*Calculate level 26 chunk ID based on N20*/
++static u32 level26_calc_chunkid(u32 *chunk_ids, u32 arr_size, u32 index)
 +{
 +	long long i;
 +
@@ -1694,21 +1676,21 @@ index 0000000..0892eda
 +	return 1;
 +}
 +
-+/*Update level 24 chunk ID in C16*/
-+static int level24_update_chunkid(u16 *c16, u32 c16_size,
-+				  u16 index, u16 chunk_id)
++/*Update level 26 chunk ID in N20*/
++static int level26_update_chunkid(u32 *chunk_ids, u32 arr_size,
++				  u32 index, u32 chunk_id)
 +{
 +	long long i;
 +
-+	if (index >= c16_size) {
++	if (index >= arr_size) {
 +		pr_err("Index needs to be smaller than arr_size");
 +		return -EINVAL;
 +	}
 +
 +	/*Check if the chunk ID already exists*/
 +	for (i = (long long)index - 1; i >= 0; i--) {
-+		if (c16[i] > 0) {
-+			if (c16[i] >= chunk_id) {
++		if (chunk_ids[i] > 0) {
++			if (chunk_ids[i] >= chunk_id) {
 +				pr_err("The chunk ID is already exist");
 +				return -EINVAL;
 +			}
@@ -1716,29 +1698,29 @@ index 0000000..0892eda
 +		}
 +	}
 +
-+	c16[index] = chunk_id;
++	chunk_ids[index] = chunk_id;
 +
 +	/* Increment chunk ID to the right */
-+	for (i = index + 1; i < c16_size; i++) {
-+		if (c16[i] > 0)
-+			c16[i]++;
++	for (i = index + 1; i < arr_size; i++) {
++		if (chunk_ids[i] > 0)
++			chunk_ids[i]++;
 +	}
 +
 +	return 0;
 +}
 +
-+/*Remove Chunk ID for level 16*/
-+static int C16_remove_chunkid(u16 *c16, u32 c16_size, u16 chunk_id)
++/*Remove Chunk ID for level 20*/
++static int C20_remove_chunkid(u32 *chunk_ids, u32 arr_size, u32 chunk_id)
 +{
 +	long long i;
 +	bool found = false;
 +
 +	/*Check if the chunk ID already exists*/
-+	for (i = 0; i < c16_size; i++) {
-+		if (found && c16[i] > 0) {
-+			c16[i]--;
-+		} else if (c16[i] == chunk_id) {
-+			c16[i] = 0;
++	for (i = 0; i < arr_size; i++) {
++		if (found && chunk_ids[i] > 0) {
++			chunk_ids[i]--;
++		} else if (chunk_ids[i] == chunk_id) {
++			chunk_ids[i] = 0;
 +			found = true;
 +		}
 +	}
@@ -1746,26 +1728,20 @@ index 0000000..0892eda
 +	return 0;
 +}
 +
-+static int C24_remove_chunkid(struct sail *s, u16 cnk_idx, u64 cnk_off)
++static int C26_remove_chunkid(struct sail *s, u32 cnk_idx, u64 cnk_off)
 +{
 +	long long i;
 +	bool found = false;
 +	u32 chunk_id;
-+	u8 part_idx, part_off;
 +
-+        part_idx = cnk_off / 64;
-+        part_off = cnk_off % 64;
++	s->CK26[cnk_idx].ci_bm &= ~IDX_TO_BM(cnk_off);
++	chunk_id = s->C26[get_arr_idx(s->CK26[cnk_idx], cnk_off)];
 +
-+	chunk_id = s->C24[get_arr_idx(s->CK24[cnk_idx], cnk_off)];
-+	s->CK24[cnk_idx].c_bm[part_idx] &= ~IDX_TO_BM(part_off);
-+
-+	for (i = 0; i < CK24_SIZE; i++) {
-+		if (s->C24[i] == chunk_id)
++	for (i = 0; i < CK26_SIZE; i++) {
++		if (s->C26[i] == chunk_id)
 +			found = true;
-+		else if (found && s->C24[i] > 0)
-+			s->C24[i - 1] = s->C24[i];
-+                else if (found && !s->C24[i])
-+                    break;
++		else if (found)
++			s->C26[i - 1] = s->C26[i];
 +	}
 +
 +	return 0;
@@ -1803,7 +1779,7 @@ index 0000000..0892eda
 +  * @param chunk_id chunk ID that is being checked
 +  * @return true/false
 +  */
-+static bool is_chunk_unused_level24(u8 *nh, struct chunk *ck, u16 chunk_id)
++static bool is_chunk_unused_level26(u8 *nh, struct chunk *ck, u32 chunk_id)
 +{
 +	long long i;
 +	long long start_index, end_index;
@@ -1821,7 +1797,7 @@ index 0000000..0892eda
 +			return false;
 +	}
 +
-+	if (ck->c_bm[0] || ck->c_bm[1] || ck->c_bm[2] || ck->c_bm[3])
++	if (ck->ci_bm)
 +		return false;
 +
 +	return true;
@@ -1838,54 +1814,43 @@ index 0000000..0892eda
 +static u32 level32_calc_chunkid(struct chunk *chunks,
 +				u32 cnk_idx, u32 cnk_off, u32 *ci)
 +{
-+	long long i, j;
++	long long i;
 +	long long index = 0;
-+	u8 part_idx, part_off;
-+	struct chunk c;
++	bool found = false;
 +
-+        part_idx = cnk_off / 64;
-+        part_off = cnk_off % 64;
-+        c = chunks[cnk_idx];
-+
-+	/*The chunk is not empty*/
-+	if (c.c_bm[part_idx]) {
-+            index = c.c_off[part_idx] +
-+                    IDX_FRM_MASK(part_off, c.c_bm[part_idx]) - 1;
-+            if(index >= 0)
-+                goto found;
++	/*Calculate the actual index to chunk array*/
++	if (chunks[cnk_idx].ci_bm) {
++		index = chunks[cnk_idx].ci_off +
++			IDX_FRM_MASK(cnk_off, chunks[cnk_idx].ci_bm) - 1;
++		if (index < 0)
++			return 1;
++		found = true;
++	} else {
++		/*Find a chunk to the left whose offset is not 0*/
++		for (i = (long long)cnk_idx - 1; i >= 0; i--) {
++			if (chunks[i].ci_bm) {
++				index = chunks[i].ci_off +
++					POPCNT(chunks[i].ci_bm) - 1;
++				found = true;
++				break;
++			}
++		}
 +	}
-+        
-+	/*check the other parts of the chunk*/        
-+        for (j = part_idx - 1; j >= 0; j--) {
-+            if (c.c_bm[j]) {
-+                index = c.c_off[j] + POPCNT(c.c_bm[j]) - 1;
-+                goto found;
-+            }
-+        }
-+        
-+        /*Find a chunk to the left whose offset is not 0*/
-+        for (i = (long long)cnk_idx - 1; i >= 0; i--) {
-+            for (j = 3; j >= 0; j--) {
-+                if (chunks[i].c_bm[j]) {
-+                        index = chunks[i].c_off[j] +
-+                                POPCNT(chunks[i].c_bm[j]) - 1;
-+                        goto found;
-+                }
-+            }
-+        }
++
++	if (found) {
++		if (index >= CK26_SIZE) {
++			pr_err("Invalid Index");
++			return 0;
++		} else if (ci[index] <= 0) {
++			pr_err("Chunk ID says its zero which is not right");
++			return 0;
++		} else {
++			return ci[index] + 1;
++		}
++	}
 +
 +	/*If there is no chunk to the left, then this is the first chunk*/
 +	return 1;
-+found:
-+        if (index >= CK24_SIZE) {
-+                pr_err("Invalid Index");
-+                return 0;
-+        } else if (ci[index] <= 0) {
-+                pr_err("Chunk ID says its zero which is not right");
-+                return 0;
-+        } else {
-+                return ci[index] + 1;
-+        }
 +}
 +
 +/**
@@ -1900,70 +1865,46 @@ index 0000000..0892eda
 +				  u32 cnk_idx, u32 cnk_off,
 +				  u32 *ci, u32 chunk_count, u32 chunk_id)
 +{
-+	long long i, j;
++	long long i;
 +	u64 index = 0;
-+	u8 part_idx, part_off;
 +
-+        part_idx = cnk_off / 64;
-+        part_off = cnk_off % 64;
-+
-+	if (chunks[cnk_idx].c_bm[part_idx] & IDX_TO_BM(part_off)) {
++	if (chunks[cnk_idx].ci_bm & IDX_TO_BM(cnk_off)) {
 +		pr_err("Error: bitmap is already set");
 +		return -EINVAL;
 +	}
-+        
-+	/*looking for the index where Chunk ID will be copied*/
-+	if (chunks[cnk_idx].c_bm[part_idx]) {
-+		index = chunks[cnk_idx].c_off[part_idx] +
-+			IDX_FRM_MASK(part_off, chunks[cnk_idx].c_bm[part_idx]);
-+                goto index_found;
++
++	/*Calculate the actual index to chunk array*/
++	if (chunks[cnk_idx].ci_bm) {
++		index = chunks[cnk_idx].ci_off +
++			IDX_FRM_MASK(cnk_off, chunks[cnk_idx].ci_bm);
++	} else {
++		/*Find a chunk to the left which is not empty*/
++		for (i = (long long)cnk_idx - 1; i >= 0; i--) {
++			if (chunks[i].ci_bm) {
++				index = chunks[i].ci_off +
++					POPCNT(chunks[i].ci_bm);
++				break;
++			}
++		}
 +	}
 +
-+	/*check the other parts of the chunk*/        
-+        for (j = part_idx - 1; j >= 0; j--) {
-+            if (chunks[cnk_idx].c_bm[j]) {
-+                index = chunks[cnk_idx].c_off[j] + POPCNT(chunks[cnk_idx].c_bm[j]);
-+                goto index_found;
-+            }
-+        }
-+        
-+        /*Find a chunk to the left which is not empty*/
-+        for (i = (long long)cnk_idx - 1; i >= 0; i--) {
-+            for (j = 3; j >= 0; j--) {
-+                if (chunks[i].c_bm[j]) {
-+                        index = chunks[i].c_off[j] +
-+                                POPCNT(chunks[i].c_bm[j]);
-+                        goto index_found;
-+                }   
-+            }
-+        }
-+
-+index_found:        
 +	/* Move each elemenmt one step to the right to create a space for
 +	 * new element. Also increment chunk IDs by 1
 +	 */
-+	for (i = CK24_SIZE - 2 ; i >= (long long)index; i--)
++	for (i = CK26_SIZE - 2 ; i >= (long long)index; i--)
 +		ci[i + 1] = (ci[i] > 0) ? ci[i] + 1 : ci[i];
 +	ci[index] = chunk_id;
 +
 +	/*This is the first element of this chunk*/
-+	if (!chunks[cnk_idx].c_bm[part_idx])
-+		chunks[cnk_idx].c_off[part_idx] = index;
++	if (!chunks[cnk_idx].ci_bm)
++		chunks[cnk_idx].ci_off = index;
 +
-+	chunks[cnk_idx].c_bm[part_idx] |= IDX_TO_BM(part_off);
++	chunks[cnk_idx].ci_bm |= IDX_TO_BM(cnk_off);
 +
-+	/*Update parts of the chunks to the right*/
-+        for (j = part_idx + 1; j < 4; j++) {
-+		if (chunks[cnk_idx].c_bm[j])
-+			chunks[cnk_idx].c_off[j]++;
-+        }
-+        
 +	/*Update offset of the chunks to the right*/
 +	for (i = (long long)cnk_idx + 1; i < chunk_count; i++) {
-+            for (j = 0; j < 4; j++) {
-+		if (chunks[i].c_bm[j])
-+			chunks[i].c_off[j]++;   
-+            }
++		if (chunks[i].ci_bm)
++			chunks[i].ci_off++;
 +	}
 +
 +	return 0;
@@ -1973,16 +1914,15 @@ index 0000000..0892eda
 +		   struct net_device *dev)
 +{
 +	int i;
-+	u8 *n16, *p16;
-+	u16 *c16;
-+	u32 *c24;
-+	u16 chunk_id;
-+	u16 n16_idx;/*Index to N16, P16 and C16*/
-+	u64 n24_idx;/*Index to N24 and P24*/
-+	u64 c24_idx;/*Index to C24*/
-+	u32 ck24_idx;/*Index to CK24*/
-+	u64 ck24_off;/*offset inside a chunk*/
-+	u8 part_idx, part_off;
++	u8 *n20, *p20;
++	u32 *c20;
++	u32 *c26;
++	u32 chunk_id;
++	u32 n20_idx;/*Index to N20, P20 and C20*/
++	u64 n26_idx;/*Index to N26 and P26*/
++	u64 c26_idx;/*Index to C26*/
++	u32 ck26_idx;/*Index to CK26*/
++	u64 ck26_off;/*offset inside a chunk*/
 +	u64 n32_idx;/*Index to N32 and P32*/
 +	u32 consecutive_leafs;
 +	u8 netdev_index = get_netdev_index(s, dev);
@@ -1996,40 +1936,40 @@ index 0000000..0892eda
 +		goto finish;
 +	}
 +
-+	if (!s->N16) {
-+		n16 = kcalloc(LEVEL16_SIZE, sizeof(*n16), GFP_ATOMIC);
-+		p16 = kcalloc(LEVEL16_SIZE, sizeof(*p16), GFP_ATOMIC);
-+		c16 = kcalloc(LEVEL16_SIZE, sizeof(*c16), GFP_ATOMIC);
-+		c24 = kcalloc(CK24_SIZE, sizeof(*c24), GFP_ATOMIC);
++	if (!s->N20) {
++		n20 = kcalloc(LEVEL20_SIZE, sizeof(*n20), GFP_ATOMIC);
++		p20 = kcalloc(LEVEL20_SIZE, sizeof(*p20), GFP_ATOMIC);
++		c20 = kcalloc(LEVEL20_SIZE, sizeof(*c20), GFP_ATOMIC);
++		c26 = kcalloc(CK26_SIZE, sizeof(*c26), GFP_ATOMIC);
 +
-+		if (!n16 || !c16 || !p16 || !c24) {
-+			kfree(n16);
-+			kfree(c16);
-+			kfree(p16);
-+			kfree(c24);
-+			pr_err("Out of memory while allocating level 16");
++		if (!n20 || !c20 || !p20 || !c26) {
++			kfree(n20);
++			kfree(c20);
++			kfree(p20);
++			kfree(c26);
++			pr_err("Out of memory while allocating level 20");
 +			goto error;
 +		}
 +
-+		RCU_INIT_POINTER(s->N16, n16);
-+		RCU_INIT_POINTER(s->P16, p16);
-+		RCU_INIT_POINTER(s->C16, c16);
-+		RCU_INIT_POINTER(s->C24, c24);
++		RCU_INIT_POINTER(s->N20, n20);
++		RCU_INIT_POINTER(s->P20, p20);
++		RCU_INIT_POINTER(s->C20, c20);
++		RCU_INIT_POINTER(s->C26, c26);
 +		synchronize_rcu();
 +	}
 +
-+	/*Eextract 16 bits from LSB.*/
-+	n16_idx = key >> 16;
++	/*Eextract 20 bits from LSB.*/
++	n20_idx = key >> 12;
 +
-+	if (prefix_len <= 16) {
++	if (prefix_len <= 20) {
 +		/*Level pushing*/
-+		consecutive_leafs = 1U << (16 - prefix_len);
++		consecutive_leafs = 1U << (20 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Longer prefix exists*/
-+			if (s->P16[n16_idx + i] > prefix_len)
++			if (s->P20[n20_idx + i] > prefix_len)
 +				continue;
-+			s->N16[n16_idx + i] = netdev_index;
-+			s->P16[n16_idx + i] = prefix_len;
++			s->N20[n20_idx + i] = netdev_index;
++			s->P20[n20_idx + i] = prefix_len;
 +		}
 +		goto finish;
 +	}
@@ -2037,59 +1977,57 @@ index 0000000..0892eda
 +	/* The prefix_len is 21-32. So we need to check if if there is any
 +	 * chunk for this index in level 26
 +	 */
-+	if (s->C16[n16_idx] == 0) {
-+		chunk_id = level24_calc_chunkid(s->C16, LEVEL16_SIZE, n16_idx);
++	if (s->C20[n20_idx] == 0) {
++		chunk_id = level26_calc_chunkid(s->C20, LEVEL20_SIZE, n20_idx);
 +		if (!chunk_id)
 +			goto error;
-+		err = level24_chunk_insert(s, chunk_id);
++		err = level26_chunk_insert(s, chunk_id);
 +		if (err)
 +			goto error;
-+		err = level24_update_chunkid(s->C16,
-+					     LEVEL16_SIZE, n16_idx, chunk_id);
++		err = level26_update_chunkid(s->C20,
++					     LEVEL20_SIZE, n20_idx, chunk_id);
 +		if (err)
 +			goto error;
 +	}
 +
-+	/*Extract bit 17~24 and calculate index to level 24*/
-+	n24_idx = (s->C16[n16_idx] - 1) * CHUNK_SIZE + ((key & 65280) >> 8);
-+	ck24_idx = s->C16[n16_idx] - 1;
-+	ck24_off = (key & 65280) >> 8;
++	/*Extract 21-26 bit and calculate index to level 26*/
++	n26_idx = (s->C20[n20_idx] - 1) * CHUNK_SIZE + ((key & 4032) >> 6);
++	ck26_idx = s->C20[n20_idx] - 1;
++	ck26_off = (key & 4032) >> 6;
 +
-+	if (prefix_len <= 24) {
++	if (prefix_len <= 26) {
 +		/*Level pushing*/
-+		consecutive_leafs = 1U << (24 - prefix_len);
++		consecutive_leafs = 1U << (26 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Longer prefix exists*/
-+			if (s->P24[n24_idx + i] > prefix_len)
++			if (s->P26[n26_idx + i] > prefix_len)
 +				continue;
-+			s->N24[n24_idx + i] = netdev_index;
-+			s->P24[n24_idx + i] = prefix_len;
++			s->N26[n26_idx + i] = netdev_index;
++			s->P26[n26_idx + i] = prefix_len;
 +		}
 +		goto finish;
 +	}
 +
-+	/* The prefix_len is 25-32. So we need to check if if there is any
++	/* The prefix_len is 27-32. So we need to check if if there is any
 +	 * chunk for this index in level 32
 +	 */
-+        part_idx = ck24_off / 64;
-+        part_off = ck24_off % 64;
-+	if (!(s->CK24[ck24_idx].c_bm[part_idx] & IDX_TO_BM(part_off))) {
-+		chunk_id = level32_calc_chunkid(s->CK24, ck24_idx,
-+						ck24_off, s->C24);
++	if (!(s->CK26[ck26_idx].ci_bm & IDX_TO_BM(ck26_off))) {
++		chunk_id = level32_calc_chunkid(s->CK26, ck26_idx,
++						ck26_off, s->C26);
 +		if (!chunk_id)
 +			goto error;
 +		err = level32_chunk_insert(s, chunk_id);
 +		if (err)
 +			goto error;
-+		err = level32_update_chunkid(s->CK24, ck24_idx, ck24_off,
-+					     s->C24, s->ck24_count, chunk_id);
++		err = level32_update_chunkid(s->CK26, ck26_idx, ck26_off,
++					     s->C26, s->ck26_count, chunk_id);
 +		if (err)
 +			goto error;
 +	}
 +
-+	/*Extract 8 bit from MSB and calculate index to level 32*/
-+	c24_idx = get_arr_idx(s->CK24[ck24_idx], ck24_off);
-+	n32_idx = (s->C24[c24_idx] - 1) * CHUNK_SIZE + (key & 255);
++	/*Extract 6 bit from MSB and calculate index to level 32*/
++	c26_idx = get_arr_idx(s->CK26[ck26_idx], ck26_off);
++	n32_idx = (s->C26[c26_idx] - 1) * CHUNK_SIZE + (key & 63);
 +
 +	if (prefix_len <= 32) {
 +		/*Level pushing*/
@@ -2114,75 +2052,72 @@ index 0000000..0892eda
 +int sail_ml_delete(struct sail *s, u32 key, u8 prefix_len)
 +{
 +	int i;
-+	u32 n16_idx;/*Index to N16, P16 and C16*/
-+	u64 n24_idx;/*Index to level N24 and P24*/
-+	u16 ck24_idx;/*Index to CK24*/
-+	u64 ck24_off;/*Offset inside chunk in level 24*/
++	u32 n20_idx;/*Index to N20, P20 and C20*/
++	u64 n26_idx;/*Index to level N26 and P26*/
++	u32 ck26_idx;/*Index to CK26*/
++	u64 ck26_off;/*Offset inside chunk in level 26*/
 +	u64 n32_idx;/*Index to level N32 and P32*/
 +	u32 consecutive_leafs;
 +	int err = 0;
 +	u32 chunkid_level32;
-+	u8 part_idx, part_off;
 +
 +	spin_lock(&s->lock);
 +
 +	/* Simply ignore */
-+	if (prefix_len == 0 || !s->N16)
++	if (prefix_len == 0 || !s->N20)
 +		goto error;
 +
-+	/*Eextract 16 bits from LSB.*/
-+	n16_idx = key >> 16;
++	/*Eextract 20 bits from LSB.*/
++	n20_idx = key >> 12;
 +
-+	if (prefix_len <= 16) {
++	if (prefix_len <= 20) {
 +		/*Level pushing*/
-+		consecutive_leafs = 1U << (16 - prefix_len);
++		consecutive_leafs = 1U << (20 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Prefix len doesn't match*/
-+			if (s->P16[n16_idx + i] != prefix_len)
++			if (s->P20[n20_idx + i] != prefix_len)
 +				continue;
-+			s->N16[n16_idx + i] = 0;
-+			s->P16[n16_idx + i] = 0;
++			s->N20[n20_idx + i] = 0;
++			s->P20[n20_idx + i] = 0;
 +		}
 +		goto finish;
 +	}
 +
-+	/* The prefix_len is 17~32 but no chunk for the prefix*/
-+	if (s->C16[n16_idx] == 0)
++	/* The prefix_len is 21-32 but no chunk for the prefix*/
++	if (s->C20[n20_idx] == 0)
 +		goto error;
 +
-+	ck24_idx = s->C16[n16_idx] - 1;
-+	ck24_off = (key & 65280) >> 8;/*Extract bit 17~24 from the prefix*/
-+	n24_idx = ck24_idx * CHUNK_SIZE + ck24_off;
++	ck26_idx = s->C20[n20_idx] - 1;
++	ck26_off = (key & 4032) >> 6;/*Extract 21-26 bit from the prefix*/
++	n26_idx = ck26_idx * CHUNK_SIZE + ck26_off;
 +
-+	if (prefix_len <= 24) {
++	if (prefix_len <= 26) {
 +		/*Level pushing*/
-+		consecutive_leafs = 1U << (24 - prefix_len);
++		consecutive_leafs = 1U << (26 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Prefix len doesn't match*/
-+			if (s->P24[n24_idx + i] != prefix_len)
++			if (s->P26[n26_idx + i] != prefix_len)
 +				continue;
-+			s->N24[n24_idx + i] = 0;
-+			s->P24[n24_idx + i] = 0;
++			s->N26[n26_idx + i] = 0;
++			s->P26[n26_idx + i] = 0;
 +		}
-+		if (is_chunk_unused_level24(s->N24, &s->CK24[ck24_idx],
-+					    s->C16[n16_idx])) {
-+			level24_chunk_delete(s, s->C16[n16_idx]);
-+			C16_remove_chunkid(s->C16, LEVEL16_SIZE,
-+					   s->C16[n16_idx]);
++		if (is_chunk_unused_level26(s->N26, &s->CK26[ck26_idx],
++					    s->C20[n20_idx])) {
++			level26_chunk_delete(s, s->C20[n20_idx]);
++			C20_remove_chunkid(s->C20, LEVEL20_SIZE,
++					   s->C20[n20_idx]);
 +		}
 +		goto finish;
 +	}
 +
-+        part_idx = ck24_off / 64;
-+        part_off = ck24_off % 64;
-+	/* The prefix_len is 25~32. but no chunk for the prefix */
-+	if (!(s->CK24[ck24_idx].c_bm[part_idx] & IDX_TO_BM(part_off)))
++	/* The prefix_len is 27-32. but no chunk for the prefix */
++	if (!(s->CK26[ck26_idx].ci_bm & IDX_TO_BM(ck26_off)))
 +		goto error;
 +
-+	chunkid_level32 = s->C24[get_arr_idx(s->CK24[ck24_idx], ck24_off)];
++	chunkid_level32 = s->C26[get_arr_idx(s->CK26[ck26_idx], ck26_off)];
 +
-+	/*Extract 8 bit from MSB and calculate index to level 32*/
-+	n32_idx = (chunkid_level32 - 1) * CHUNK_SIZE + (key & 255);
++	/*Extract 6 bit from MSB and calculate index to level 32*/
++	n32_idx = (chunkid_level32 - 1) * CHUNK_SIZE + (key & 63);
 +
 +	if (prefix_len <= 32) {
 +		/*Level pushing*/
@@ -2197,7 +2132,7 @@ index 0000000..0892eda
 +		}
 +		if (is_chunk_unused_level32(s->N32, chunkid_level32)) {
 +			level32_chunk_delete(s, chunkid_level32);
-+			C24_remove_chunkid(s, ck24_idx, ck24_off);
++			C26_remove_chunkid(s, ck26_idx, ck26_off);
 +		}
 +		goto finish;
 +	}
@@ -2212,37 +2147,36 @@ index 0000000..0892eda
 +
 +int sail_ml_flush(struct sail *s)
 +{
-+	u8 *n16_old, *p16_old, *n24_old, *p24_old, *n32_old, *p32_old;
-+	u16 *c16_old;
-+	u32 *c24_old;
-+	struct chunk *ck24_old;
++	u8 *n20_old, *p20_old, *n26_old, *p26_old, *n32_old, *p32_old;
++	u32 *c20_old, *c26_old;
++	struct chunk *ck26_old;
 +
 +	spin_lock(&s->lock);
 +
 +	/*Save old pointers*/
-+	n16_old = s->N16;
-+	p16_old = s->P16;
-+	c16_old = s->C16;
-+	n24_old = s->N24;
-+	p24_old = s->P24;
-+	c24_old = s->C24;
-+	ck24_old = s->CK24;
++	n20_old = s->N20;
++	p20_old = s->P20;
++	c20_old = s->C20;
++	n26_old = s->N26;
++	p26_old = s->P26;
++	c26_old = s->C26;
++	ck26_old = s->CK26;
 +	n32_old = s->N32;
 +	p32_old = s->P32;
 +
 +	/*Set the counter before the chunk are deleted*/
 +	s->ck32_count = 0;
-+	s->ck24_count = 0;
++	s->ck26_count = 0;
 +
 +	/*Set the pointers to NULL*/
-+	rcu_assign_pointer(s->N16, NULL);
-+	rcu_assign_pointer(s->P16, NULL);
-+	rcu_assign_pointer(s->C16, NULL);
++	rcu_assign_pointer(s->N20, NULL);
++	rcu_assign_pointer(s->P20, NULL);
++	rcu_assign_pointer(s->C20, NULL);
 +
-+	rcu_assign_pointer(s->N24, NULL);
-+	rcu_assign_pointer(s->P24, NULL);
-+	rcu_assign_pointer(s->C24, NULL);
-+	rcu_assign_pointer(s->CK24, NULL);
++	rcu_assign_pointer(s->N26, NULL);
++	rcu_assign_pointer(s->P26, NULL);
++	rcu_assign_pointer(s->C26, NULL);
++	rcu_assign_pointer(s->CK26, NULL);
 +
 +	rcu_assign_pointer(s->N32, NULL);
 +	rcu_assign_pointer(s->P32, NULL);
@@ -2251,13 +2185,13 @@ index 0000000..0892eda
 +	synchronize_rcu();
 +
 +	/* Deallocate old references after setting them NULL*/
-+	kfree(n16_old);
-+	kfree(p16_old);
-+	kfree(c16_old);
-+	kfree(n24_old);
-+	kfree(p24_old);
-+	kfree(c24_old);
-+	kfree(ck24_old);
++	kfree(n20_old);
++	kfree(p20_old);
++	kfree(c20_old);
++	kfree(n26_old);
++	kfree(p26_old);
++	kfree(c26_old);
++	kfree(ck26_old);
 +	kfree(n32_old);
 +	kfree(p32_old);
 +
@@ -2268,59 +2202,55 @@ index 0000000..0892eda
 +int sail_ml_lookup(const struct sail *s,
 +		   const __be32 dest, struct net_device **dev)
 +{
-+	u8 *n16, *n24, *n32;
-+	u16 *c16;
-+	u32 *c24;
-+	struct chunk *ck24;
++	u8 *n20, *n26, *n32;
++	u32 *c20, *c26;
++	struct chunk *chunks26;
 +	const u32 key = ntohl(dest);
 +	u8 netdev_index = s->def_nh;
-+	u16 n16_idx;/*Index to N16 and C16*/
-+	u64 n24_idx;/*Index to N24*/
-+	u32 ck24_idx;/*Index to CK24*/
-+	u64 ck24_off;/*Offset inside a chunk*/
-+	u64 c24_idx;/*Index to C24*/
++	u32 n20_idx;/*Index to N20 and C20*/
++	u64 n26_idx;/*Index to N26*/
++	u32 ck26_idx;/*Index to CK26*/
++	u64 ck26_off;/*Offset inside a chunk*/
++	u64 c26_idx;/*Index to C26*/
 +	u64 n32_idx;/*Index to N32*/
-+	u8 part_idx, part_off;
 +
 +	rcu_read_lock();
 +
-+	/*extract 16 bits from LSB*/
-+	n16_idx = key >> 16;
-+	n16 = rcu_dereference(s->N16);
-+	if (unlikely(!n16))
++	/*extract 20 bits from LSB*/
++	n20_idx = key >> 12;
++	n20 = rcu_dereference(s->N20);
++	if (unlikely(!n20))
 +		goto finish;
 +
-+	if (likely(n16[n16_idx] != 0))
-+		netdev_index = n16[n16_idx];
++	if (likely(n20[n20_idx] != 0))
++		netdev_index = n20[n20_idx];
 +
-+	/*Check if there is a longer prefix; if yes, extract bit 17~24
-+	 *  and calculate index to N24
++	/*Check if there is a longer prefix; if yes, extract 21-26 bit
++	 *  and calculate index to N26
 +	 */
-+	c16 = rcu_dereference(s->C16);
-+	if (likely(c16[n16_idx] != 0)) {
-+		ck24_idx = c16[n16_idx] - 1;
-+		ck24_off = (key & 65280) >> 8;
-+		n24_idx = ck24_idx * CHUNK_SIZE + ck24_off;
++	c20 = rcu_dereference(s->C20);
++	if (likely(c20[n20_idx] != 0)) {
++		ck26_idx = c20[n20_idx] - 1;
++		ck26_off = (key & 4032) >> 6;
++		n26_idx = ck26_idx * CHUNK_SIZE + ck26_off;
 +	} else {
 +		goto finish;
 +	}
 +
-+	/*Find corresponding next-hop in level 24*/
-+	n24 = rcu_dereference(s->N24);
-+	if (likely(n24[n24_idx] != 0))
-+		netdev_index = n24[n24_idx];
++	/*Find corresponding next-hop in level 26*/
++	n26 = rcu_dereference(s->N26);
++	if (likely(n26[n26_idx] != 0))
++		netdev_index = n26[n26_idx];
 +
-+	/*Check if there is a longer prefix; if yes, extract 8 bits
++	/*Check if there is a longer prefix; if yes, extract 6 bits
 +	 * from MSB and calculate index to N32
 +	 */
-+	ck24 = rcu_dereference(s->CK24);
-+        part_idx = ck24_off / 64;
-+        part_off = ck24_off % 64;
-+	if (likely(ck24[ck24_idx].c_bm[part_idx] & IDX_TO_BM(part_off))) {
-+		c24 = rcu_dereference(s->C24);
-+		c24_idx = ck24[ck24_idx].c_off[part_idx] +
-+			IDX_FRM_MASK(part_off, ck24[ck24_idx].c_bm[part_idx]);
-+		n32_idx = (c24[c24_idx] - 1) * CHUNK_SIZE + (key & 255);
++	chunks26 = rcu_dereference(s->CK26);
++	if (likely(chunks26[ck26_idx].ci_bm & IDX_TO_BM(ck26_off))) {
++		c26 = rcu_dereference(s->C26);
++		c26_idx = chunks26[ck26_idx].ci_off +
++			IDX_FRM_MASK(ck26_off, chunks26[ck26_idx].ci_bm);
++		n32_idx = (c26[c26_idx] - 1) * CHUNK_SIZE + (key & 63);
 +	} else {
 +		goto finish;
 +	}
