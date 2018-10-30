@@ -729,7 +729,7 @@ index 0f7a27f..64100d7 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..d3684ec 100644
+index 69c91d1..9282ce6 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -765,7 +765,7 @@ index 69c91d1..d3684ec 100644
 +	/*Level 20*/
 +	u8 __rcu *N20;
 +	u8 __rcu *P20;
-+	u32 __rcu *C20;
++	u16 __rcu *C20;
 +
 +	/*Level 26*/
 +	u8 __rcu *N26;
@@ -1073,7 +1073,7 @@ index 69c91d1..d3684ec 100644
 +		}
 +	}
 +
-+	for (j = 97; j < 97; j++) {
++	for (j = 0; j < 97; j++) {
 +		ip_addr = in_aton(wtf_26[j]);
 +
 +		if (tb) {
@@ -1111,7 +1111,7 @@ index 69c91d1..d3684ec 100644
 +		tot_tsc += (tsc_end - tsc_begin);
 +		tot_tsc_trie += (tsc_trie_end - tsc_trie_begin);
 +	}
-+//	pr_err("AVG_COST: SAIL=%llu trie=%llu !!!!!!!!", tot_tsc/97, tot_tsc_trie/97);
++	pr_err("AVG_COST: SAIL=%llu trie=%llu !!!!!!!!", tot_tsc/97, tot_tsc_trie/97);
 +
 +	for (j = 0; j < 1000; j++) {
 +//		get_random_bytes(&ip_addr, 4);
@@ -1262,10 +1262,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..b01f0b7
+index 0000000..1cb593b
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,1048 @@
+@@ -0,0 +1,1049 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1338,7 +1338,7 @@ index 0000000..b01f0b7
 +}
 +
 +/* Insert a chunk to N26 and P26.*/
-+static int N26_insert(struct sail *s, u32 chunk_id)
++static int N26_insert(struct sail *s, u16 chunk_id)
 +{
 +	long long m;
 +
@@ -1416,7 +1416,7 @@ index 0000000..b01f0b7
 +}
 +
 +/* Insert a chunk in CK26.*/
-+static int C26_insert(struct sail *s, u32 chunk_id)
++static int C26_insert(struct sail *s, u16 chunk_id)
 +{
 +	long long m;
 +
@@ -1473,7 +1473,7 @@ index 0000000..b01f0b7
 +}
 +
 +/* Insert a chunk to level 26. Note that chunk_id starts from 1, not 0 */
-+static int level26_chunk_insert(struct sail *s, u32 chunk_id)
++static int level26_chunk_insert(struct sail *s, u16 chunk_id)
 +{
 +	int err = 0;
 +
@@ -1665,7 +1665,7 @@ index 0000000..b01f0b7
 +}
 +
 +/*Calculate level 26 chunk ID based on N20*/
-+static u32 level26_calc_chunkid(u32 *chunk_ids, u32 arr_size, u32 index)
++static u16 level26_calc_chunkid(u16 *chunk_ids, u32 arr_size, u16 index)
 +{
 +	long long i;
 +
@@ -1685,8 +1685,8 @@ index 0000000..b01f0b7
 +}
 +
 +/*Update level 26 chunk ID in N20*/
-+static int level26_update_chunkid(u32 *chunk_ids, u32 arr_size,
-+				  u32 index, u32 chunk_id)
++static int level26_update_chunkid(u16 *chunk_ids, u32 arr_size,
++				  u16 index, u16 chunk_id)
 +{
 +	long long i;
 +
@@ -1718,7 +1718,7 @@ index 0000000..b01f0b7
 +}
 +
 +/*Remove Chunk ID for level 20*/
-+static int C20_remove_chunkid(u32 *chunk_ids, u32 arr_size, u32 chunk_id)
++static int C20_remove_chunkid(u16 *chunk_ids, u32 arr_size, u16 chunk_id)
 +{
 +	long long i;
 +	bool found = false;
@@ -1824,7 +1824,6 @@ index 0000000..b01f0b7
 +{
 +	long long i, j;
 +	long long index = 0;
-+	bool found = false;
 +	u8 part_idx, part_off;
 +	struct chunk c;
 +
@@ -1959,10 +1958,10 @@ index 0000000..b01f0b7
 +{
 +	int i;
 +	u8 *n20, *p20;
-+	u32 *c20;
++	u16 *c20;
 +	u32 *c26;
-+	u32 chunk_id;
-+	u32 n20_idx;/*Index to N20, P20 and C20*/
++	u16 chunk_id;
++	u16 n20_idx;/*Index to N20, P20 and C20*/
 +	u64 n26_idx;/*Index to N26 and P26*/
 +	u64 c26_idx;/*Index to C26*/
 +	u32 ck26_idx;/*Index to CK26*/
@@ -2195,7 +2194,8 @@ index 0000000..b01f0b7
 +int sail_ml_flush(struct sail *s)
 +{
 +	u8 *n20_old, *p20_old, *n26_old, *p26_old, *n32_old, *p32_old;
-+	u32 *c20_old, *c26_old;
++	u16 *c20_old;
++	u32 *c26_old;
 +	struct chunk *ck26_old;
 +
 +	spin_lock(&s->lock);
@@ -2250,11 +2250,12 @@ index 0000000..b01f0b7
 +		   const __be32 dest, struct net_device **dev)
 +{
 +	u8 *n20, *n26, *n32;
-+	u32 *c20, *c26;
++	u16 *c20;
++	u32 *c26;
 +	struct chunk *chunks26;
 +	const u32 key = ntohl(dest);
 +	u8 netdev_index = s->def_nh;
-+	u32 n20_idx;/*Index to N20 and C20*/
++	u16 n20_idx;/*Index to N20 and C20*/
 +	u64 n26_idx;/*Index to N26*/
 +	u32 ck26_idx;/*Index to CK26*/
 +	u64 ck26_off;/*Offset inside a chunk*/
