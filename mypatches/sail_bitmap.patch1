@@ -729,7 +729,7 @@ index 0f7a27f..64100d7 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..35b426c9 100644
+index 69c91d1..d6be28b 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -741,7 +741,7 @@ index 69c91d1..35b426c9 100644
  
  struct fib_config {
  	u8			fc_dst_len;
-@@ -197,6 +199,56 @@ struct fib_entry_notifier_info {
+@@ -197,6 +199,63 @@ struct fib_entry_notifier_info {
  	u32 tb_id;
  };
  
@@ -751,9 +751,16 @@ index 69c91d1..35b426c9 100644
 + * allows us to represent netdev_index as an u8
 + */
 +#define NETDEV_COUNT_MAX 255
++
++
++/*
++ * A chunk has 4 parts. Each part can have up to 64 elements. c_bm contains
++ * a bitmap and c_off contains the offset for the part. Together a chunk
++ * can represent up to 256 elements.
++ */
 +struct chunk {
-+	u64 ci_bm1[4];
-+	u64 ci_off1[4];        
++	u64 c_bm[4];
++	u64 c_off[4];        
 +};
 +
 +struct sail {
@@ -798,7 +805,7 @@ index 69c91d1..35b426c9 100644
  struct fib_nh_notifier_info {
  	struct fib_notifier_info info; /* must be first */
  	struct fib_nh *fib_nh;
-@@ -219,6 +271,10 @@ struct fib_table {
+@@ -219,6 +278,10 @@ struct fib_table {
  	int			tb_num_default;
  	struct rcu_head		rcu;
  	unsigned long 		*tb_data;
@@ -809,7 +816,7 @@ index 69c91d1..35b426c9 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +315,341 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +322,341 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -1260,7 +1267,7 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..73968bf
+index 0000000..2846758
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
 @@ -0,0 +1,1061 @@
@@ -1313,7 +1320,7 @@ index 0000000..73968bf
 +        part_idx = idx / 64;
 +        part_off = idx % 64;
 +
-+	return c.ci_off1[part_idx] + IDX_FRM_MASK(part_off, c.ci_bm1[part_idx]);
++	return c.c_off[part_idx] + IDX_FRM_MASK(part_off, c.c_bm[part_idx]);
 +}
 +
 +/*Insert net_device to the net-device array.
@@ -1434,8 +1441,8 @@ index 0000000..73968bf
 +
 +		/*Reset the newly created empty chunk*/
 +                for (m = 0; m < 4; m++) {
-+                    s->CK24[chunk_id - 1].ci_bm1[m] = 0;
-+                    s->CK24[chunk_id - 1].ci_off1[m] = 0;                    
++                    s->CK24[chunk_id - 1].c_bm[m] = 0;
++                    s->CK24[chunk_id - 1].c_off[m] = 0;                    
 +                }
 +
 +		return 0;
@@ -1620,8 +1627,8 @@ index 0000000..73968bf
 +
 +	/*Reset the the last chunk*/
 +        for (m = 0; m < 4; m++) {
-+            s->CK24[s->ck24_count - 1].ci_off1[m] = 0;
-+            s->CK24[s->ck24_count - 1].ci_bm1[m] = 0;
++            s->CK24[s->ck24_count - 1].c_off[m] = 0;
++            s->CK24[s->ck24_count - 1].c_bm[m] = 0;
 +        }
 +
 +	return 0;
@@ -1749,7 +1756,7 @@ index 0000000..73968bf
 +        part_idx = cnk_off / 64;
 +        part_off = cnk_off % 64;
 +
-+	s->CK24[cnk_idx].ci_bm1[part_idx] &= ~IDX_TO_BM(part_off);
++	s->CK24[cnk_idx].c_bm[part_idx] &= ~IDX_TO_BM(part_off);
 +	chunk_id = s->C24[get_arr_idx(s->CK24[cnk_idx], cnk_off)];
 +
 +	for (i = 0; i < CK24_SIZE; i++) {
@@ -1812,7 +1819,7 @@ index 0000000..73968bf
 +			return false;
 +	}
 +
-+	if (ck->ci_bm1[0] || ck->ci_bm1[1] || ck->ci_bm1[2] || ck->ci_bm1[3])
++	if (ck->c_bm[0] || ck->c_bm[1] || ck->c_bm[2] || ck->c_bm[3])
 +		return false;
 +
 +	return true;
@@ -1839,17 +1846,17 @@ index 0000000..73968bf
 +        c = chunks[cnk_idx];
 +
 +	/*The chunk is not empty*/
-+	if (c.ci_bm1[part_idx]) {
-+            index = c.ci_off1[part_idx] +
-+                    IDX_FRM_MASK(part_off, c.ci_bm1[part_idx]) - 1;
++	if (c.c_bm[part_idx]) {
++            index = c.c_off[part_idx] +
++                    IDX_FRM_MASK(part_off, c.c_bm[part_idx]) - 1;
 +            if(index >= 0)
 +                goto found;
 +	}
 +        
 +	/*check the other parts of the chunk*/        
 +        for (j = part_idx - 1; j >= 0; j--) {
-+            if (c.ci_bm1[j]) {
-+                index = c.ci_off1[j] + POPCNT(c.ci_bm1[j]) - 1;
++            if (c.c_bm[j]) {
++                index = c.c_off[j] + POPCNT(c.c_bm[j]) - 1;
 +                goto found;
 +            }
 +        }
@@ -1857,9 +1864,9 @@ index 0000000..73968bf
 +        /*Find a chunk to the left whose offset is not 0*/
 +        for (i = (long long)cnk_idx - 1; i >= 0; i--) {
 +            for (j = 3; j >= 0; j--) {
-+                if (chunks[i].ci_bm1[j]) {
-+                        index = chunks[i].ci_off1[j] +
-+                                POPCNT(chunks[i].ci_bm1[j]) - 1;
++                if (chunks[i].c_bm[j]) {
++                        index = chunks[i].c_off[j] +
++                                POPCNT(chunks[i].c_bm[j]) - 1;
 +                        goto found;
 +                }
 +            }
@@ -1898,22 +1905,22 @@ index 0000000..73968bf
 +        part_idx = cnk_off / 64;
 +        part_off = cnk_off % 64;
 +
-+	if (chunks[cnk_idx].ci_bm1[part_idx] & IDX_TO_BM(part_off)) {
++	if (chunks[cnk_idx].c_bm[part_idx] & IDX_TO_BM(part_off)) {
 +		pr_err("Error: bitmap is already set");
 +		return -EINVAL;
 +	}
 +        
 +	/*looking for the index where Chunk ID will be copied*/
-+	if (chunks[cnk_idx].ci_bm1[part_idx]) {
-+		index = chunks[cnk_idx].ci_off1[part_idx] +
-+			IDX_FRM_MASK(part_off, chunks[cnk_idx].ci_bm1[part_idx]);
++	if (chunks[cnk_idx].c_bm[part_idx]) {
++		index = chunks[cnk_idx].c_off[part_idx] +
++			IDX_FRM_MASK(part_off, chunks[cnk_idx].c_bm[part_idx]);
 +                goto index_found;
 +	}
 +
 +	/*check the other parts of the chunk*/        
 +        for (j = part_idx - 1; j >= 0; j--) {
-+            if (chunks[cnk_idx].ci_bm1[j]) {
-+                index = chunks[cnk_idx].ci_off1[j] + POPCNT(chunks[cnk_idx].ci_bm1[j]);
++            if (chunks[cnk_idx].c_bm[j]) {
++                index = chunks[cnk_idx].c_off[j] + POPCNT(chunks[cnk_idx].c_bm[j]);
 +                goto index_found;
 +            }
 +        }
@@ -1921,9 +1928,9 @@ index 0000000..73968bf
 +        /*Find a chunk to the left which is not empty*/
 +        for (i = (long long)cnk_idx - 1; i >= 0; i--) {
 +            for (j = 3; j >= 0; j--) {
-+                if (chunks[i].ci_bm1[j]) {
-+                        index = chunks[i].ci_off1[j] +
-+                                POPCNT(chunks[i].ci_bm1[j]);
++                if (chunks[i].c_bm[j]) {
++                        index = chunks[i].c_off[j] +
++                                POPCNT(chunks[i].c_bm[j]);
 +                        goto index_found;
 +                }   
 +            }
@@ -1938,22 +1945,22 @@ index 0000000..73968bf
 +	ci[index] = chunk_id;
 +
 +	/*This is the first element of this chunk*/
-+	if (!chunks[cnk_idx].ci_bm1[part_idx])
-+		chunks[cnk_idx].ci_off1[part_idx] = index;
++	if (!chunks[cnk_idx].c_bm[part_idx])
++		chunks[cnk_idx].c_off[part_idx] = index;
 +
-+	chunks[cnk_idx].ci_bm1[part_idx] |= IDX_TO_BM(part_off);
++	chunks[cnk_idx].c_bm[part_idx] |= IDX_TO_BM(part_off);
 +
 +	/*Update parts of the chunks to the right*/
 +        for (j = part_idx + 1; j < 4; j++) {
-+		if (chunks[cnk_idx].ci_bm1[j])
-+			chunks[cnk_idx].ci_off1[j]++;
++		if (chunks[cnk_idx].c_bm[j])
++			chunks[cnk_idx].c_off[j]++;
 +        }
 +        
 +	/*Update offset of the chunks to the right*/
 +	for (i = (long long)cnk_idx + 1; i < chunk_count; i++) {
 +            for (j = 0; j < 4; j++) {
-+		if (chunks[i].ci_bm1[j])
-+			chunks[i].ci_off1[j]++;   
++		if (chunks[i].c_bm[j])
++			chunks[i].c_off[j]++;   
 +            }
 +	}
 +
@@ -2064,7 +2071,7 @@ index 0000000..73968bf
 +	 */
 +        part_idx = ck24_off / 64;
 +        part_off = ck24_off % 64;
-+	if (!(s->CK24[ck24_idx].ci_bm1[part_idx] & IDX_TO_BM(part_off))) {
++	if (!(s->CK24[ck24_idx].c_bm[part_idx] & IDX_TO_BM(part_off))) {
 +		chunk_id = level32_calc_chunkid(s->CK24, ck24_idx,
 +						ck24_off, s->C24);
 +		if (!chunk_id)
@@ -2167,7 +2174,7 @@ index 0000000..73968bf
 +        part_idx = ck24_off / 64;
 +        part_off = ck24_off % 64;
 +	/* The prefix_len is 25~32. but no chunk for the prefix */
-+	if (!(s->CK24[ck24_idx].ci_bm1[part_idx] & IDX_TO_BM(part_off)))
++	if (!(s->CK24[ck24_idx].c_bm[part_idx] & IDX_TO_BM(part_off)))
 +		goto error;
 +
 +	chunkid_level32 = s->C24[get_arr_idx(s->CK24[ck24_idx], ck24_off)];
@@ -2307,10 +2314,10 @@ index 0000000..73968bf
 +	ck24 = rcu_dereference(s->CK24);
 +        part_idx = ck24_off / 64;
 +        part_off = ck24_off % 64;
-+	if (likely(ck24[ck24_idx].ci_bm1[part_idx] & IDX_TO_BM(part_off))) {
++	if (likely(ck24[ck24_idx].c_bm[part_idx] & IDX_TO_BM(part_off))) {
 +		c24 = rcu_dereference(s->C24);
-+		c24_idx = ck24[ck24_idx].ci_off1[part_idx] +
-+			IDX_FRM_MASK(part_off, ck24[ck24_idx].ci_bm1[part_idx]);
++		c24_idx = ck24[ck24_idx].c_off[part_idx] +
++			IDX_FRM_MASK(part_off, ck24[ck24_idx].c_bm[part_idx]);
 +		n32_idx = (c24[c24_idx] - 1) * CHUNK_SIZE + (key & 255);
 +	} else {
 +		goto finish;
