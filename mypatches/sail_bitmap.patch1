@@ -729,7 +729,7 @@ index 0f7a27f..64100d7 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..40186ce 100644
+index 69c91d1..35b426c9 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -741,7 +741,7 @@ index 69c91d1..40186ce 100644
  
  struct fib_config {
  	u8			fc_dst_len;
-@@ -197,6 +199,58 @@ struct fib_entry_notifier_info {
+@@ -197,6 +199,56 @@ struct fib_entry_notifier_info {
  	u32 tb_id;
  };
  
@@ -752,8 +752,6 @@ index 69c91d1..40186ce 100644
 + */
 +#define NETDEV_COUNT_MAX 255
 +struct chunk {
-+	u64 ci_bm;
-+	u64 ci_off;
 +	u64 ci_bm1[4];
 +	u64 ci_off1[4];        
 +};
@@ -800,7 +798,7 @@ index 69c91d1..40186ce 100644
  struct fib_nh_notifier_info {
  	struct fib_notifier_info info; /* must be first */
  	struct fib_nh *fib_nh;
-@@ -219,6 +273,10 @@ struct fib_table {
+@@ -219,6 +271,10 @@ struct fib_table {
  	int			tb_num_default;
  	struct rcu_head		rcu;
  	unsigned long 		*tb_data;
@@ -811,7 +809,7 @@ index 69c91d1..40186ce 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +317,341 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +315,341 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -1073,7 +1071,7 @@ index 69c91d1..40186ce 100644
 +		}
 +	}
 +
-+	for (j = 0; j < 97; j++) {
++	for (j = 97; j < 97; j++) {
 +		ip_addr = in_aton(wtf_26[j]);
 +
 +		if (tb) {
@@ -1111,7 +1109,7 @@ index 69c91d1..40186ce 100644
 +		tot_tsc += (tsc_end - tsc_begin);
 +		tot_tsc_trie += (tsc_trie_end - tsc_trie_begin);
 +	}
-+	pr_err("AVG_COST: SAIL=%llu trie=%llu !!!!!!!!", tot_tsc/97, tot_tsc_trie/97);
++//	pr_err("AVG_COST: SAIL=%llu trie=%llu !!!!!!!!", tot_tsc/97, tot_tsc_trie/97);
 +
 +	for (j = 0; j < 1000; j++) {
 +//		get_random_bytes(&ip_addr, 4);
@@ -1262,10 +1260,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..48af54d
+index 0000000..73968bf
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,1049 @@
+@@ -0,0 +1,1061 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1435,8 +1433,11 @@ index 0000000..48af54d
 +			s->CK24[m + 1] = s->CK24[m];
 +
 +		/*Reset the newly created empty chunk*/
-+		s->CK24[chunk_id - 1].ci_bm = 0;
-+		s->CK24[chunk_id - 1].ci_off = 0;
++                for (m = 0; m < 4; m++) {
++                    s->CK24[chunk_id - 1].ci_bm1[m] = 0;
++                    s->CK24[chunk_id - 1].ci_off1[m] = 0;                    
++                }
++
 +		return 0;
 +	} else if (s->ck24_count == s->ck24_total) {
 +		/*Previously allocated memory is full.
@@ -1570,7 +1571,7 @@ index 0000000..48af54d
 +	return -EINVAL;
 +}
 +
-+static int N24_delete(struct sail *s, u32 chunk_id)
++static int N24_delete(struct sail *s, u16 chunk_id)
 +{
 +	long long m;
 +	u64 end_idx;
@@ -1601,7 +1602,7 @@ index 0000000..48af54d
 +	return 0;
 +}
 +
-+static int CK24_delete(struct sail *s, u32 chunk_id)
++static int CK24_delete(struct sail *s, u16 chunk_id)
 +{
 +	long long m;
 +
@@ -1618,13 +1619,15 @@ index 0000000..48af54d
 +	}
 +
 +	/*Reset the the last chunk*/
-+	s->CK24[s->ck24_count - 1].ci_off = 0;
-+	s->CK24[s->ck24_count - 1].ci_bm = 0;
++        for (m = 0; m < 4; m++) {
++            s->CK24[s->ck24_count - 1].ci_off1[m] = 0;
++            s->CK24[s->ck24_count - 1].ci_bm1[m] = 0;
++        }
 +
 +	return 0;
 +}
 +
-+static int level24_chunk_delete(struct sail *s, u32 chunk_id)
++static int level24_chunk_delete(struct sail *s, u16 chunk_id)
 +{
 +	N24_delete(s, chunk_id);
 +	CK24_delete(s, chunk_id);
@@ -1736,13 +1739,17 @@ index 0000000..48af54d
 +	return 0;
 +}
 +
-+static int C24_remove_chunkid(struct sail *s, u32 cnk_idx, u64 cnk_off)
++static int C24_remove_chunkid(struct sail *s, u16 cnk_idx, u64 cnk_off)
 +{
 +	long long i;
 +	bool found = false;
 +	u32 chunk_id;
++	u8 part_idx, part_off;
 +
-+	s->CK24[cnk_idx].ci_bm &= ~IDX_TO_BM(cnk_off);
++        part_idx = cnk_off / 64;
++        part_off = cnk_off % 64;
++
++	s->CK24[cnk_idx].ci_bm1[part_idx] &= ~IDX_TO_BM(part_off);
 +	chunk_id = s->C24[get_arr_idx(s->CK24[cnk_idx], cnk_off)];
 +
 +	for (i = 0; i < CK24_SIZE; i++) {
@@ -1787,7 +1794,7 @@ index 0000000..48af54d
 +  * @param chunk_id chunk ID that is being checked
 +  * @return true/false
 +  */
-+static bool is_chunk_unused_level24(u8 *nh, struct chunk *ck, u32 chunk_id)
++static bool is_chunk_unused_level24(u8 *nh, struct chunk *ck, u16 chunk_id)
 +{
 +	long long i;
 +	long long start_index, end_index;
@@ -1805,7 +1812,7 @@ index 0000000..48af54d
 +			return false;
 +	}
 +
-+	if (ck->ci_bm)
++	if (ck->ci_bm1[0] || ck->ci_bm1[1] || ck->ci_bm1[2] || ck->ci_bm1[3])
 +		return false;
 +
 +	return true;
@@ -2052,7 +2059,7 @@ index 0000000..48af54d
 +		goto finish;
 +	}
 +
-+	/* The prefix_len is 27-32. So we need to check if if there is any
++	/* The prefix_len is 25-32. So we need to check if if there is any
 +	 * chunk for this index in level 32
 +	 */
 +        part_idx = ck24_off / 64;
@@ -2098,14 +2105,15 @@ index 0000000..48af54d
 +int sail_ml_delete(struct sail *s, u32 key, u8 prefix_len)
 +{
 +	int i;
-+	u32 n20_idx;/*Index to N20, P20 and C20*/
-+	u64 n26_idx;/*Index to level N26 and P26*/
-+	u32 ck26_idx;/*Index to CK26*/
-+	u64 ck26_off;/*Offset inside chunk in level 26*/
++	u32 n16_idx;/*Index to N16, P16 and C16*/
++	u64 n24_idx;/*Index to level N24 and P24*/
++	u16 ck24_idx;/*Index to CK24*/
++	u64 ck24_off;/*Offset inside chunk in level 24*/
 +	u64 n32_idx;/*Index to level N32 and P32*/
 +	u32 consecutive_leafs;
 +	int err = 0;
 +	u32 chunkid_level32;
++	u8 part_idx, part_off;
 +
 +	spin_lock(&s->lock);
 +
@@ -2113,57 +2121,59 @@ index 0000000..48af54d
 +	if (prefix_len == 0 || !s->N16)
 +		goto error;
 +
-+	/*Eextract 20 bits from LSB.*/
-+	n20_idx = key >> 12;
++	/*Eextract 16 bits from LSB.*/
++	n16_idx = key >> 16;
 +
-+	if (prefix_len <= 20) {
++	if (prefix_len <= 16) {
 +		/*Level pushing*/
-+		consecutive_leafs = 1U << (20 - prefix_len);
++		consecutive_leafs = 1U << (16 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Prefix len doesn't match*/
-+			if (s->P16[n20_idx + i] != prefix_len)
++			if (s->P16[n16_idx + i] != prefix_len)
 +				continue;
-+			s->N16[n20_idx + i] = 0;
-+			s->P16[n20_idx + i] = 0;
++			s->N16[n16_idx + i] = 0;
++			s->P16[n16_idx + i] = 0;
 +		}
 +		goto finish;
 +	}
 +
-+	/* The prefix_len is 21-32 but no chunk for the prefix*/
-+	if (s->C16[n20_idx] == 0)
++	/* The prefix_len is 17~32 but no chunk for the prefix*/
++	if (s->C16[n16_idx] == 0)
 +		goto error;
 +
-+	ck26_idx = s->C16[n20_idx] - 1;
-+	ck26_off = (key & 4032) >> 6;/*Extract 21-26 bit from the prefix*/
-+	n26_idx = ck26_idx * CHUNK_SIZE + ck26_off;
++	ck24_idx = s->C16[n16_idx] - 1;
++	ck24_off = (key & 65280) >> 8;/*Extract bit 17~24 from the prefix*/
++	n24_idx = ck24_idx * CHUNK_SIZE + ck24_off;
 +
-+	if (prefix_len <= 26) {
++	if (prefix_len <= 24) {
 +		/*Level pushing*/
-+		consecutive_leafs = 1U << (26 - prefix_len);
++		consecutive_leafs = 1U << (24 - prefix_len);
 +		for (i = 0; i < consecutive_leafs; i++) {
 +			/*Prefix len doesn't match*/
-+			if (s->P24[n26_idx + i] != prefix_len)
++			if (s->P24[n24_idx + i] != prefix_len)
 +				continue;
-+			s->N24[n26_idx + i] = 0;
-+			s->P24[n26_idx + i] = 0;
++			s->N24[n24_idx + i] = 0;
++			s->P24[n24_idx + i] = 0;
 +		}
-+		if (is_chunk_unused_level24(s->N24, &s->CK24[ck26_idx],
-+					    s->C16[n20_idx])) {
-+			level24_chunk_delete(s, s->C16[n20_idx]);
++		if (is_chunk_unused_level24(s->N24, &s->CK24[ck24_idx],
++					    s->C16[n16_idx])) {
++			level24_chunk_delete(s, s->C16[n16_idx]);
 +			C16_remove_chunkid(s->C16, LEVEL16_SIZE,
-+					   s->C16[n20_idx]);
++					   s->C16[n16_idx]);
 +		}
 +		goto finish;
 +	}
 +
-+	/* The prefix_len is 27-32. but no chunk for the prefix */
-+	if (!(s->CK24[ck26_idx].ci_bm & IDX_TO_BM(ck26_off)))
++        part_idx = ck24_off / 64;
++        part_off = ck24_off % 64;
++	/* The prefix_len is 25~32. but no chunk for the prefix */
++	if (!(s->CK24[ck24_idx].ci_bm1[part_idx] & IDX_TO_BM(part_off)))
 +		goto error;
 +
-+	chunkid_level32 = s->C24[get_arr_idx(s->CK24[ck26_idx], ck26_off)];
++	chunkid_level32 = s->C24[get_arr_idx(s->CK24[ck24_idx], ck24_off)];
 +
-+	/*Extract 6 bit from MSB and calculate index to level 32*/
-+	n32_idx = (chunkid_level32 - 1) * CHUNK_SIZE + (key & 63);
++	/*Extract 8 bit from MSB and calculate index to level 32*/
++	n32_idx = (chunkid_level32 - 1) * CHUNK_SIZE + (key & 255);
 +
 +	if (prefix_len <= 32) {
 +		/*Level pushing*/
@@ -2178,7 +2188,7 @@ index 0000000..48af54d
 +		}
 +		if (is_chunk_unused_level32(s->N32, chunkid_level32)) {
 +			level32_chunk_delete(s, chunkid_level32);
-+			C24_remove_chunkid(s, ck26_idx, ck26_off);
++			C24_remove_chunkid(s, ck24_idx, ck24_off);
 +		}
 +		goto finish;
 +	}
@@ -2316,7 +2326,7 @@ index 0000000..48af54d
 +	return 0;
 +}
 diff --git a/net/ipv4/fib_trie.c b/net/ipv4/fib_trie.c
-index 5bc0c89..098cf03 100644
+index 5bc0c89..40cf7cf 100644
 --- a/net/ipv4/fib_trie.c
 +++ b/net/ipv4/fib_trie.c
 @@ -1280,6 +1280,10 @@ int fib_table_insert(struct net *net, struct fib_table *tb,
@@ -2335,7 +2345,7 @@ index 5bc0c89..098cf03 100644
  	pr_debug("Deleting %08x/%d tos=%d t=%p\n", key, plen, tos, t);
  
 +#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+//	sail_ml_delete(&tb->sail, key, plen);
++	sail_ml_delete(&tb->sail, key, plen);
 +#endif
 +
  	fa_to_delete = NULL;
