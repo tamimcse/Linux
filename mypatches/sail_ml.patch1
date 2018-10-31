@@ -729,7 +729,7 @@ index 0f7a27f..64100d7 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..d6be28b 100644
+index 69c91d1..f2d9fb6 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -1078,7 +1078,7 @@ index 69c91d1..d6be28b 100644
 +		}
 +	}
 +
-+	for (j = 97; j < 97; j++) {
++	for (j = 0; j < 97; j++) {
 +		ip_addr = in_aton(wtf_26[j]);
 +
 +		if (tb) {
@@ -1116,7 +1116,7 @@ index 69c91d1..d6be28b 100644
 +		tot_tsc += (tsc_end - tsc_begin);
 +		tot_tsc_trie += (tsc_trie_end - tsc_trie_begin);
 +	}
-+//	pr_err("AVG_COST: SAIL=%llu trie=%llu !!!!!!!!", tot_tsc/97, tot_tsc_trie/97);
++	pr_err("AVG_COST: SAIL=%llu trie=%llu !!!!!!!!", tot_tsc/97, tot_tsc_trie/97);
 +
 +	for (j = 0; j < 1000; j++) {
 +//		get_random_bytes(&ip_addr, 4);
@@ -1267,10 +1267,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..0892eda
+index 0000000..4413f0e
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,1063 @@
+@@ -0,0 +1,1094 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1294,14 +1294,16 @@ index 0000000..0892eda
 +/*The length of N16, P16 and C16 is 2^16*/
 +#define LEVEL16_SIZE 65536
 +
-+/*Length of CK24*/
-+#define CK24_SIZE 2048
++/*Length of CK24.*/
++#define C24_SIZE 1048576
 +
 +/*chunk size is 2^8*/
 +#define CHUNK_SIZE 256
 +
 +/*Number of new chunks allocated each time*/
-+#define NUM_CHUNKS 256
++#define NUM_CHUNKS 16384
++
++#define CK26_NUM 256
 +
 +/*Converts an index to bitmap*/
 +#define IDX_TO_BM(X) (1ULL << (X))
@@ -1351,77 +1353,80 @@ index 0000000..0892eda
 +		pr_err("Invalid chunk_id for level 26");
 +		return -EINVAL;
 +	}
-+
-+	/* No need to allocate memory*/
-+	if (s->ck24_count < s->ck24_total) {
-+		/*shift each element one step right to make
-+		 *space for the new one
-+		 */
-+		m = (long long)s->ck24_count * CHUNK_SIZE - 1;
-+		for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
-+			s->N24[m + CHUNK_SIZE] = s->N24[m];
-+			s->P24[m + CHUNK_SIZE] = s->P24[m];
-+		}
-+
-+		/*Reset the newly created chunk*/
-+		m = (chunk_id - 1) * CHUNK_SIZE;
-+		for (; m < chunk_id * CHUNK_SIZE; m++) {
-+			s->N24[m] = 0;
-+			s->P24[m] = 0;
-+		}
-+		return 0;
-+	} else if (s->ck24_count == s->ck24_total) {
-+		/*Previously allocated memory is full.
-+		 *So need to reallocate the array
-+		 */
-+		u8 *n, *p;
-+		u8 *nh_old = s->N24;
-+		u8 *pl_old = s->P24;
-+		u64 arr_size, i, j, k, chunk_start;
-+
-+		arr_size = (s->ck24_count + NUM_CHUNKS) * CHUNK_SIZE;
-+		n = kcalloc(arr_size, sizeof(*n), GFP_ATOMIC);
-+		p = kcalloc(arr_size, sizeof(*p), GFP_ATOMIC);
-+
-+		if (!n || !p) {
-+			kfree(n);
-+			kfree(p);
-+			return -ENOMEM;
-+		}
-+
-+		/*Iterate over the new array and copy from the old array*/
-+		for (i = 1, j = 0, chunk_start = 0;
-+		     i <= (s->ck24_count + 1); i++) {
-+			/*Copy the chunk*/
-+			if (i != chunk_id) {
-+				for (k = 0; k < CHUNK_SIZE; k++, j++) {
-+					n[j] = nh_old[chunk_start + k];
-+					p[j] = pl_old[chunk_start + k];
-+				}
-+				chunk_start += CHUNK_SIZE;
-+			} else {
-+				/*skip copying*/
-+				j += CHUNK_SIZE;
-+			}
-+		}
-+
-+		/*Update the pointers with new pointer*/
-+		rcu_assign_pointer(s->N24, n);
-+		rcu_assign_pointer(s->P24, p);
-+
-+		/* Wait for all readers to be finished */
-+		synchronize_rcu();
-+
-+		/*Remove old arrays*/
-+		kfree(nh_old);
-+		kfree(pl_old);
-+		return 0;
++        
++	if (s->ck24_count >= NUM_CHUNKS) {
++		pr_err("Cannot insert a chunk. The chunk array is full");
++		return -EINVAL;
 +	}
++
++        /*shift each element one step right to make
++         *space for the new one
++         */
++        m = (long long)s->ck24_count * CHUNK_SIZE - 1;
++        for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
++                s->N24[m + CHUNK_SIZE] = s->N24[m];
++                s->P24[m + CHUNK_SIZE] = s->P24[m];
++        }
++
++        /*Reset the newly created chunk*/
++        m = (chunk_id - 1) * CHUNK_SIZE;
++        for (; m < chunk_id * CHUNK_SIZE; m++) {
++                s->N24[m] = 0;
++                s->P24[m] = 0;
++        }
++        return 0;
++//        else if (s->ck24_count == s->ck24_total) {
++//		/*Previously allocated memory is full.
++//		 *So need to reallocate the array
++//		 */
++//		u8 *n, *p;
++//		u8 *nh_old = s->N24;
++//		u8 *pl_old = s->P24;
++//		u64 arr_size, i, j, k, chunk_start;
++//
++//		arr_size = (s->ck24_count + NUM_CHUNKS) * CHUNK_SIZE;
++//		n = kcalloc(arr_size, sizeof(*n), GFP_ATOMIC);
++//		p = kcalloc(arr_size, sizeof(*p), GFP_ATOMIC);
++//
++//		if (!n || !p) {
++//			kfree(n);
++//			kfree(p);
++//			return -ENOMEM;
++//		}
++//
++//		/*Iterate over the new array and copy from the old array*/
++//		for (i = 1, j = 0, chunk_start = 0;
++//		     i <= (s->ck24_count + 1); i++) {
++//			/*Copy the chunk*/
++//			if (i != chunk_id) {
++//				for (k = 0; k < CHUNK_SIZE; k++, j++) {
++//					n[j] = nh_old[chunk_start + k];
++//					p[j] = pl_old[chunk_start + k];
++//				}
++//				chunk_start += CHUNK_SIZE;
++//			} else {
++//				/*skip copying*/
++//				j += CHUNK_SIZE;
++//			}
++//		}
++//
++//		/*Update the pointers with new pointer*/
++//		rcu_assign_pointer(s->N24, n);
++//		rcu_assign_pointer(s->P24, p);
++//
++//		/* Wait for all readers to be finished */
++//		synchronize_rcu();
++//
++//		/*Remove old arrays*/
++//		kfree(nh_old);
++//		kfree(pl_old);
++//		return 0;
++//	}
 +	return -EINVAL;
 +}
 +
 +/* Insert a chunk in CK26.*/
-+static int C24_insert(struct sail *s, u16 chunk_id)
++static int CK24_insert(struct sail *s, u16 chunk_id)
 +{
 +	long long m;
 +
@@ -1430,53 +1435,56 @@ index 0000000..0892eda
 +		return -EINVAL;
 +	}
 +
-+	/* No need to allocate memory*/
-+	if (s->ck24_count < s->ck24_total) {
-+		/*shift each chunk one step right to make
-+		 *space for the new one
-+		 */
-+		m = (long long)s->ck24_count - 1;
-+		for (; m >= (chunk_id - 1); m--)
-+			s->CK24[m + 1] = s->CK24[m];
-+
-+		/*Reset the newly created empty chunk*/
-+                for (m = 0; m < 4; m++) {
-+                    s->CK24[chunk_id - 1].c_bm[m] = 0;
-+                    s->CK24[chunk_id - 1].c_off[m] = 0;                    
-+                }
-+
-+		return 0;
-+	} else if (s->ck24_count == s->ck24_total) {
-+		/*Previously allocated memory is full.
-+		 *So need to reallocate the array
-+		 */
-+		struct chunk *chunks_old = s->CK24;
-+		struct chunk *chunks;
-+		u64 i;
-+
-+		chunks = kcalloc(s->ck24_count + NUM_CHUNKS,
-+				 sizeof(*chunks), GFP_ATOMIC);
-+		if (!chunks) {
-+			kfree(chunks);
-+			return -ENOMEM;
-+		}
-+
-+		/*Iterate over the new array and copy from the old array*/
-+		for (i = 1; i <= (s->ck24_count + 1); i++) {
-+			if (i != chunk_id)
-+				chunks[i - 1] = chunks_old[i - 1];
-+		}
-+
-+		/*Update the pointers with new pointer*/
-+		rcu_assign_pointer(s->CK24, chunks);
-+
-+		/* Wait for all readers to be finished */
-+		synchronize_rcu();
-+
-+		/*Remove old arrays*/
-+		kfree(chunks_old);
-+		return 0;
++	if (s->ck24_count >= NUM_CHUNKS) {
++		pr_err("Cannot insert a chunk. The chunk array is full");
++		return -EINVAL;
 +	}
++
++        /*shift each chunk one step right to make
++         *space for the new one
++         */
++        m = (long long)s->ck24_count - 1;
++        for (; m >= (chunk_id - 1); m--)
++                s->CK24[m + 1] = s->CK24[m];
++
++        /*Reset the newly created empty chunk*/
++        for (m = 0; m < 4; m++) {
++            s->CK24[chunk_id - 1].c_bm[m] = 0;
++            s->CK24[chunk_id - 1].c_off[m] = 0;                    
++        }
++
++        return 0;
++//        else if (s->ck24_count == s->ck24_total) {
++//		/*Previously allocated memory is full.
++//		 *So need to reallocate the array
++//		 */
++//		struct chunk *chunks_old = s->CK24;
++//		struct chunk *chunks;
++//		u64 i;
++//
++//		chunks = kcalloc(s->ck24_count + NUM_CHUNKS_CHK,
++//				 sizeof(*chunks), GFP_ATOMIC);
++//		if (!chunks) {
++//			kfree(chunks);
++//			return -ENOMEM;
++//		}
++//
++//		/*Iterate over the new array and copy from the old array*/
++//		for (i = 1; i <= (s->ck24_count + 1); i++) {
++//			if (i != chunk_id)
++//				chunks[i - 1] = chunks_old[i - 1];
++//		}
++//
++//		/*Update the pointers with new pointer*/
++//		rcu_assign_pointer(s->CK24, chunks);
++//
++//		/* Wait for all readers to be finished */
++//		synchronize_rcu();
++//
++//		/*Remove old arrays*/
++//		kfree(chunks_old);
++//		return 0;
++//	}
 +	return -EINVAL;
 +}
 +
@@ -1487,10 +1495,10 @@ index 0000000..0892eda
 +
 +	err = N24_insert(s, chunk_id);
 +	if (!err)
-+		err = C24_insert(s, chunk_id);
++		err = CK24_insert(s, chunk_id);
 +	if (!err) {
-+		if (s->ck24_count == s->ck24_total)
-+			s->ck24_total += NUM_CHUNKS;
++//		if (s->ck24_count == s->ck24_total)
++//			s->ck24_total += NUM_CHUNKS;
 +		++s->ck24_count;
 +	} else {
 +		pr_err("Something is really wrong in level 26 insertion");
@@ -1507,72 +1515,75 @@ index 0000000..0892eda
 +		pr_err("Invalid chunk_id for level 32");
 +		return -EINVAL;
 +	}
-+
-+	if (s->ck32_count < s->ck32_total) {
-+		/*shift each element one step right to make
-+		 *space for the new one
-+		 */
-+		m = (long long)s->ck32_count * CHUNK_SIZE - 1;
-+		for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
-+			s->N32[m + CHUNK_SIZE] = s->N32[m];
-+			s->P32[m + CHUNK_SIZE] = s->P32[m];
-+		}
-+
-+		/*Reset the newly created empty chunk*/
-+		m = (chunk_id - 1) * CHUNK_SIZE;
-+		for (; m < chunk_id * CHUNK_SIZE; m++) {
-+			s->N32[m] = 0;
-+			s->P32[m] = 0;
-+		}
-+
-+		++s->ck32_count;
-+		return 0;
-+	} else if (s->ck32_count == s->ck32_total) {
-+		/*Previously allocated memory is full.
-+		 *So need to reallocate the array
-+		 */
-+		u8 *nh_old = s->N32;
-+		u8 *pl_old = s->P32;
-+		u8 *n, *p;
-+		u64 arrsize, i, j, k, chunk_start;
-+
-+		arrsize = (s->ck32_count + NUM_CHUNKS) * CHUNK_SIZE;
-+		n = kcalloc(arrsize, sizeof(*n), GFP_ATOMIC);
-+		p = kcalloc(arrsize, sizeof(*p), GFP_ATOMIC);
-+
-+		if (!n || !p) {
-+			kfree(n);
-+			kfree(p);
-+			return -ENOMEM;
-+		}
-+
-+		/*Iterate over the new array and copy from the old array*/
-+		for (i = 1, j = 0, chunk_start = 0;
-+		     i <= (s->ck32_count + 1); i++) {
-+			/*copy the chunk*/
-+			if (i != chunk_id) {
-+				for (k = 0; k < CHUNK_SIZE; k++, j++) {
-+					n[j] = nh_old[chunk_start + k];
-+					p[j] = pl_old[chunk_start + k];
-+				}
-+				chunk_start += CHUNK_SIZE;
-+			} else {
-+				/*skip copying*/
-+				j += CHUNK_SIZE;
-+			}
-+		}
-+
-+		rcu_assign_pointer(s->N32, n);
-+		rcu_assign_pointer(s->P32, p);
-+		/* Wait for all references to be released */
-+		synchronize_rcu();
-+		/*Increment the counter after chunk has been inserted*/
-+		++s->ck32_count;
-+		s->ck32_total += NUM_CHUNKS;
-+		kfree(nh_old);
-+		kfree(pl_old);
-+		return 0;
++        
++	if (s->ck32_count >= NUM_CHUNKS) {
++		pr_err("Cannot insert a chunk. The chunk array is full");
++		return -EINVAL;
 +	}
++
++        /*shift each element one step right to make
++         *space for the new one
++         */
++        m = (long long)s->ck32_count * CHUNK_SIZE - 1;
++        for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
++                s->N32[m + CHUNK_SIZE] = s->N32[m];
++                s->P32[m + CHUNK_SIZE] = s->P32[m];
++        }
++
++        /*Reset the newly created empty chunk*/
++        m = (chunk_id - 1) * CHUNK_SIZE;
++        for (; m < chunk_id * CHUNK_SIZE; m++) {
++                s->N32[m] = 0;
++                s->P32[m] = 0;
++        }
++
++        ++s->ck32_count;
++        return 0;//        else if (s->ck32_count == s->ck32_total) {
++//		/*Previously allocated memory is full.
++//		 *So need to reallocate the array
++//		 */
++//		u8 *nh_old = s->N32;
++//		u8 *pl_old = s->P32;
++//		u8 *n, *p;
++//		u64 arrsize, i, j, k, chunk_start;
++//
++//		arrsize = (s->ck32_count + NUM_CHUNKS) * CHUNK_SIZE;
++//		n = kcalloc(arrsize, sizeof(*n), GFP_ATOMIC);
++//		p = kcalloc(arrsize, sizeof(*p), GFP_ATOMIC);
++//
++//		if (!n || !p) {
++//			kfree(n);
++//			kfree(p);
++//			return -ENOMEM;
++//		}
++//
++//		/*Iterate over the new array and copy from the old array*/
++//		for (i = 1, j = 0, chunk_start = 0;
++//		     i <= (s->ck32_count + 1); i++) {
++//			/*copy the chunk*/
++//			if (i != chunk_id) {
++//				for (k = 0; k < CHUNK_SIZE; k++, j++) {
++//					n[j] = nh_old[chunk_start + k];
++//					p[j] = pl_old[chunk_start + k];
++//				}
++//				chunk_start += CHUNK_SIZE;
++//			} else {
++//				/*skip copying*/
++//				j += CHUNK_SIZE;
++//			}
++//		}
++//
++//		rcu_assign_pointer(s->N32, n);
++//		rcu_assign_pointer(s->P32, p);
++//		/* Wait for all references to be released */
++//		synchronize_rcu();
++//		/*Increment the counter after chunk has been inserted*/
++//		++s->ck32_count;
++//		s->ck32_total += NUM_CHUNKS;
++//		kfree(nh_old);
++//		kfree(pl_old);
++//		return 0;
++//	}
 +
 +	pr_err("Something is really wrong in level 32 insertion");
 +	return -EINVAL;
@@ -1759,7 +1770,7 @@ index 0000000..0892eda
 +	chunk_id = s->C24[get_arr_idx(s->CK24[cnk_idx], cnk_off)];
 +	s->CK24[cnk_idx].c_bm[part_idx] &= ~IDX_TO_BM(part_off);
 +
-+	for (i = 0; i < CK24_SIZE; i++) {
++	for (i = 0; i < C24_SIZE; i++) {
 +		if (s->C24[i] == chunk_id)
 +			found = true;
 +		else if (found && s->C24[i] > 0)
@@ -1877,8 +1888,8 @@ index 0000000..0892eda
 +	/*If there is no chunk to the left, then this is the first chunk*/
 +	return 1;
 +found:
-+        if (index >= CK24_SIZE) {
-+                pr_err("Invalid Index");
++        if (index >= (C24_SIZE - 1)) {
++                pr_err("CK24 array is full. Cannot insert");
 +                return 0;
 +        } else if (ci[index] <= 0) {
 +                pr_err("Chunk ID says its zero which is not right");
@@ -1942,7 +1953,7 @@ index 0000000..0892eda
 +	/* Move each elemenmt one step to the right to create a space for
 +	 * new element. Also increment chunk IDs by 1
 +	 */
-+	for (i = CK24_SIZE - 2 ; i >= (long long)index; i--)
++	for (i = C24_SIZE - 2 ; i >= (long long)index; i--)
 +		ci[i + 1] = (ci[i] > 0) ? ci[i] + 1 : ci[i];
 +	ci[index] = chunk_id;
 +
@@ -1973,9 +1984,10 @@ index 0000000..0892eda
 +		   struct net_device *dev)
 +{
 +	int i;
-+	u8 *n16, *p16;
++	u8 *n16, *p16, *n24, *p24, *n32, *p32;
 +	u16 *c16;
 +	u32 *c24;
++        struct chunk *ck24;
 +	u16 chunk_id;
 +	u16 n16_idx;/*Index to N16, P16 and C16*/
 +	u64 n24_idx;/*Index to N24 and P24*/
@@ -2000,13 +2012,23 @@ index 0000000..0892eda
 +		n16 = kcalloc(LEVEL16_SIZE, sizeof(*n16), GFP_ATOMIC);
 +		p16 = kcalloc(LEVEL16_SIZE, sizeof(*p16), GFP_ATOMIC);
 +		c16 = kcalloc(LEVEL16_SIZE, sizeof(*c16), GFP_ATOMIC);
-+		c24 = kcalloc(CK24_SIZE, sizeof(*c24), GFP_ATOMIC);
++		n24 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n24), GFP_ATOMIC);
++		p24 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p24), GFP_ATOMIC);
++		ck24 = kcalloc(NUM_CHUNKS, sizeof(*ck24), GFP_ATOMIC);
++		c24 = kcalloc(C24_SIZE, sizeof(*c24), GFP_ATOMIC);
++		n32 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n32), GFP_ATOMIC);
++		p32 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p32), GFP_ATOMIC);
 +
-+		if (!n16 || !c16 || !p16 || !c24) {
++		if (!n16 || !c16 || !p16 || !n24 || !p24 || !ck24 || !c24 || !n32 || !p32) {
 +			kfree(n16);
 +			kfree(c16);
 +			kfree(p16);
++			kfree(n24);
++			kfree(p24);
++			kfree(ck24);
 +			kfree(c24);
++			kfree(n32);
++			kfree(p32);
 +			pr_err("Out of memory while allocating level 16");
 +			goto error;
 +		}
@@ -2014,7 +2036,16 @@ index 0000000..0892eda
 +		RCU_INIT_POINTER(s->N16, n16);
 +		RCU_INIT_POINTER(s->P16, p16);
 +		RCU_INIT_POINTER(s->C16, c16);
++
++		RCU_INIT_POINTER(s->N24, n24);
++		RCU_INIT_POINTER(s->P24, p24);
++		RCU_INIT_POINTER(s->CK24, ck24);
 +		RCU_INIT_POINTER(s->C24, c24);
++                
++		RCU_INIT_POINTER(s->N32, n32);
++		RCU_INIT_POINTER(s->P32, p32);
++                
++                
 +		synchronize_rcu();
 +	}
 +
