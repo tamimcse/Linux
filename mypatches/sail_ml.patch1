@@ -729,7 +729,7 @@ index 0f7a27f..64100d7 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..3531c73 100644
+index 69c91d1..773baeb 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -759,7 +759,7 @@ index 69c91d1..3531c73 100644
 + */
 +struct chunk {
 +	u64 c_bm[4];
-+	u64 c_off[4];        
++	u64 c_off[4];
 +};
 +
 +struct sail {
@@ -813,7 +813,7 @@ index 69c91d1..3531c73 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +319,341 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +319,342 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -1113,7 +1113,8 @@ index 69c91d1..3531c73 100644
 +		tot_tsc += (tsc_end - tsc_begin);
 +		tot_tsc_trie += (tsc_trie_end - tsc_trie_begin);
 +	}
-+//	pr_err("AVG_COST: SAIL=%llu trie=%llu !!!!!!!!", tot_tsc/97, tot_tsc_trie/97);
++//	pr_err("AVG_COST: SAIL=%llu trie=%llu !!!!!!!!",
++//		tot_tsc/97, tot_tsc_trie/97);
 +
 +	for (j = 0; j < 1000; j++) {
 +//		get_random_bytes(&ip_addr, 4);
@@ -1264,10 +1265,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..899cb58
+index 0000000..59dc6b2
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,960 @@
+@@ -0,0 +1,963 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1314,8 +1315,8 @@ index 0000000..899cb58
 +{
 +	u8 part_idx, part_off;
 +
-+        part_idx = idx / 64;
-+        part_off = idx % 64;
++	part_idx = idx / 64;
++	part_off = idx % 64;
 +
 +	return c.c_off[part_idx] + IDX_FRM_MASK(part_off, c.c_bm[part_idx]);
 +}
@@ -1348,28 +1349,28 @@ index 0000000..899cb58
 +		pr_err("Invalid chunk_id for level 26");
 +		return -EINVAL;
 +	}
-+        
++
 +	if (s->cnk24_count >= NUM_CHUNKS) {
 +		pr_err("Cannot insert a chunk. The chunk array is full");
 +		return -EINVAL;
 +	}
 +
-+        /*shift each element one step right to make
-+         *space for the new one
-+         */
-+        m = (long long)s->cnk24_count * CHUNK_SIZE - 1;
-+        for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
-+                s->N24[m + CHUNK_SIZE] = s->N24[m];
-+                s->P24[m + CHUNK_SIZE] = s->P24[m];
-+        }
++	/*shift each element one step right to make
++	 *space for the new one
++	 */
++	m = (long long)s->cnk24_count * CHUNK_SIZE - 1;
++	for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
++		s->N24[m + CHUNK_SIZE] = s->N24[m];
++		s->P24[m + CHUNK_SIZE] = s->P24[m];
++	}
 +
-+        /*Reset the newly created chunk*/
-+        m = (chunk_id - 1) * CHUNK_SIZE;
-+        for (; m < chunk_id * CHUNK_SIZE; m++) {
-+                s->N24[m] = 0;
-+                s->P24[m] = 0;
-+        }
-+        return 0;
++	/*Reset the newly created chunk*/
++	m = (chunk_id - 1) * CHUNK_SIZE;
++	for (; m < chunk_id * CHUNK_SIZE; m++) {
++		s->N24[m] = 0;
++		s->P24[m] = 0;
++	}
++	return 0;
 +}
 +
 +/* Insert a chunk in CK26.*/
@@ -1387,19 +1388,19 @@ index 0000000..899cb58
 +		return -EINVAL;
 +	}
 +
-+        /*shift each chunk one step right to make
-+         *space for the new one
-+         */
-+        m = (long long)s->cnk24_count - 1;
-+        for (; m >= (chunk_id - 1); m--)
-+                s->CK24[m + 1] = s->CK24[m];
++	/*shift each chunk one step right to make
++	 *space for the new one
++	 */
++	m = (long long)s->cnk24_count - 1;
++	for (; m >= (chunk_id - 1); m--)
++		s->CK24[m + 1] = s->CK24[m];
 +
-+        /*Reset the newly created empty chunk*/
-+        for (m = 0; m < 4; m++) {
-+            s->CK24[chunk_id - 1].c_bm[m] = 0;
-+            s->CK24[chunk_id - 1].c_off[m] = 0;                    
-+        }
-+        return 0;
++	/*Reset the newly created empty chunk*/
++	for (m = 0; m < 4; m++) {
++		s->CK24[chunk_id - 1].c_bm[m] = 0;
++		s->CK24[chunk_id - 1].c_off[m] = 0;
++	}
++	return 0;
 +}
 +
 +/* Insert a chunk to level 26. Note that chunk_id starts from 1, not 0 */
@@ -1426,30 +1427,30 @@ index 0000000..899cb58
 +		pr_err("Invalid chunk_id for level 32");
 +		return -EINVAL;
 +	}
-+        
++
 +	if (s->cnk32_count >= NUM_CHUNKS) {
 +		pr_err("Cannot insert a chunk to level 32. The chunk array is full");
 +		return -EINVAL;
 +	}
 +
-+        /*shift each element one step right to make
-+         *space for the new one
-+         */
-+        m = (long long)s->cnk32_count * CHUNK_SIZE - 1;
-+        for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
-+                s->N32[m + CHUNK_SIZE] = s->N32[m];
-+                s->P32[m + CHUNK_SIZE] = s->P32[m];
-+        }
++	/*shift each element one step right to make
++	 *space for the new one
++	 */
++	m = (long long)s->cnk32_count * CHUNK_SIZE - 1;
++	for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
++		s->N32[m + CHUNK_SIZE] = s->N32[m];
++		s->P32[m + CHUNK_SIZE] = s->P32[m];
++	}
 +
-+        /*Reset the newly created empty chunk*/
-+        m = (chunk_id - 1) * CHUNK_SIZE;
-+        for (; m < chunk_id * CHUNK_SIZE; m++) {
-+                s->N32[m] = 0;
-+                s->P32[m] = 0;
-+        }
++	/*Reset the newly created empty chunk*/
++	m = (chunk_id - 1) * CHUNK_SIZE;
++	for (; m < chunk_id * CHUNK_SIZE; m++) {
++		s->N32[m] = 0;
++		s->P32[m] = 0;
++	}
 +
-+        ++s->cnk32_count;
-+        return 0;
++	++s->cnk32_count;
++	return 0;
 +}
 +
 +static int N24_delete(struct sail *s, u16 chunk_id)
@@ -1500,10 +1501,10 @@ index 0000000..899cb58
 +	}
 +
 +	/*Reset the the last chunk*/
-+        for (m = 0; m < 4; m++) {
-+            s->CK24[s->cnk24_count - 1].c_off[m] = 0;
-+            s->CK24[s->cnk24_count - 1].c_bm[m] = 0;
-+        }
++	for (m = 0; m < 4; m++) {
++		s->CK24[s->cnk24_count - 1].c_off[m] = 0;
++		s->CK24[s->cnk24_count - 1].c_bm[m] = 0;
++	}
 +
 +	return 0;
 +}
@@ -1627,8 +1628,8 @@ index 0000000..899cb58
 +	u32 chunk_id;
 +	u8 part_idx, part_off;
 +
-+        part_idx = cnk_off / 64;
-+        part_off = cnk_off % 64;
++	part_idx = cnk_off / 64;
++	part_off = cnk_off % 64;
 +
 +	chunk_id = s->C24[get_arr_idx(s->CK24[cnk_idx], cnk_off)];
 +	s->CK24[cnk_idx].c_bm[part_idx] &= ~IDX_TO_BM(part_off);
@@ -1638,8 +1639,8 @@ index 0000000..899cb58
 +			found = true;
 +		else if (found && s->C24[i] > 0)
 +			s->C24[i - 1] = s->C24[i];
-+                else if (found && !s->C24[i])
-+                    break;
++		else if (found && !s->C24[i])
++			break;
 +	}
 +
 +	return 0;
@@ -1717,49 +1718,49 @@ index 0000000..899cb58
 +	u8 part_idx, part_off;
 +	struct chunk c;
 +
-+        part_idx = cnk_off / 64;
-+        part_off = cnk_off % 64;
-+        c = chunks[cnk_idx];
++	part_idx = cnk_off / 64;
++	part_off = cnk_off % 64;
++	c = chunks[cnk_idx];
 +
 +	/*The chunk is not empty*/
 +	if (c.c_bm[part_idx]) {
-+            index = c.c_off[part_idx] +
-+                    IDX_FRM_MASK(part_off, c.c_bm[part_idx]) - 1;
-+            if(index >= 0)
-+                goto found;
++		index = c.c_off[part_idx] +
++		    IDX_FRM_MASK(part_off, c.c_bm[part_idx]) - 1;
++		if (index >= 0)
++			goto found;
 +	}
-+        
-+	/*check the other parts of the chunk*/        
-+        for (j = part_idx - 1; j >= 0; j--) {
-+            if (c.c_bm[j]) {
-+                index = c.c_off[j] + POPCNT(c.c_bm[j]) - 1;
-+                goto found;
-+            }
-+        }
-+        
-+        /*Find a chunk to the left whose offset is not 0*/
-+        for (i = (long long)cnk_idx - 1; i >= 0; i--) {
-+            for (j = 3; j >= 0; j--) {
-+                if (chunks[i].c_bm[j]) {
-+                        index = chunks[i].c_off[j] +
-+                                POPCNT(chunks[i].c_bm[j]) - 1;
-+                        goto found;
-+                }
-+            }
-+        }
++
++	/*check the other parts of the chunk*/
++	for (j = part_idx - 1; j >= 0; j--) {
++		if (c.c_bm[j]) {
++			index = c.c_off[j] + POPCNT(c.c_bm[j]) - 1;
++			goto found;
++		}
++	}
++
++	/*Find a chunk to the left whose offset is not 0*/
++	for (i = (long long)cnk_idx - 1; i >= 0; i--) {
++		for (j = 3; j >= 0; j--) {
++			if (chunks[i].c_bm[j]) {
++				index = chunks[i].c_off[j] +
++					POPCNT(chunks[i].c_bm[j]) - 1;
++				goto found;
++			}
++		}
++	}
 +
 +	/*If there is no chunk to the left, then this is the first chunk*/
 +	return 1;
 +found:
-+        if (index >= (C24_SIZE - 1)) {
-+                pr_err("CK24 array is full. Cannot insert");
-+                return 0;
-+        } else if (ci[index] <= 0) {
-+                pr_err("Chunk ID says its zero which is not right");
-+                return 0;
-+        } else {
-+                return ci[index] + 1;
-+        }
++	if (index >= (C24_SIZE - 1)) {
++		pr_err("CK24 array is full. Cannot insert");
++		return 0;
++	} else if (ci[index] <= 0) {
++		pr_err("Chunk ID says its zero which is not right");
++		return 0;
++	} else {
++		return ci[index] + 1;
++	}
 +}
 +
 +/**
@@ -1778,41 +1779,42 @@ index 0000000..899cb58
 +	u64 index = 0;
 +	u8 part_idx, part_off;
 +
-+        part_idx = cnk_off / 64;
-+        part_off = cnk_off % 64;
++	part_idx = cnk_off / 64;
++	part_off = cnk_off % 64;
 +
 +	if (chunks[cnk_idx].c_bm[part_idx] & IDX_TO_BM(part_off)) {
 +		pr_err("Error: bitmap is already set");
 +		return -EINVAL;
 +	}
-+        
++
 +	/*looking for the index where Chunk ID will be copied*/
 +	if (chunks[cnk_idx].c_bm[part_idx]) {
 +		index = chunks[cnk_idx].c_off[part_idx] +
 +			IDX_FRM_MASK(part_off, chunks[cnk_idx].c_bm[part_idx]);
-+                goto index_found;
++		goto index_found;
 +	}
 +
-+	/*check the other parts of the chunk*/        
-+        for (j = part_idx - 1; j >= 0; j--) {
-+            if (chunks[cnk_idx].c_bm[j]) {
-+                index = chunks[cnk_idx].c_off[j] + POPCNT(chunks[cnk_idx].c_bm[j]);
-+                goto index_found;
-+            }
-+        }
-+        
-+        /*Find a chunk to the left which is not empty*/
-+        for (i = (long long)cnk_idx - 1; i >= 0; i--) {
-+            for (j = 3; j >= 0; j--) {
-+                if (chunks[i].c_bm[j]) {
-+                        index = chunks[i].c_off[j] +
-+                                POPCNT(chunks[i].c_bm[j]);
-+                        goto index_found;
-+                }   
-+            }
-+        }
++	/*check the other parts of the chunk*/
++	for (j = part_idx - 1; j >= 0; j--) {
++		if (chunks[cnk_idx].c_bm[j]) {
++			index = chunks[cnk_idx].c_off[j] +
++					POPCNT(chunks[cnk_idx].c_bm[j]);
++			goto index_found;
++		}
++	}
 +
-+index_found:        
++	/*Find a chunk to the left which is not empty*/
++	for (i = (long long)cnk_idx - 1; i >= 0; i--) {
++		for (j = 3; j >= 0; j--) {
++			if (chunks[i].c_bm[j]) {
++				index = chunks[i].c_off[j] +
++					POPCNT(chunks[i].c_bm[j]);
++				goto index_found;
++			}
++		}
++	}
++
++index_found:
 +	/* Move each elemenmt one step to the right to create a space for
 +	 * new element. Also increment chunk IDs by 1
 +	 */
@@ -1827,17 +1829,17 @@ index 0000000..899cb58
 +	chunks[cnk_idx].c_bm[part_idx] |= IDX_TO_BM(part_off);
 +
 +	/*Update parts of the chunks to the right*/
-+        for (j = part_idx + 1; j < 4; j++) {
++	for (j = part_idx + 1; j < 4; j++) {
 +		if (chunks[cnk_idx].c_bm[j])
 +			chunks[cnk_idx].c_off[j]++;
-+        }
-+        
++	}
++
 +	/*Update offset of the chunks to the right*/
 +	for (i = (long long)cnk_idx + 1; i < chunk_count; i++) {
-+            for (j = 0; j < 4; j++) {
-+		if (chunks[i].c_bm[j])
-+			chunks[i].c_off[j]++;   
-+            }
++		for (j = 0; j < 4; j++) {
++			if (chunks[i].c_bm[j])
++				chunks[i].c_off[j]++;
++			}
 +	}
 +
 +	return 0;
@@ -1850,7 +1852,7 @@ index 0000000..899cb58
 +	u8 *n16, *p16, *n24, *p24, *n32, *p32;
 +	u16 *c16;
 +	u32 *c24;
-+        struct chunk *ck24;
++	struct chunk *ck24;
 +	u16 chunk_id;
 +	u16 n16_idx;/*Index to N16, P16 and C16*/
 +	u64 n24_idx;/*Index to N24 and P24*/
@@ -1875,14 +1877,19 @@ index 0000000..899cb58
 +		n16 = kcalloc(LEVEL16_SIZE, sizeof(*n16), GFP_ATOMIC);
 +		p16 = kcalloc(LEVEL16_SIZE, sizeof(*p16), GFP_ATOMIC);
 +		c16 = kcalloc(LEVEL16_SIZE, sizeof(*c16), GFP_ATOMIC);
-+		n24 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n24), GFP_ATOMIC);
-+		p24 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p24), GFP_ATOMIC);
++		n24 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n24),
++			      GFP_ATOMIC);
++		p24 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p24),
++			      GFP_ATOMIC);
 +		ck24 = kcalloc(NUM_CHUNKS, sizeof(*ck24), GFP_ATOMIC);
 +		c24 = kcalloc(C24_SIZE, sizeof(*c24), GFP_ATOMIC);
-+		n32 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n32), GFP_ATOMIC);
-+		p32 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p32), GFP_ATOMIC);
++		n32 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n32),
++			      GFP_ATOMIC);
++		p32 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p32),
++			      GFP_ATOMIC);
 +
-+		if (!n16 || !c16 || !p16 || !n24 || !p24 || !ck24 || !c24 || !n32 || !p32) {
++		if (!n16 || !c16 || !p16 || !n24 || !p24 || !ck24 ||
++		    !c24 || !n32 || !p32) {
 +			kfree(n16);
 +			kfree(c16);
 +			kfree(p16);
@@ -1899,16 +1906,13 @@ index 0000000..899cb58
 +		RCU_INIT_POINTER(s->N16, n16);
 +		RCU_INIT_POINTER(s->P16, p16);
 +		RCU_INIT_POINTER(s->C16, c16);
-+
 +		RCU_INIT_POINTER(s->N24, n24);
 +		RCU_INIT_POINTER(s->P24, p24);
 +		RCU_INIT_POINTER(s->CK24, ck24);
 +		RCU_INIT_POINTER(s->C24, c24);
-+                
 +		RCU_INIT_POINTER(s->N32, n32);
 +		RCU_INIT_POINTER(s->P32, p32);
-+                
-+                
++
 +		synchronize_rcu();
 +	}
 +
@@ -1965,8 +1969,8 @@ index 0000000..899cb58
 +	/* The prefix_len is 25-32. So we need to check if if there is any
 +	 * chunk for this index in level 32
 +	 */
-+        part_idx = ck24_off / 64;
-+        part_off = ck24_off % 64;
++	part_idx = ck24_off / 64;
++	part_off = ck24_off % 64;
 +	if (!(s->CK24[ck24_idx].c_bm[part_idx] & IDX_TO_BM(part_off))) {
 +		chunk_id = level32_calc_chunkid(s->CK24, ck24_idx,
 +						ck24_off, s->C24);
@@ -2067,8 +2071,8 @@ index 0000000..899cb58
 +		goto finish;
 +	}
 +
-+        part_idx = ck24_off / 64;
-+        part_off = ck24_off % 64;
++	part_idx = ck24_off / 64;
++	part_off = ck24_off % 64;
 +	/* The prefix_len is 25~32. but no chunk for the prefix */
 +	if (!(s->CK24[ck24_idx].c_bm[part_idx] & IDX_TO_BM(part_off)))
 +		goto error;
@@ -2208,8 +2212,8 @@ index 0000000..899cb58
 +	 * from MSB and calculate index to N32
 +	 */
 +	ck24 = rcu_dereference(s->CK24);
-+        part_idx = ck24_off / 64;
-+        part_off = ck24_off % 64;
++	part_idx = ck24_off / 64;
++	part_off = ck24_off % 64;
 +	if (likely(ck24[ck24_idx].c_bm[part_idx] & IDX_TO_BM(part_off))) {
 +		c24 = rcu_dereference(s->C24);
 +		c24_idx = ck24[ck24_idx].c_off[part_idx] +
