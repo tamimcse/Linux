@@ -729,7 +729,7 @@ index 0f7a27f..64100d7 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..f2d9fb6 100644
+index 69c91d1..3531c73 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -741,7 +741,7 @@ index 69c91d1..f2d9fb6 100644
  
  struct fib_config {
  	u8			fc_dst_len;
-@@ -197,6 +199,63 @@ struct fib_entry_notifier_info {
+@@ -197,6 +199,60 @@ struct fib_entry_notifier_info {
  	u32 tb_id;
  };
  
@@ -751,7 +751,6 @@ index 69c91d1..f2d9fb6 100644
 + * allows us to represent netdev_index as an u8
 + */
 +#define NETDEV_COUNT_MAX 255
-+
 +
 +/*
 + * A chunk has 4 parts. Each part can have up to 64 elements. c_bm contains
@@ -777,14 +776,12 @@ index 69c91d1..f2d9fb6 100644
 +	u8 __rcu *P24;
 +	struct chunk __rcu *CK24;
 +	u32 __rcu *C24;
-+	u32 ck24_total;/*Total number of chunks allocated*/
-+	u32 ck24_count;/*Total number of chunks being used*/
++	u32 cnk24_count;/*Number of chunks in level 24*/
 +
 +	/*Level 32*/
 +	u8 __rcu *N32;
 +	u8 __rcu *P32;
-+	u32 ck32_total;/*Total number of chunks allocated*/
-+	u32 ck32_count;/*Total number of chunks being used*/
++	u32 cnk32_count;/*Number of chunks in level 32*/
 +
 +	/*Index to this array is stored in N16, N24 and N32*/
 +	struct net_device	*netdevs[NETDEV_COUNT_MAX];
@@ -805,7 +802,7 @@ index 69c91d1..f2d9fb6 100644
  struct fib_nh_notifier_info {
  	struct fib_notifier_info info; /* must be first */
  	struct fib_nh *fib_nh;
-@@ -219,6 +278,10 @@ struct fib_table {
+@@ -219,6 +275,10 @@ struct fib_table {
  	int			tb_num_default;
  	struct rcu_head		rcu;
  	unsigned long 		*tb_data;
@@ -816,7 +813,7 @@ index 69c91d1..f2d9fb6 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +322,341 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +319,341 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -1078,7 +1075,7 @@ index 69c91d1..f2d9fb6 100644
 +		}
 +	}
 +
-+	for (j = 0; j < 97; j++) {
++	for (j = 97; j < 97; j++) {
 +		ip_addr = in_aton(wtf_26[j]);
 +
 +		if (tb) {
@@ -1116,7 +1113,7 @@ index 69c91d1..f2d9fb6 100644
 +		tot_tsc += (tsc_end - tsc_begin);
 +		tot_tsc_trie += (tsc_trie_end - tsc_trie_begin);
 +	}
-+	pr_err("AVG_COST: SAIL=%llu trie=%llu !!!!!!!!", tot_tsc/97, tot_tsc_trie/97);
++//	pr_err("AVG_COST: SAIL=%llu trie=%llu !!!!!!!!", tot_tsc/97, tot_tsc_trie/97);
 +
 +	for (j = 0; j < 1000; j++) {
 +//		get_random_bytes(&ip_addr, 4);
@@ -1267,10 +1264,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..4413f0e
+index 0000000..899cb58
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,1094 @@
+@@ -0,0 +1,960 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1294,16 +1291,14 @@ index 0000000..4413f0e
 +/*The length of N16, P16 and C16 is 2^16*/
 +#define LEVEL16_SIZE 65536
 +
-+/*Length of CK24.*/
++/*Length of C24.*/
 +#define C24_SIZE 1048576
 +
 +/*chunk size is 2^8*/
 +#define CHUNK_SIZE 256
 +
-+/*Number of new chunks allocated each time*/
++/*Number of new chunks allocated allocated for level 24 and 32*/
 +#define NUM_CHUNKS 16384
-+
-+#define CK26_NUM 256
 +
 +/*Converts an index to bitmap*/
 +#define IDX_TO_BM(X) (1ULL << (X))
@@ -1349,12 +1344,12 @@ index 0000000..4413f0e
 +{
 +	long long m;
 +
-+	if (chunk_id > (s->ck24_count + 1) || chunk_id < 1) {
++	if (chunk_id > (s->cnk24_count + 1) || chunk_id < 1) {
 +		pr_err("Invalid chunk_id for level 26");
 +		return -EINVAL;
 +	}
 +        
-+	if (s->ck24_count >= NUM_CHUNKS) {
++	if (s->cnk24_count >= NUM_CHUNKS) {
 +		pr_err("Cannot insert a chunk. The chunk array is full");
 +		return -EINVAL;
 +	}
@@ -1362,7 +1357,7 @@ index 0000000..4413f0e
 +        /*shift each element one step right to make
 +         *space for the new one
 +         */
-+        m = (long long)s->ck24_count * CHUNK_SIZE - 1;
++        m = (long long)s->cnk24_count * CHUNK_SIZE - 1;
 +        for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
 +                s->N24[m + CHUNK_SIZE] = s->N24[m];
 +                s->P24[m + CHUNK_SIZE] = s->P24[m];
@@ -1375,54 +1370,6 @@ index 0000000..4413f0e
 +                s->P24[m] = 0;
 +        }
 +        return 0;
-+//        else if (s->ck24_count == s->ck24_total) {
-+//		/*Previously allocated memory is full.
-+//		 *So need to reallocate the array
-+//		 */
-+//		u8 *n, *p;
-+//		u8 *nh_old = s->N24;
-+//		u8 *pl_old = s->P24;
-+//		u64 arr_size, i, j, k, chunk_start;
-+//
-+//		arr_size = (s->ck24_count + NUM_CHUNKS) * CHUNK_SIZE;
-+//		n = kcalloc(arr_size, sizeof(*n), GFP_ATOMIC);
-+//		p = kcalloc(arr_size, sizeof(*p), GFP_ATOMIC);
-+//
-+//		if (!n || !p) {
-+//			kfree(n);
-+//			kfree(p);
-+//			return -ENOMEM;
-+//		}
-+//
-+//		/*Iterate over the new array and copy from the old array*/
-+//		for (i = 1, j = 0, chunk_start = 0;
-+//		     i <= (s->ck24_count + 1); i++) {
-+//			/*Copy the chunk*/
-+//			if (i != chunk_id) {
-+//				for (k = 0; k < CHUNK_SIZE; k++, j++) {
-+//					n[j] = nh_old[chunk_start + k];
-+//					p[j] = pl_old[chunk_start + k];
-+//				}
-+//				chunk_start += CHUNK_SIZE;
-+//			} else {
-+//				/*skip copying*/
-+//				j += CHUNK_SIZE;
-+//			}
-+//		}
-+//
-+//		/*Update the pointers with new pointer*/
-+//		rcu_assign_pointer(s->N24, n);
-+//		rcu_assign_pointer(s->P24, p);
-+//
-+//		/* Wait for all readers to be finished */
-+//		synchronize_rcu();
-+//
-+//		/*Remove old arrays*/
-+//		kfree(nh_old);
-+//		kfree(pl_old);
-+//		return 0;
-+//	}
-+	return -EINVAL;
 +}
 +
 +/* Insert a chunk in CK26.*/
@@ -1430,12 +1377,12 @@ index 0000000..4413f0e
 +{
 +	long long m;
 +
-+	if (chunk_id > (s->ck24_count + 1) || chunk_id < 1) {
++	if (chunk_id > (s->cnk24_count + 1) || chunk_id < 1) {
 +		pr_err("Invalid chunk_id for level 26");
 +		return -EINVAL;
 +	}
 +
-+	if (s->ck24_count >= NUM_CHUNKS) {
++	if (s->cnk24_count >= NUM_CHUNKS) {
 +		pr_err("Cannot insert a chunk. The chunk array is full");
 +		return -EINVAL;
 +	}
@@ -1443,7 +1390,7 @@ index 0000000..4413f0e
 +        /*shift each chunk one step right to make
 +         *space for the new one
 +         */
-+        m = (long long)s->ck24_count - 1;
++        m = (long long)s->cnk24_count - 1;
 +        for (; m >= (chunk_id - 1); m--)
 +                s->CK24[m + 1] = s->CK24[m];
 +
@@ -1452,40 +1399,7 @@ index 0000000..4413f0e
 +            s->CK24[chunk_id - 1].c_bm[m] = 0;
 +            s->CK24[chunk_id - 1].c_off[m] = 0;                    
 +        }
-+
 +        return 0;
-+//        else if (s->ck24_count == s->ck24_total) {
-+//		/*Previously allocated memory is full.
-+//		 *So need to reallocate the array
-+//		 */
-+//		struct chunk *chunks_old = s->CK24;
-+//		struct chunk *chunks;
-+//		u64 i;
-+//
-+//		chunks = kcalloc(s->ck24_count + NUM_CHUNKS_CHK,
-+//				 sizeof(*chunks), GFP_ATOMIC);
-+//		if (!chunks) {
-+//			kfree(chunks);
-+//			return -ENOMEM;
-+//		}
-+//
-+//		/*Iterate over the new array and copy from the old array*/
-+//		for (i = 1; i <= (s->ck24_count + 1); i++) {
-+//			if (i != chunk_id)
-+//				chunks[i - 1] = chunks_old[i - 1];
-+//		}
-+//
-+//		/*Update the pointers with new pointer*/
-+//		rcu_assign_pointer(s->CK24, chunks);
-+//
-+//		/* Wait for all readers to be finished */
-+//		synchronize_rcu();
-+//
-+//		/*Remove old arrays*/
-+//		kfree(chunks_old);
-+//		return 0;
-+//	}
-+	return -EINVAL;
 +}
 +
 +/* Insert a chunk to level 26. Note that chunk_id starts from 1, not 0 */
@@ -1496,13 +1410,10 @@ index 0000000..4413f0e
 +	err = N24_insert(s, chunk_id);
 +	if (!err)
 +		err = CK24_insert(s, chunk_id);
-+	if (!err) {
-+//		if (s->ck24_count == s->ck24_total)
-+//			s->ck24_total += NUM_CHUNKS;
-+		++s->ck24_count;
-+	} else {
-+		pr_err("Something is really wrong in level 26 insertion");
-+	}
++	if (!err)
++		++s->cnk24_count;
++	else
++		pr_err("Error in level 24 insertion");
 +	return err;
 +}
 +
@@ -1511,20 +1422,20 @@ index 0000000..4413f0e
 +{
 +	long long m;
 +
-+	if (chunk_id > (s->ck32_count + 1) || chunk_id < 1) {
++	if (chunk_id > (s->cnk32_count + 1) || chunk_id < 1) {
 +		pr_err("Invalid chunk_id for level 32");
 +		return -EINVAL;
 +	}
 +        
-+	if (s->ck32_count >= NUM_CHUNKS) {
-+		pr_err("Cannot insert a chunk. The chunk array is full");
++	if (s->cnk32_count >= NUM_CHUNKS) {
++		pr_err("Cannot insert a chunk to level 32. The chunk array is full");
 +		return -EINVAL;
 +	}
 +
 +        /*shift each element one step right to make
 +         *space for the new one
 +         */
-+        m = (long long)s->ck32_count * CHUNK_SIZE - 1;
++        m = (long long)s->cnk32_count * CHUNK_SIZE - 1;
 +        for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
 +                s->N32[m + CHUNK_SIZE] = s->N32[m];
 +                s->P32[m + CHUNK_SIZE] = s->P32[m];
@@ -1537,56 +1448,8 @@ index 0000000..4413f0e
 +                s->P32[m] = 0;
 +        }
 +
-+        ++s->ck32_count;
-+        return 0;//        else if (s->ck32_count == s->ck32_total) {
-+//		/*Previously allocated memory is full.
-+//		 *So need to reallocate the array
-+//		 */
-+//		u8 *nh_old = s->N32;
-+//		u8 *pl_old = s->P32;
-+//		u8 *n, *p;
-+//		u64 arrsize, i, j, k, chunk_start;
-+//
-+//		arrsize = (s->ck32_count + NUM_CHUNKS) * CHUNK_SIZE;
-+//		n = kcalloc(arrsize, sizeof(*n), GFP_ATOMIC);
-+//		p = kcalloc(arrsize, sizeof(*p), GFP_ATOMIC);
-+//
-+//		if (!n || !p) {
-+//			kfree(n);
-+//			kfree(p);
-+//			return -ENOMEM;
-+//		}
-+//
-+//		/*Iterate over the new array and copy from the old array*/
-+//		for (i = 1, j = 0, chunk_start = 0;
-+//		     i <= (s->ck32_count + 1); i++) {
-+//			/*copy the chunk*/
-+//			if (i != chunk_id) {
-+//				for (k = 0; k < CHUNK_SIZE; k++, j++) {
-+//					n[j] = nh_old[chunk_start + k];
-+//					p[j] = pl_old[chunk_start + k];
-+//				}
-+//				chunk_start += CHUNK_SIZE;
-+//			} else {
-+//				/*skip copying*/
-+//				j += CHUNK_SIZE;
-+//			}
-+//		}
-+//
-+//		rcu_assign_pointer(s->N32, n);
-+//		rcu_assign_pointer(s->P32, p);
-+//		/* Wait for all references to be released */
-+//		synchronize_rcu();
-+//		/*Increment the counter after chunk has been inserted*/
-+//		++s->ck32_count;
-+//		s->ck32_total += NUM_CHUNKS;
-+//		kfree(nh_old);
-+//		kfree(pl_old);
-+//		return 0;
-+//	}
-+
-+	pr_err("Something is really wrong in level 32 insertion");
-+	return -EINVAL;
++        ++s->cnk32_count;
++        return 0;
 +}
 +
 +static int N24_delete(struct sail *s, u16 chunk_id)
@@ -1594,15 +1457,15 @@ index 0000000..4413f0e
 +	long long m;
 +	u64 end_idx;
 +
-+	if (chunk_id > s->ck24_count) {
++	if (chunk_id > s->cnk24_count) {
 +		pr_err("Invalid chunk_id to level 26");
 +		return -EINVAL;
 +	}
 +
-+	if (chunk_id < s->ck24_count) {
++	if (chunk_id < s->cnk24_count) {
 +		/*shift each chunk one step left*/
 +		m = (long long)chunk_id * CHUNK_SIZE;
-+		end_idx = s->ck24_count * CHUNK_SIZE - 1;
++		end_idx = s->cnk24_count * CHUNK_SIZE - 1;
 +		for (; m <= end_idx; m++) {
 +			s->N24[m - CHUNK_SIZE] = s->N24[m];
 +			s->P24[m - CHUNK_SIZE] = s->P24[m];
@@ -1610,8 +1473,8 @@ index 0000000..4413f0e
 +	}
 +
 +	/*Reset the the last chunk*/
-+	end_idx = s->ck24_count * CHUNK_SIZE - 1;
-+	m = (s->ck24_count - 1) * CHUNK_SIZE;
++	end_idx = s->cnk24_count * CHUNK_SIZE - 1;
++	m = (s->cnk24_count - 1) * CHUNK_SIZE;
 +	for (; m <= end_idx; m++) {
 +		s->N24[m] = 0;
 +		s->P24[m] = 0;
@@ -1624,22 +1487,22 @@ index 0000000..4413f0e
 +{
 +	long long m;
 +
-+	if (chunk_id > s->ck24_count) {
-+		pr_err("Invalid chunk_id to level 26");
++	if (chunk_id > s->cnk24_count) {
++		pr_err("Invalid chunk_id to level 24");
 +		return -EINVAL;
 +	}
 +
-+	if (chunk_id < s->ck24_count) {
++	if (chunk_id < s->cnk24_count) {
 +		/*shift each chunk one step left*/
 +		m = (long long)chunk_id;
-+		for (; m <= s->ck24_count - 1; m++)
++		for (; m <= s->cnk24_count - 1; m++)
 +			s->CK24[m - 1] = s->CK24[m];
 +	}
 +
 +	/*Reset the the last chunk*/
 +        for (m = 0; m < 4; m++) {
-+            s->CK24[s->ck24_count - 1].c_off[m] = 0;
-+            s->CK24[s->ck24_count - 1].c_bm[m] = 0;
++            s->CK24[s->cnk24_count - 1].c_off[m] = 0;
++            s->CK24[s->cnk24_count - 1].c_bm[m] = 0;
 +        }
 +
 +	return 0;
@@ -1649,7 +1512,7 @@ index 0000000..4413f0e
 +{
 +	N24_delete(s, chunk_id);
 +	CK24_delete(s, chunk_id);
-+	--s->ck24_count;
++	--s->cnk24_count;
 +	return 0;
 +}
 +
@@ -1658,15 +1521,15 @@ index 0000000..4413f0e
 +	long long m;
 +	u64 end_idx;
 +
-+	if (chunk_id > s->ck32_count) {
++	if (chunk_id > s->cnk32_count) {
 +		pr_err("Invalid chunk_id to level 32");
 +		return -EINVAL;
 +	}
 +
-+	if (chunk_id < s->ck32_count) {
++	if (chunk_id < s->cnk32_count) {
 +		/*shift each chunk one step left*/
 +		m = (long long)chunk_id * CHUNK_SIZE;
-+		end_idx = s->ck32_count * CHUNK_SIZE - 1;
++		end_idx = s->cnk32_count * CHUNK_SIZE - 1;
 +		for (; m <= end_idx; m++) {
 +			s->N32[m - CHUNK_SIZE] = s->N32[m];
 +			s->P32[m - CHUNK_SIZE] = s->P32[m];
@@ -1674,14 +1537,14 @@ index 0000000..4413f0e
 +	}
 +
 +	/*Reset the the last chunk*/
-+	end_idx = s->ck32_count * CHUNK_SIZE - 1;
-+	m = (s->ck32_count - 1) * CHUNK_SIZE;
++	end_idx = s->cnk32_count * CHUNK_SIZE - 1;
++	m = (s->cnk32_count - 1) * CHUNK_SIZE;
 +	for (; m <= end_idx; m++) {
 +		s->N32[m] = 0;
 +		s->P32[m] = 0;
 +	}
 +
-+	--s->ck32_count;
++	--s->cnk32_count;
 +	return 0;
 +}
 +
@@ -2113,7 +1976,7 @@ index 0000000..4413f0e
 +		if (err)
 +			goto error;
 +		err = level32_update_chunkid(s->CK24, ck24_idx, ck24_off,
-+					     s->C24, s->ck24_count, chunk_id);
++					     s->C24, s->cnk24_count, chunk_id);
 +		if (err)
 +			goto error;
 +	}
@@ -2262,8 +2125,8 @@ index 0000000..4413f0e
 +	p32_old = s->P32;
 +
 +	/*Set the counter before the chunk are deleted*/
-+	s->ck32_count = 0;
-+	s->ck24_count = 0;
++	s->cnk32_count = 0;
++	s->cnk24_count = 0;
 +
 +	/*Set the pointers to NULL*/
 +	rcu_assign_pointer(s->N16, NULL);
