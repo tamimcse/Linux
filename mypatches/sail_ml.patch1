@@ -1265,7 +1265,7 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..59dc6b2
+index 0000000..06d1594
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
 @@ -0,0 +1,963 @@
@@ -1307,8 +1307,8 @@ index 0000000..59dc6b2
 +/*Calculates number of bits set to 1*/
 +#define POPCNT(X) (hweight64(X))
 +
-+/*Converts an index and bitmap to actual index*/
-+#define IDX_FRM_MASK(X, Y) (hweight64(((1ULL << (X)) - 1) & (Y)))
++/*POPCNT of left-most N bits of X*/
++#define POPCNT_OFF(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
 +
 +/*Converts an index to CK26 to index to C26 */
 +static u64 get_arr_idx(struct chunk c, u32 idx)
@@ -1318,7 +1318,7 @@ index 0000000..59dc6b2
 +	part_idx = idx / 64;
 +	part_off = idx % 64;
 +
-+	return c.c_off[part_idx] + IDX_FRM_MASK(part_off, c.c_bm[part_idx]);
++	return c.c_off[part_idx] + POPCNT_OFF(c.c_bm[part_idx], part_off);
 +}
 +
 +/*Insert net_device to the net-device array.
@@ -1725,7 +1725,7 @@ index 0000000..59dc6b2
 +	/*The chunk is not empty*/
 +	if (c.c_bm[part_idx]) {
 +		index = c.c_off[part_idx] +
-+		    IDX_FRM_MASK(part_off, c.c_bm[part_idx]) - 1;
++		    POPCNT_OFF(c.c_bm[part_idx], part_off) - 1;
 +		if (index >= 0)
 +			goto found;
 +	}
@@ -1790,7 +1790,7 @@ index 0000000..59dc6b2
 +	/*looking for the index where Chunk ID will be copied*/
 +	if (chunks[cnk_idx].c_bm[part_idx]) {
 +		index = chunks[cnk_idx].c_off[part_idx] +
-+			IDX_FRM_MASK(part_off, chunks[cnk_idx].c_bm[part_idx]);
++			POPCNT_OFF(chunks[cnk_idx].c_bm[part_idx], part_off);
 +		goto index_found;
 +	}
 +
@@ -2217,7 +2217,7 @@ index 0000000..59dc6b2
 +	if (likely(ck24[ck24_idx].c_bm[part_idx] & IDX_TO_BM(part_off))) {
 +		c24 = rcu_dereference(s->C24);
 +		c24_idx = ck24[ck24_idx].c_off[part_idx] +
-+			IDX_FRM_MASK(part_off, ck24[ck24_idx].c_bm[part_idx]);
++			POPCNT_OFF(ck24[ck24_idx].c_bm[part_idx], part_off);
 +		n32_idx = (c24[c24_idx] - 1) * CHUNK_SIZE + (key & 255);
 +	} else {
 +		goto finish;
