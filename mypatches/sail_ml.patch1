@@ -1228,10 +1228,10 @@ index 5e00f2b..584309d 100644
  	case AF_INET6:
  		return bpf_ipv6_fib_lookup(dev_net(ctx->rxq->dev), params,
 diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
-index 32cae39..f6985d8 100644
+index 32cae39..9ed2507 100644
 --- a/net/ipv4/Kconfig
 +++ b/net/ipv4/Kconfig
-@@ -52,6 +52,19 @@ config IP_ADVANCED_ROUTER
+@@ -52,6 +52,17 @@ config IP_ADVANCED_ROUTER
  
  	  If unsure, say N here.
  
@@ -1240,13 +1240,11 @@ index 32cae39..f6985d8 100644
 +	depends on !IP_ROUTE_MULTIPATH && !LWTUNNEL
 +	default y
 +	help
-+	  This will store FIB table as a SAIL_ML (along with LC-trie). This is
-+	  useful if you want fast routing table lookup in XDP forwarding.
-+	  XDP along with fast routing table lookup will enable Linux to work as
-+	  a carrier router (similar to DPDK/VPP based routers).
-+	  Currently this option only supports up to 255 ports. Currently it does
-+	  not support multi-path routing. It also does not support
-+	  light-weight tunnels such as MPLS.
++	  This option will enable very fast routing table lookup in XDP
++	  forwarding. This will store FIB table as a SAIL_ML (along with
++	  LC-trie). Currently it only supports up to 255 ports. Currently
++	  it does not support multi-path routing and light-weight
++	  tunnels such as MPLS.
 +
  config IP_FIB_TRIE_STATS
  	bool "FIB TRIE statistics"
@@ -1265,23 +1263,22 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..2d186c7
+index 0000000..fdeb45e
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,930 @@
+@@ -0,0 +1,929 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
-+ * This program is free software; you can redistribute it and/or
++ *   This program is free software; you can redistribute it and/or
 + *   modify it under the terms of the GNU General Public License
 + *   as published by the Free Software Foundation; either version
-+ *   2 of the License, or (at your osion) any later version.
++ *   2 of the License, or (at your option) any later version.
 + *
 + *
-+ * This is a variant of SAIL_L called SAIL_ML. SAIL_L is
-+ * originally described in:
++ * This is a variant of SAIL_L [1] called SAIL_ML.
 + *
-+ * Yang, Tong, Gaogang Xie, YanBiao Li, Qiaobin Fu, Alex X. Liu, Qi Li,
++ * 1. Yang, Tong, Gaogang Xie, YanBiao Li, Qiaobin Fu, Alex X. Liu, Qi Li,
 + * and Laurent Mathy. "Guarantee IP lookup performance with FIB explosion."
 + * In ACM SIGCOMM Computer Communication Review, vol. 44, no. 4, pp. 39-50.
 + * ACM, 2014.
@@ -1764,7 +1761,7 @@ index 0000000..2d186c7
 +				goto index_found;
 +			}
 +		}
-+                j = 3;
++		j = 3;
 +	}
 +
 +index_found:
@@ -2030,7 +2027,7 @@ index 0000000..2d186c7
 +			s->P24[n24_idx + i] = 0;
 +		}
 +		if (is_CK24_N24_chunk_unused(s->N24, &s->CK24[ck24_idx],
-+					    s->C16[n16_idx])) {
++					     s->C16[n16_idx])) {
 +			chunk24_delete(s, s->C16[n16_idx]);
 +			C16_remove_chunkid(s->C16, LEVEL16_SIZE,
 +					   s->C16[n16_idx]);
