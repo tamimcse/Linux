@@ -1265,10 +1265,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..3b731ec
+index 0000000..6d2d88d
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,958 @@
+@@ -0,0 +1,947 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1310,20 +1310,18 @@ index 0000000..3b731ec
 +/*POPCNT of left-most N bits of X*/
 +#define POPCNT_OFF(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
 +
-+/*Converts an index to CK26 to index to C26 */
-+static u64 get_arr_idx(struct chunk c, u32 idx)
++/*Calculate index to C24 from CK26 chunk and chunk offset */
++static u64 calc_c24_idx(struct chunk c, u32 cnk_off)
 +{
 +	u8 part_idx, part_off;
 +
-+	part_idx = idx / 64;
-+	part_off = idx % 64;
++	part_idx = cnk_off / 64;
++	part_off = cnk_off % 64;
 +
 +	return c.c_off[part_idx] + POPCNT_OFF(c.c_bm[part_idx], part_off);
 +}
 +
-+/*Insert net_device to the net-device array.
-+ *This function returns the index to the net_device array
-+ */
++/*Converts a net_device to corresponding netdev_index*/
 +static u8 get_netdev_index(struct sail *s, struct net_device *dev)
 +{
 +	u8 i;
@@ -1340,7 +1338,7 @@ index 0000000..3b731ec
 +	return s->netdev_count - 1;
 +}
 +
-+/* Insert a chunk to N26 and P26.*/
++/* Insert a new chunk to N24 and P24 at index chunk_id-1*/
 +static int N24_insert(struct sail *s, u16 chunk_id)
 +{
 +	long long m;
@@ -1373,7 +1371,7 @@ index 0000000..3b731ec
 +	return 0;
 +}
 +
-+/* Insert a chunk in CK26.*/
++/* Insert a new chunk to CK24 at index chunk_id-1*/
 +static int CK24_insert(struct sail *s, u16 chunk_id)
 +{
 +	long long m;
@@ -1403,7 +1401,7 @@ index 0000000..3b731ec
 +	return 0;
 +}
 +
-+/* Insert a new chunk to level 24 at Chunk ID - 1. Note that Chunk ID
++/* Insert a new chunk to level 24 at chunk_id-1. Note that Chunk ID
 + * starts from 1, not 0
 + */
 +static int chunk24_insert(struct sail *s, u16 chunk_id)
@@ -1420,7 +1418,7 @@ index 0000000..3b731ec
 +	return err;
 +}
 +
-+/* Insert a new chunk to level 32 at Chunk ID - 1. Note that Chunk ID
++/* Insert a new chunk to level 32 at chunk_id-1. Note that Chunk ID
 + * starts from 1, not 0
 + */
 +static int chunk32_insert(struct sail *s, u32 chunk_id)
@@ -1513,7 +1511,7 @@ index 0000000..3b731ec
 +	return 0;
 +}
 +
-+static int level24_chunk_delete(struct sail *s, u16 chunk_id)
++static int chunk24_delete(struct sail *s, u16 chunk_id)
 +{
 +	N24_delete(s, chunk_id);
 +	CK24_delete(s, chunk_id);
@@ -1521,7 +1519,7 @@ index 0000000..3b731ec
 +	return 0;
 +}
 +
-+static int level32_chunk_delete(struct sail *s, u32 chunk_id)
++static int chunk32_delete(struct sail *s, u32 chunk_id)
 +{
 +	long long m;
 +	u64 end_idx;
@@ -1624,7 +1622,7 @@ index 0000000..3b731ec
 +	part_idx = cnk_off / 64;
 +	part_off = cnk_off % 64;
 +
-+	chunk_id = s->C24[get_arr_idx(s->CK24[cnk_idx], cnk_off)];
++	chunk_id = s->C24[calc_c24_idx(s->CK24[cnk_idx], cnk_off)];
 +	s->CK24[cnk_idx].c_bm[part_idx] &= ~IDX_TO_BM(part_off);
 +
 +	for (i = 0; i < C24_SIZE; i++) {
@@ -1639,12 +1637,8 @@ index 0000000..3b731ec
 +	return 0;
 +}
 +
-+ /* Check if a chunk in level 32 is being unused
-+  * @param nh N32
-+  * @param chunk_idchunk ID that is being checked
-+  * @return true/false
-+  */
-+static bool is_chunk_unused_level32(u8 *nh, u32 chunk_id)
++ /* Check if a chunk in level 32 is being unused */
++static bool is_N32_chunk_unused(u8 *nh, u32 chunk_id)
 +{
 +	long long i;
 +	long long start_index, end_index;
@@ -1665,13 +1659,8 @@ index 0000000..3b731ec
 +	return true;
 +}
 +
-+ /* Check if a chunk in level 26 is being unused
-+  * @param nh N26
-+  * @param ck CK26
-+  * @param chunk_id chunk ID that is being checked
-+  * @return true/false
-+  */
-+static bool is_chunk_unused_level24(u8 *nh, struct chunk *ck, u16 chunk_id)
++ /* Check if a chunk in level 24 is being unused*/
++static bool is_CK24_N24_chunk_unused(u8 *nh, struct chunk *ck, u16 chunk_id)
 +{
 +	long long i;
 +	long long start_index, end_index;
@@ -1742,7 +1731,7 @@ index 0000000..3b731ec
 +		pr_err("CK24 array is full. Cannot insert");
 +		return 0;
 +	} else if (c24[index] <= 0) {
-+		pr_err("Chunk ID says its zero which is not right");
++		pr_err("Invalid chunk ID");
 +		return 0;
 +	} else {
 +		return c24[index] + 1;
@@ -1980,7 +1969,7 @@ index 0000000..3b731ec
 +			goto error;
 +	}
 +
-+	c24_idx = get_arr_idx(s->CK24[ck24_idx], ck24_off);
++	c24_idx = calc_c24_idx(s->CK24[ck24_idx], ck24_off);
 +	/*Extract 8 bit from MSB and calculate index to level 32*/
 +	n32_idx = (s->C24[c24_idx] - 1) * CHUNK_SIZE + (key & 255);
 +
@@ -2057,9 +2046,9 @@ index 0000000..3b731ec
 +			s->N24[n24_idx + i] = 0;
 +			s->P24[n24_idx + i] = 0;
 +		}
-+		if (is_chunk_unused_level24(s->N24, &s->CK24[ck24_idx],
++		if (is_CK24_N24_chunk_unused(s->N24, &s->CK24[ck24_idx],
 +					    s->C16[n16_idx])) {
-+			level24_chunk_delete(s, s->C16[n16_idx]);
++			chunk24_delete(s, s->C16[n16_idx]);
 +			C16_remove_chunkid(s->C16, LEVEL16_SIZE,
 +					   s->C16[n16_idx]);
 +		}
@@ -2072,7 +2061,7 @@ index 0000000..3b731ec
 +	if (!(s->CK24[ck24_idx].c_bm[part_idx] & IDX_TO_BM(part_off)))
 +		goto error;
 +
-+	chunkid_level32 = s->C24[get_arr_idx(s->CK24[ck24_idx], ck24_off)];
++	chunkid_level32 = s->C24[calc_c24_idx(s->CK24[ck24_idx], ck24_off)];
 +
 +	/*Extract 8 bit from MSB and calculate index to level 32*/
 +	n32_idx = (chunkid_level32 - 1) * CHUNK_SIZE + (key & 255);
@@ -2088,8 +2077,8 @@ index 0000000..3b731ec
 +			s->N32[n32_idx + i] = 0;
 +			s->P32[n32_idx + i] = 0;
 +		}
-+		if (is_chunk_unused_level32(s->N32, chunkid_level32)) {
-+			level32_chunk_delete(s, chunkid_level32);
++		if (is_N32_chunk_unused(s->N32, chunkid_level32)) {
++			chunk32_delete(s, chunkid_level32);
 +			C24_remove_chunkid(s, ck24_idx, ck24_off);
 +		}
 +		goto finish;
