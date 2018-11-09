@@ -1265,10 +1265,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..0492da7
+index 0000000..3b731ec
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,959 @@
+@@ -0,0 +1,958 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1575,7 +1575,7 @@ index 0000000..0492da7
 +
 +/*Update C16 based on the newly inserted chunk*/
 +static int update_C16(u16 *c16, u32 c16_size,
-+				  u16 idx16, u16 chunk_id)
++		      u16 idx16, u16 chunk_id)
 +{
 +	long long i;
 +
@@ -1697,7 +1697,7 @@ index 0000000..0492da7
 +
 +/*Calculate the chunk ID for level 32 based on CK24 and C24*/
 +static u32 calc_ckid32_from_ck24(struct chunk *ck24,
-+				u32 ck24_idx, u32 ck24_off, u32 *c24)
++				 u32 ck24_idx, u32 ck24_off, u32 *c24)
 +{
 +	long long i, j;
 +	long long index = 0;
@@ -1750,9 +1750,8 @@ index 0000000..0492da7
 +}
 +
 +/*Update CK24 and C24 based on the newly inserted chunk*/
-+static int update_ck24_c24(struct chunk *ck24,
-+				  u32 ck24_idx, u32 ck24_off,
-+				  u32 *c24, u32 cnk24_count, u32 chunk_id)
++static int update_ck24_c24(struct chunk *ck24, u32 ck24_idx, u32 ck24_off,
++			   u32 *c24, u32 cnk24_count, u32 chunk_id)
 +{
 +	long long i, j;
 +	u64 index = 0;
@@ -1955,10 +1954,10 @@ index 0000000..0492da7
 +	}
 +
 +	/* The length of the prefix is 25~32, but there is no chunk for
-+         * this prefix in level 32. So need to insert a new one.
++	 * this prefix in level 32. So need to insert a new one.
 +	 * The insertion works as following:
 +	 * 1. Calculate the chunk ID to level 32 from CK24 and C24. The
-+         * Chunk ID indicates where the new chunk should be inserted.
++	 * Chunk ID indicates where the new chunk should be inserted.
 +	 * 2. Insert a new chunk in level 32
 +	 * 3. Update the CK24 and C24 based on the newly inserted chunk
 +	 */
@@ -1967,7 +1966,7 @@ index 0000000..0492da7
 +	if (!(s->CK24[ck24_idx].c_bm[part_idx] & IDX_TO_BM(part_off))) {
 +		/*Step 1*/
 +		chunk_id = calc_ckid32_from_ck24(s->CK24, ck24_idx,
-+						ck24_off, s->C24);
++						 ck24_off, s->C24);
 +		if (!chunk_id)
 +			goto error;
 +		/*Step 2*/
@@ -1976,7 +1975,7 @@ index 0000000..0492da7
 +			goto error;
 +		/*Step 3*/
 +		err = update_ck24_c24(s->CK24, ck24_idx, ck24_off,
-+					     s->C24, s->cnk24_count, chunk_id);
++				      s->C24, s->cnk24_count, chunk_id);
 +		if (err)
 +			goto error;
 +	}
