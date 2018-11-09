@@ -1265,10 +1265,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..6d2d88d
+index 0000000..943e3c1
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,947 @@
+@@ -0,0 +1,936 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1697,36 +1697,29 @@ index 0000000..6d2d88d
 +	part_off = ck24_off % 64;
 +	c = ck24[ck24_idx];
 +
-+	/*The chunk is not empty*/
++	/*find the index to C24 where previous chunk ID would be found*/
 +	if (c.c_bm[part_idx]) {
 +		index = c.c_off[part_idx] +
 +		    POPCNT_OFF(c.c_bm[part_idx], part_off) - 1;
 +		if (index >= 0)
-+			goto found;
++			goto index_found;
 +	}
 +
-+	/*check the other parts of the chunk*/
-+	for (j = part_idx - 1; j >= 0; j--) {
-+		if (c.c_bm[j]) {
-+			index = c.c_off[j] + POPCNT(c.c_bm[j]) - 1;
-+			goto found;
-+		}
-+	}
-+
-+	/*Find a chunk to the left whose offset is not 0*/
-+	for (i = (long long)ck24_idx - 1; i >= 0; i--) {
-+		for (j = 3; j >= 0; j--) {
++	j = part_idx - 1;
++	for (i = (long long)ck24_idx; i >= 0; i--) {
++		for (; j >= 0; j--) {
 +			if (ck24[i].c_bm[j]) {
 +				index = ck24[i].c_off[j] +
 +					POPCNT(ck24[i].c_bm[j]) - 1;
-+				goto found;
++				goto index_found;
 +			}
 +		}
++		j = 3;
 +	}
 +
 +	/*If there is no chunk to the left, then this is the first chunk*/
 +	return 1;
-+found:
++index_found:
 +	if (index >= (C24_SIZE - 1)) {
 +		pr_err("CK24 array is full. Cannot insert");
 +		return 0;
@@ -1754,7 +1747,7 @@ index 0000000..6d2d88d
 +		return -EINVAL;
 +	}
 +
-+	/*looking for the index where Chunk ID will be copied*/
++	/*find the index where Chunk ID should be copied to*/
 +	if (ck24[ck24_idx].c_bm[part_idx]) {
 +		index = ck24[ck24_idx].c_off[part_idx] +
 +			POPCNT_OFF(ck24[ck24_idx].c_bm[part_idx], part_off);
@@ -1795,18 +1788,14 @@ index 0000000..6d2d88d
 +
 +	ck24[ck24_idx].c_bm[part_idx] |= IDX_TO_BM(part_off);
 +
-+	/*Update parts of the chunks to the right*/
-+	for (j = part_idx + 1; j < 4; j++) {
-+		if (ck24[ck24_idx].c_bm[j])
-+			ck24[ck24_idx].c_off[j]++;
-+	}
-+
 +	/*Update offset of the chunks to the right*/
-+	for (i = (long long)ck24_idx + 1; i < cnk24_count; i++) {
-+		for (j = 0; j < 4; j++) {
++	j = part_idx + 1;
++	for (i = (long long)ck24_idx; i < cnk24_count; i++) {
++		for (; j < 4; j++) {
 +			if (ck24[i].c_bm[j])
 +				ck24[i].c_off[j]++;
-+			}
++		}
++		j = 0;
 +	}
 +
 +	return 0;
