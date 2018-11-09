@@ -1265,10 +1265,10 @@ index 7446b98..59fa277 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
 new file mode 100644
-index 0000000..943e3c1
+index 0000000..2d186c7
 --- /dev/null
 +++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,936 @@
+@@ -0,0 +1,930 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1754,32 +1754,26 @@ index 0000000..943e3c1
 +		goto index_found;
 +	}
 +
-+	/*check the other parts of the chunk*/
-+	for (j = part_idx - 1; j >= 0; j--) {
-+		if (ck24[ck24_idx].c_bm[j]) {
-+			index = ck24[ck24_idx].c_off[j] +
-+					POPCNT(ck24[ck24_idx].c_bm[j]);
-+			goto index_found;
-+		}
-+	}
-+
 +	/*Find a chunk to the left which is not empty*/
-+	for (i = (long long)ck24_idx - 1; i >= 0; i--) {
-+		for (j = 3; j >= 0; j--) {
++	j = part_idx - 1;
++	for (i = (long long)ck24_idx; i >= 0; i--) {
++		for (; j >= 0; j--) {
 +			if (ck24[i].c_bm[j]) {
 +				index = ck24[i].c_off[j] +
 +					POPCNT(ck24[i].c_bm[j]);
 +				goto index_found;
 +			}
 +		}
++                j = 3;
 +	}
 +
 +index_found:
-+	/* Move each elemenmt one step to the right to create a space for
-+	 * new element. Also increment chunk IDs by 1
++	/* Move each element one step to the right to create a space for
++	 * the new element. Also increment each element by 1
 +	 */
 +	for (i = C24_SIZE - 2 ; i >= (long long)index; i--)
 +		c24[i + 1] = (c24[i] > 0) ? c24[i] + 1 : c24[i];
++	/*Set the new Chunk ID*/
 +	c24[index] = chunk_id;
 +
 +	/*This is the first element of this chunk*/
