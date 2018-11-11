@@ -1,21 +1,21 @@
 diff --git a/MAINTAINERS b/MAINTAINERS
-index b22e7fd..843f4a2 100644
+index b22e7fd..969e625 100644
 --- a/MAINTAINERS
 +++ b/MAINTAINERS
 @@ -7630,6 +7630,11 @@ M:	Juanjo Ciarlante <jjciarla@raiz.uncu.edu.ar>
  S:	Maintained
  F:	net/ipv4/netfilter/ipt_MASQUERADE.c
  
-+SAIL_ML FIB LOOKUP
++SAIL FIB LOOKUP
 +M:	MD Iftakharul Islam (Tamim) <tamim@csebuet.org>
 +S:	Maintained
-+F:	net/ipv4/fib_sail_ml.c
++F:	net/ipv4/fib_sail_xdp.c
 +
  IPMI SUBSYSTEM
  M:	Corey Minyard <minyard@acm.org>
  L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
 diff --git a/arch/x86/configs/x86_64_defconfig b/arch/x86/configs/x86_64_defconfig
-index 0f7a27f..64100d7 100644
+index 0f7a27f..cdeb303 100644
 --- a/arch/x86/configs/x86_64_defconfig
 +++ b/arch/x86/configs/x86_64_defconfig
 @@ -61,6 +61,11 @@ CONFIG_HIBERNATION=y
@@ -129,7 +129,7 @@ index 0f7a27f..64100d7 100644
  CONFIG_SECURITY=y
  CONFIG_SECURITY_NETWORK=y
  CONFIG_SECURITY_SELINUX=y
-@@ -305,292 +326,21 @@ CONFIG_ATH9K_HTC=m
+@@ -305,292 +326,20 @@ CONFIG_ATH9K_HTC=m
  CONFIG_ATH9K_HTC_DEBUGFS=y
  
  
@@ -138,7 +138,6 @@ index 0f7a27f..64100d7 100644
 -#Veth, Network namespace, and NetEm setup (Needed for Mininet)
  CONFIG_VETH=m
  CONFIG_NET_NS=y
-+CONFIG_FIB_SAIL_ML=y
  
 -#Packet scheduling
 -CONFIG_NET_SCH_NETEM=m
@@ -433,7 +432,7 @@ index 0f7a27f..64100d7 100644
  
  #Enable init options
  CONFIG_EPOLL=y
-@@ -606,294 +356,3 @@ CONFIG_HAVE_EBPF_JIT=y
+@@ -606,294 +355,3 @@ CONFIG_HAVE_EBPF_JIT=y
  CONFIG_NET_ACT_POLICE=m
  CONFIG_NET_ACT_GACT=m
  CONFIG_DUMMY=m
@@ -729,7 +728,7 @@ index 0f7a27f..64100d7 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..773baeb 100644
+index 69c91d1..960c15b 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -745,7 +744,7 @@ index 69c91d1..773baeb 100644
  	u32 tb_id;
  };
  
-+#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +/*
 + * The router can have upto 255 ports. This limitation
 + * allows us to represent netdev_index as an u8
@@ -790,12 +789,12 @@ index 69c91d1..773baeb 100644
 +	spinlock_t lock;
 +};
 +
-+int sail_ml_insert(struct sail *s, u32 key,
++int sail_insert(struct sail *s, u32 key,
 +		u8 prefix_len, struct net_device *dev);
-+int sail_ml_delete(struct sail *s, u32 key,
++int sail_delete(struct sail *s, u32 key,
 +		u8 prefix_len);
-+int sail_ml_flush(struct sail *s);
-+int sail_ml_lookup(const struct sail *s, const __be32 dest,
++int sail_flush(struct sail *s);
++int sail_lookup(const struct sail *s, const __be32 dest,
 +		struct net_device **dev);
 +#endif
 +
@@ -806,7 +805,7 @@ index 69c91d1..773baeb 100644
  	int			tb_num_default;
  	struct rcu_head		rcu;
  	unsigned long 		*tb_data;
-+#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +	/*Each FIB table will have its own SAIL structure.*/
 +	struct sail	sail;
 +#endif
@@ -818,7 +817,7 @@ index 69c91d1..773baeb 100644
  }
  
 -static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
-+#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +	static u32 global_ip = 0;
 +#endif
 +
@@ -828,7 +827,7 @@ index 69c91d1..773baeb 100644
  {
  	struct fib_table *tb;
  	int err = -ENETUNREACH;
-+#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +	static const char * const wtf_26[] = {
 +		"1.11.8.173",
 +		"1.22.229.12",
@@ -1040,13 +1039,13 @@ index 69c91d1..773baeb 100644
  
  	tb = fib_get_table(net, RT_TABLE_MAIN);
 +
-+#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +	for (j = 94; j < 94; j++) {
 +		ip_addr = in_aton(wtf[j]);
 +
 +		if (tb) {
 +			tsc_begin = rdtsc();
-+			sail_ml_lookup(&tb->sail, ip_addr, &dev);
++			sail_lookup(&tb->sail, ip_addr, &dev);
 +			tsc_end = rdtsc();
 +		}
 +
@@ -1080,7 +1079,7 @@ index 69c91d1..773baeb 100644
 +
 +		if (tb) {
 +			tsc_begin = rdtsc();
-+			sail_ml_lookup(&tb->sail, ip_addr, &dev);
++			sail_lookup(&tb->sail, ip_addr, &dev);
 +			tsc_end = rdtsc();
 +		}
 +
@@ -1126,7 +1125,7 @@ index 69c91d1..773baeb 100644
 +
 +		if (tb) {
 +			tsc_begin = rdtsc();
-+			sail_ml_lookup(&tb->sail, ip_addr, &dev);
++			sail_lookup(&tb->sail, ip_addr, &dev);
 +			tsc_end = rdtsc();
 +		}
 +
@@ -1158,14 +1157,14 @@ index 69c91d1..773baeb 100644
  		err = fib_table_lookup(tb, flp, res, flags | FIB_LOOKUP_NOREF);
  
 diff --git a/net/core/filter.c b/net/core/filter.c
-index 5e00f2b..584309d 100644
+index 5e00f2b..e89b4bb 100644
 --- a/net/core/filter.c
 +++ b/net/core/filter.c
 @@ -4236,6 +4236,49 @@ static int bpf_fib_set_fwd_params(struct bpf_fib_lookup *params,
  }
  #endif
  
-+#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +static int sail_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
 +			   u32 flags, bool check_mtu)
 +{
@@ -1189,7 +1188,7 @@ index 5e00f2b..584309d 100644
 +	if (unlikely(!tb))
 +		return BPF_FIB_LKUP_RET_NOT_FWDED;
 +
-+	err = sail_ml_lookup(&tb->sail, params->ipv4_dst, &dev_out);
++	err = sail_lookup(&tb->sail, params->ipv4_dst, &dev_out);
 +	if (err)
 +		return -ENOENT;
 +
@@ -1215,7 +1214,7 @@ index 5e00f2b..584309d 100644
  	switch (params->family) {
  #if IS_ENABLED(CONFIG_INET)
  	case AF_INET:
-+#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
 +		return sail_fib_lookup(dev_net(ctx->rxq->dev), params,
 +				       flags, true);
 +#else
@@ -1228,20 +1227,20 @@ index 5e00f2b..584309d 100644
  	case AF_INET6:
  		return bpf_ipv6_fib_lookup(dev_net(ctx->rxq->dev), params,
 diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
-index 32cae39..9ed2507 100644
+index 32cae39..5c41071 100644
 --- a/net/ipv4/Kconfig
 +++ b/net/ipv4/Kconfig
 @@ -52,6 +52,17 @@ config IP_ADVANCED_ROUTER
  
  	  If unsure, say N here.
  
-+config FIB_SAIL_ML
-+	bool "SAIL_ML FIB lookup"
++config FIB_SAIL_XDP
++	bool "SAIL based FIB lookup for XDP"
 +	depends on !IP_ROUTE_MULTIPATH && !LWTUNNEL
 +	default y
 +	help
-+	  This option will enable very fast routing table lookup in XDP
-+	  forwarding. This will store FIB table as a SAIL_ML (along with
++	  This option will enable SAIL based routing table lookup for XDP
++	  forwarding. This will store FIB table as a SAIL (along with
 +	  LC-trie). Currently it only supports up to 255 ports. Currently
 +	  it does not support multi-path routing and light-weight
 +	  tunnels such as MPLS.
@@ -1250,23 +1249,23 @@ index 32cae39..9ed2507 100644
  	bool "FIB TRIE statistics"
  	depends on IP_ADVANCED_ROUTER
 diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
-index 7446b98..59fa277 100644
+index 7446b98..55ff5e7 100644
 --- a/net/ipv4/Makefile
 +++ b/net/ipv4/Makefile
 @@ -64,6 +64,7 @@ obj-$(CONFIG_TCP_CONG_LP) += tcp_lp.o
  obj-$(CONFIG_TCP_CONG_YEAH) += tcp_yeah.o
  obj-$(CONFIG_TCP_CONG_ILLINOIS) += tcp_illinois.o
  obj-$(CONFIG_NETLABEL) += cipso_ipv4.o
-+obj-$(CONFIG_FIB_SAIL_ML) += fib_sail_ml.o
++obj-$(CONFIG_FIB_SAIL_XDP) += fib_sail_xdp.o
  
  obj-$(CONFIG_XFRM) += xfrm4_policy.o xfrm4_state.o xfrm4_input.o \
  		      xfrm4_output.o xfrm4_protocol.o
-diff --git a/net/ipv4/fib_sail_ml.c b/net/ipv4/fib_sail_ml.c
+diff --git a/net/ipv4/fib_sail_xdp.c b/net/ipv4/fib_sail_xdp.c
 new file mode 100644
-index 0000000..fdeb45e
+index 0000000..704646c
 --- /dev/null
-+++ b/net/ipv4/fib_sail_ml.c
-@@ -0,0 +1,929 @@
++++ b/net/ipv4/fib_sail_xdp.c
+@@ -0,0 +1,941 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1276,12 +1275,24 @@ index 0000000..fdeb45e
 + *   2 of the License, or (at your option) any later version.
 + *
 + *
-+ * This is a variant of SAIL_L [1] called SAIL_ML.
++ * This is SAIL_L based routing table lookup which was initially proposed in:
 + *
-+ * 1. Yang, Tong, Gaogang Xie, YanBiao Li, Qiaobin Fu, Alex X. Liu, Qi Li,
++ * Yang, Tong, Gaogang Xie, YanBiao Li, Qiaobin Fu, Alex X. Liu, Qi Li,
 + * and Laurent Mathy. "Guarantee IP lookup performance with FIB explosion."
 + * In ACM SIGCOMM Computer Communication Review, vol. 44, no. 4, pp. 39-50.
 + * ACM, 2014.
++ *
++ * It however deviates from SAIL_L in three ways:
++ *
++ * 1. It pushes all the solid nodes in level 1~15 to level 16 whereas SAIL_L
++ * pushes them to either level 16, level 24 or level 32.
++ *
++ * 2. It pushes all the solid nodes in level 17~23 to level 24 whereas SAIL_L
++ * pushes them to either level 24 or level 32.
++ *
++ * 3. It adds a bitmap array, CK24 in addition to C24. This reduces the memory
++ * memory requirement of original C24 from 17.08 MB to 110KB for our example
++ * routing table.
 + */
 +
 +#include <net/ip_fib.h>
@@ -1792,8 +1803,8 @@ index 0000000..fdeb45e
 +	return 0;
 +}
 +
-+int sail_ml_insert(struct sail *s, u32 key, u8 prefix_len,
-+		   struct net_device *dev)
++int sail_insert(struct sail *s, u32 key, u8 prefix_len,
++		struct net_device *dev)
 +{
 +	int i;
 +	u8 *n16, *p16, *n24, *p24, *n32, *p32;
@@ -1973,7 +1984,7 @@ index 0000000..fdeb45e
 +	return err;
 +}
 +
-+int sail_ml_delete(struct sail *s, u32 key, u8 prefix_len)
++int sail_delete(struct sail *s, u32 key, u8 prefix_len)
 +{
 +	int i;
 +	u32 n16_idx;/*Index to N16, P16 and C16*/
@@ -2072,7 +2083,7 @@ index 0000000..fdeb45e
 +	return err;
 +}
 +
-+int sail_ml_flush(struct sail *s)
++int sail_flush(struct sail *s)
 +{
 +	u8 *n16_old, *p16_old, *n24_old, *p24_old, *n32_old, *p32_old;
 +	u16 *c16_old;
@@ -2127,8 +2138,8 @@ index 0000000..fdeb45e
 +	return 0;
 +}
 +
-+int sail_ml_lookup(const struct sail *s,
-+		   const __be32 dest, struct net_device **dev)
++int sail_lookup(const struct sail *s,
++		const __be32 dest, struct net_device **dev)
 +{
 +	u8 *n16, *n24, *n32;
 +	u16 *c16;
@@ -2197,15 +2208,15 @@ index 0000000..fdeb45e
 +	return 0;
 +}
 diff --git a/net/ipv4/fib_trie.c b/net/ipv4/fib_trie.c
-index 5bc0c89..40cf7cf 100644
+index 5bc0c89..d60fa45 100644
 --- a/net/ipv4/fib_trie.c
 +++ b/net/ipv4/fib_trie.c
 @@ -1280,6 +1280,10 @@ int fib_table_insert(struct net *net, struct fib_table *tb,
  	if (err)
  		goto out_fib_notif;
  
-+#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+	sail_ml_insert(&tb->sail, key, plen, fi->fib_dev);
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
++	sail_insert(&tb->sail, key, plen, fi->fib_dev);
 +#endif
 +
  	if (!plen)
@@ -2215,8 +2226,8 @@ index 5bc0c89..40cf7cf 100644
  
  	pr_debug("Deleting %08x/%d tos=%d t=%p\n", key, plen, tos, t);
  
-+#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+	sail_ml_delete(&tb->sail, key, plen);
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
++	sail_delete(&tb->sail, key, plen);
 +#endif
 +
  	fa_to_delete = NULL;
@@ -2226,8 +2237,8 @@ index 5bc0c89..40cf7cf 100644
  		}
  	}
  
-+#if IS_ENABLED(CONFIG_FIB_SAIL_ML)
-+	sail_ml_flush(&tb->sail);
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
++	sail_flush(&tb->sail);
 +#endif
 +
  	pr_debug("trie_flush found=%d\n", found);
