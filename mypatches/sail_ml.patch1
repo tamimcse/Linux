@@ -728,7 +728,7 @@ index 0f7a27f..cdeb303 100644
 -#CONFIG_X86_L1_CACHE_SHIFT=7 
 -
 diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
-index 69c91d1..960c15b 100644
+index 69c91d1..170e3e5 100644
 --- a/include/net/ip_fib.h
 +++ b/include/net/ip_fib.h
 @@ -25,6 +25,8 @@
@@ -740,7 +740,7 @@ index 69c91d1..960c15b 100644
  
  struct fib_config {
  	u8			fc_dst_len;
-@@ -197,6 +199,60 @@ struct fib_entry_notifier_info {
+@@ -197,6 +199,62 @@ struct fib_entry_notifier_info {
  	u32 tb_id;
  };
  
@@ -751,14 +751,16 @@ index 69c91d1..960c15b 100644
 + */
 +#define NETDEV_COUNT_MAX 255
 +
-+/*
-+ * A chunk has 4 parts. Each part can have up to 64 elements. c_bm contains
-+ * a bitmap and c_off contains the offset for the part. Together a chunk
-+ * can represent up to 256 elements.
-+ */
 +struct chunk {
-+	u64 c_bm[4];
-+	u64 c_off[4];
++	/*256-bit bitmap. Here i-th bit (from LSB) is set to 1 if C24[i] > 0 */
++	u64 bitmap[4];
++	/*
++	 * Index to C24 where chunk is started. A chunk corresponds
++	 * to 256 elements. Instead of having just one start index for the
++	 * whole chunk, we divide the chunk into 4 parts and save start
++	 * index for each part.
++	 */
++	u64 start_index[4];
 +};
 +
 +struct sail {
@@ -801,7 +803,7 @@ index 69c91d1..960c15b 100644
  struct fib_nh_notifier_info {
  	struct fib_notifier_info info; /* must be first */
  	struct fib_nh *fib_nh;
-@@ -219,6 +275,10 @@ struct fib_table {
+@@ -219,6 +277,10 @@ struct fib_table {
  	int			tb_num_default;
  	struct rcu_head		rcu;
  	unsigned long 		*tb_data;
@@ -812,7 +814,7 @@ index 69c91d1..960c15b 100644
  	unsigned long		__data[0];
  };
  
-@@ -259,15 +319,342 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
+@@ -259,15 +321,342 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
  	return fib_get_table(net, id);
  }
  
@@ -1262,10 +1264,10 @@ index 7446b98..55ff5e7 100644
  		      xfrm4_output.o xfrm4_protocol.o
 diff --git a/net/ipv4/fib_sail_xdp.c b/net/ipv4/fib_sail_xdp.c
 new file mode 100644
-index 0000000..704646c
+index 0000000..f3f56c5
 --- /dev/null
 +++ b/net/ipv4/fib_sail_xdp.c
-@@ -0,0 +1,941 @@
+@@ -0,0 +1,939 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
 + *
@@ -1282,7 +1284,7 @@ index 0000000..704646c
 + * In ACM SIGCOMM Computer Communication Review, vol. 44, no. 4, pp. 39-50.
 + * ACM, 2014.
 + *
-+ * It however deviates from SAIL_L in three ways:
++ * It however deviates from the SAIL_L in three ways:
 + *
 + * 1. It pushes all the solid nodes in level 1~15 to level 16 whereas SAIL_L
 + * pushes them to either level 16, level 24 or level 32.
@@ -1309,10 +1311,7 @@ index 0000000..704646c
 +/*Total number of chunks preallocated for level 24 and 32*/
 +#define NUM_CHUNKS 16384
 +
-+/*Converts an index to bitmap*/
-+#define IDX_TO_BM(X) (1ULL << (X))
-+
-+/*Calculates number of bits set to 1*/
++/*Calculates the number of bits set to 1*/
 +#define POPCNT(X) (hweight64(X))
 +
 +/*POPCNT of left-most N bits of X*/
@@ -1326,7 +1325,8 @@ index 0000000..704646c
 +	part_idx = cnk_off / 64;
 +	part_off = cnk_off % 64;
 +
-+	return c.c_off[part_idx] + POPCNT_OFF(c.c_bm[part_idx], part_off);
++	return c.start_index[part_idx] +
++		POPCNT_OFF(c.bitmap[part_idx], part_off);
 +}
 +
 +/*Converts a net_device to corresponding netdev_index*/
@@ -1403,8 +1403,8 @@ index 0000000..704646c
 +
 +	/*Reset the newly created empty chunk*/
 +	for (m = 0; m < 4; m++) {
-+		s->CK24[chunk_id - 1].c_bm[m] = 0;
-+		s->CK24[chunk_id - 1].c_off[m] = 0;
++		s->CK24[chunk_id - 1].bitmap[m] = 0;
++		s->CK24[chunk_id - 1].start_index[m] = 0;
 +	}
 +	return 0;
 +}
@@ -1512,8 +1512,8 @@ index 0000000..704646c
 +
 +	/*Reset the the last chunk*/
 +	for (m = 0; m < 4; m++) {
-+		s->CK24[s->cnk24_count - 1].c_off[m] = 0;
-+		s->CK24[s->cnk24_count - 1].c_bm[m] = 0;
++		s->CK24[s->cnk24_count - 1].start_index[m] = 0;
++		s->CK24[s->cnk24_count - 1].bitmap[m] = 0;
 +	}
 +
 +	return 0;
@@ -1631,7 +1631,7 @@ index 0000000..704646c
 +	part_off = cnk_off % 64;
 +
 +	chunk_id = s->C24[calc_c24_idx(s->CK24[cnk_idx], cnk_off)];
-+	s->CK24[cnk_idx].c_bm[part_idx] &= ~IDX_TO_BM(part_off);
++	s->CK24[cnk_idx].bitmap[part_idx] &= ~(1ULL << part_off);
 +
 +	for (i = 0; i < C24_SIZE; i++) {
 +		if (s->C24[i] == chunk_id)
@@ -1686,7 +1686,7 @@ index 0000000..704646c
 +			return false;
 +	}
 +
-+	if (ck->c_bm[0] || ck->c_bm[1] || ck->c_bm[2] || ck->c_bm[3])
++	if (ck->bitmap[0] || ck->bitmap[1] || ck->bitmap[2] || ck->bitmap[3])
 +		return false;
 +
 +	return true;
@@ -1706,9 +1706,9 @@ index 0000000..704646c
 +	c = ck24[ck24_idx];
 +
 +	/*find the index to C24 where previous chunk ID would be found*/
-+	if (c.c_bm[part_idx]) {
-+		index = c.c_off[part_idx] +
-+		    POPCNT_OFF(c.c_bm[part_idx], part_off) - 1;
++	if (c.bitmap[part_idx]) {
++		index = c.start_index[part_idx] +
++		    POPCNT_OFF(c.bitmap[part_idx], part_off) - 1;
 +		if (index >= 0)
 +			goto index_found;
 +	}
@@ -1716,9 +1716,9 @@ index 0000000..704646c
 +	j = part_idx - 1;
 +	for (i = (long long)ck24_idx; i >= 0; i--) {
 +		for (; j >= 0; j--) {
-+			if (ck24[i].c_bm[j]) {
-+				index = ck24[i].c_off[j] +
-+					POPCNT(ck24[i].c_bm[j]) - 1;
++			if (ck24[i].bitmap[j]) {
++				index = ck24[i].start_index[j] +
++					POPCNT(ck24[i].bitmap[j]) - 1;
 +				goto index_found;
 +			}
 +		}
@@ -1750,15 +1750,15 @@ index 0000000..704646c
 +	part_idx = ck24_off / 64;
 +	part_off = ck24_off % 64;
 +
-+	if (ck24[ck24_idx].c_bm[part_idx] & IDX_TO_BM(part_off)) {
++	if (ck24[ck24_idx].bitmap[part_idx] & (1ULL << part_off)) {
 +		pr_err("Error: bitmap is already set");
 +		return -EINVAL;
 +	}
 +
 +	/*find the index where Chunk ID should be copied to*/
-+	if (ck24[ck24_idx].c_bm[part_idx]) {
-+		index = ck24[ck24_idx].c_off[part_idx] +
-+			POPCNT_OFF(ck24[ck24_idx].c_bm[part_idx], part_off);
++	if (ck24[ck24_idx].bitmap[part_idx]) {
++		index = ck24[ck24_idx].start_index[part_idx] +
++			POPCNT_OFF(ck24[ck24_idx].bitmap[part_idx], part_off);
 +		goto index_found;
 +	}
 +
@@ -1766,9 +1766,9 @@ index 0000000..704646c
 +	j = part_idx - 1;
 +	for (i = (long long)ck24_idx; i >= 0; i--) {
 +		for (; j >= 0; j--) {
-+			if (ck24[i].c_bm[j]) {
-+				index = ck24[i].c_off[j] +
-+					POPCNT(ck24[i].c_bm[j]);
++			if (ck24[i].bitmap[j]) {
++				index = ck24[i].start_index[j] +
++					POPCNT(ck24[i].bitmap[j]);
 +				goto index_found;
 +			}
 +		}
@@ -1785,17 +1785,17 @@ index 0000000..704646c
 +	c24[index] = chunk_id;
 +
 +	/*This is the first element of this chunk*/
-+	if (!ck24[ck24_idx].c_bm[part_idx])
-+		ck24[ck24_idx].c_off[part_idx] = index;
++	if (!ck24[ck24_idx].bitmap[part_idx])
++		ck24[ck24_idx].start_index[part_idx] = index;
 +
-+	ck24[ck24_idx].c_bm[part_idx] |= IDX_TO_BM(part_off);
++	ck24[ck24_idx].bitmap[part_idx] |= (1ULL << part_off);
 +
 +	/*Update offset of the chunks to the right*/
 +	j = part_idx + 1;
 +	for (i = (long long)ck24_idx; i < cnk24_count; i++) {
 +		for (; j < 4; j++) {
-+			if (ck24[i].c_bm[j])
-+				ck24[i].c_off[j]++;
++			if (ck24[i].bitmap[j])
++				ck24[i].start_index[j]++;
 +		}
 +		j = 0;
 +	}
@@ -1858,7 +1858,7 @@ index 0000000..704646c
 +			kfree(c24);
 +			kfree(n32);
 +			kfree(p32);
-+			pr_err("Out of memory while allocating level 16");
++			pr_err("Out of memory while preallocating  SAIL");
 +			goto error;
 +		}
 +
@@ -1898,7 +1898,7 @@ index 0000000..704646c
 +	 * 1. Calculate the chunk ID to level 24 from C16. The Chunk ID
 +	 * indicates where the new chunk should be inserted.
 +	 * 2. Insert a new chunk in level 24
-+	 * 3. Update the C16[] based on newly inserted chunk
++	 * 3. Update the C16[] based on the newly inserted chunk
 +	 */
 +	if (s->C16[n16_idx] == 0) {
 +		/*Step 1*/
@@ -1943,7 +1943,7 @@ index 0000000..704646c
 +	 */
 +	part_idx = ck24_off / 64;
 +	part_off = ck24_off % 64;
-+	if (!(s->CK24[ck24_idx].c_bm[part_idx] & IDX_TO_BM(part_off))) {
++	if (!(s->CK24[ck24_idx].bitmap[part_idx] & (1ULL << part_off))) {
 +		/*Step 1*/
 +		chunk_id = calc_ckid32_from_ck24(s->CK24, ck24_idx,
 +						 ck24_off, s->C24);
@@ -2049,7 +2049,7 @@ index 0000000..704646c
 +	part_idx = ck24_off / 64;
 +	part_off = ck24_off % 64;
 +	/* The prefix_len is 25~32. but no chunk for the prefix */
-+	if (!(s->CK24[ck24_idx].c_bm[part_idx] & IDX_TO_BM(part_off)))
++	if (!(s->CK24[ck24_idx].bitmap[part_idx] & (1ULL << part_off)))
 +		goto error;
 +
 +	chunkid_level32 = s->C24[calc_c24_idx(s->CK24[ck24_idx], ck24_off)];
@@ -2189,10 +2189,10 @@ index 0000000..704646c
 +	ck24 = rcu_dereference(s->CK24);
 +	part_idx = ck24_off / 64;
 +	part_off = ck24_off % 64;
-+	if (likely(ck24[ck24_idx].c_bm[part_idx] & IDX_TO_BM(part_off))) {
++	if (likely(ck24[ck24_idx].bitmap[part_idx] & (1ULL << part_off))) {
 +		c24 = rcu_dereference(s->C24);
-+		c24_idx = ck24[ck24_idx].c_off[part_idx] +
-+			POPCNT_OFF(ck24[ck24_idx].c_bm[part_idx], part_off);
++		c24_idx = ck24[ck24_idx].start_index[part_idx] +
++			POPCNT_OFF(ck24[ck24_idx].bitmap[part_idx], part_off);
 +		n32_idx = (c24[c24_idx] - 1) * CHUNK_SIZE + (key & 255);
 +	} else {
 +		goto finish;
