@@ -30,7 +30,6 @@ da# NOTE! Don't add files that are generated in specific
 *.xz
 *.lz4
 *.lzo
-*.patch
 *.gcno
 *.ll
 modules.builtin
