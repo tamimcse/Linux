@@ -1,0 +1,1180 @@
+diff --git a/MAINTAINERS b/MAINTAINERS
+index b22e7fd..969e625 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -7630,6 +7630,11 @@ M:	Juanjo Ciarlante <jjciarla@raiz.uncu.edu.ar>
+ S:	Maintained
+ F:	net/ipv4/netfilter/ipt_MASQUERADE.c
+ 
++SAIL FIB LOOKUP
++M:	MD Iftakharul Islam (Tamim) <tamim@csebuet.org>
++S:	Maintained
++F:	net/ipv4/fib_sail_xdp.c
++
+ IPMI SUBSYSTEM
+ M:	Corey Minyard <minyard@acm.org>
+ L:	openipmi-developer@lists.sourceforge.net (moderated for non-subscribers)
+diff --git a/include/net/ip_fib.h b/include/net/ip_fib.h
+index 69c91d1..cc275c7 100644
+--- a/include/net/ip_fib.h
++++ b/include/net/ip_fib.h
+@@ -197,6 +197,62 @@ struct fib_entry_notifier_info {
+ 	u32 tb_id;
+ };
+ 
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
++/*
++ * The router can have upto 255 ports. This limitation
++ * allows us to represent netdev_index as an u8
++ */
++#define NETDEV_COUNT_MAX 255
++
++struct chunk {
++	/*256-bit bitmap. Here i-th bit (from LSB) is set to 1 if C24[i] > 0 */
++	u64 bitmap[4];
++	/*
++	 * Index to C24 where chunk is started. A chunk corresponds
++	 * to 256 elements. Instead of having just one start index for the
++	 * whole chunk, we divide the chunk into 4 parts and save start
++	 * index for each part.
++	 */
++	u64 start_index[4];
++};
++
++struct sail {
++	/*default next-hop (Level 0)*/
++	u8	def_nh;
++
++	/*Level 16*/
++	u8 __rcu *N16;
++	u8 __rcu *P16;
++	u16 __rcu *C16;
++
++	/*Level 24*/
++	u8 __rcu *N24;
++	u8 __rcu *P24;
++	struct chunk __rcu *CK24;
++	u32 __rcu *C24;
++	u32 cnk24_count;/*Number of chunks in level 24*/
++
++	/*Level 32*/
++	u8 __rcu *N32;
++	u8 __rcu *P32;
++	u32 cnk32_count;/*Number of chunks in level 32*/
++
++	/*Index to this array is stored in N16, N24 and N32*/
++	struct net_device	*netdevs[NETDEV_COUNT_MAX];
++	u8 netdev_count;/*Number of netdevs*/
++
++	spinlock_t lock;
++};
++
++int sail_insert(struct sail *s, u32 key,
++		u8 prefix_len, struct net_device *dev);
++int sail_delete(struct sail *s, u32 key,
++		u8 prefix_len);
++int sail_flush(struct sail *s);
++int sail_lookup(const struct sail *s, const __be32 dest,
++		struct net_device **dev);
++#endif
++
+ struct fib_nh_notifier_info {
+ 	struct fib_notifier_info info; /* must be first */
+ 	struct fib_nh *fib_nh;
+@@ -219,6 +275,10 @@ struct fib_table {
+ 	int			tb_num_default;
+ 	struct rcu_head		rcu;
+ 	unsigned long 		*tb_data;
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
++	/*Each FIB table will have its own SAIL structure.*/
++	struct sail	sail;
++#endif
+ 	unsigned long		__data[0];
+ };
+ 
+diff --git a/net/core/filter.c b/net/core/filter.c
+index 5e00f2b..e89b4bb 100644
+--- a/net/core/filter.c
++++ b/net/core/filter.c
+@@ -4236,6 +4236,49 @@ static int bpf_fib_set_fwd_params(struct bpf_fib_lookup *params,
+ }
+ #endif
+ 
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
++static int sail_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
++			   u32 flags, bool check_mtu)
++{
++	struct net_device *dev_in, *dev_out;
++	struct fib_table *tb;
++	struct neighbour *neigh;
++	u32 tbid;
++	int err;
++	u32 mtu;
++
++	if (flags & BPF_FIB_LOOKUP_DIRECT) {
++		dev_in = dev_get_by_index_rcu(net, params->ifindex);
++		if (unlikely(!dev_in))
++			return -ENODEV;
++		tbid = l3mdev_fib_table_rcu(dev_in) ? : RT_TABLE_MAIN;
++	} else {
++		tbid = RT_TABLE_MAIN;
++	}
++
++	tb = fib_get_table(net, tbid);
++	if (unlikely(!tb))
++		return BPF_FIB_LKUP_RET_NOT_FWDED;
++
++	err = sail_lookup(&tb->sail, params->ipv4_dst, &dev_out);
++	if (err)
++		return -ENOENT;
++
++	if (check_mtu) {
++		mtu = min(READ_ONCE(dev_out->mtu), IP_MAX_MTU);
++		if (params->tot_len > mtu)
++			return BPF_FIB_LKUP_RET_FRAG_NEEDED;
++	}
++
++	neigh = __ipv4_neigh_lookup_noref(dev_out,
++					  (__force u32)params->ipv4_dst);
++	if (!neigh)
++		return BPF_FIB_LKUP_RET_NO_NEIGH;
++
++	return bpf_fib_set_fwd_params(params, neigh, dev_out);
++}
++#endif
++
+ #if IS_ENABLED(CONFIG_INET)
+ static int bpf_ipv4_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
+ 			       u32 flags, bool check_mtu)
+@@ -4468,9 +4511,15 @@ BPF_CALL_4(bpf_xdp_fib_lookup, struct xdp_buff *, ctx,
+ 	switch (params->family) {
+ #if IS_ENABLED(CONFIG_INET)
+ 	case AF_INET:
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
++		return sail_fib_lookup(dev_net(ctx->rxq->dev), params,
++				       flags, true);
++#else
+ 		return bpf_ipv4_fib_lookup(dev_net(ctx->rxq->dev), params,
+ 					   flags, true);
+ #endif
++
++#endif
+ #if IS_ENABLED(CONFIG_IPV6)
+ 	case AF_INET6:
+ 		return bpf_ipv6_fib_lookup(dev_net(ctx->rxq->dev), params,
+diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
+index 32cae39..5c41071 100644
+--- a/net/ipv4/Kconfig
++++ b/net/ipv4/Kconfig
+@@ -52,6 +52,17 @@ config IP_ADVANCED_ROUTER
+ 
+ 	  If unsure, say N here.
+ 
++config FIB_SAIL_XDP
++	bool "SAIL based FIB lookup for XDP"
++	depends on !IP_ROUTE_MULTIPATH && !LWTUNNEL
++	default y
++	help
++	  This option will enable SAIL based routing table lookup for XDP
++	  forwarding. This will store FIB table as a SAIL (along with
++	  LC-trie). Currently it only supports up to 255 ports. Currently
++	  it does not support multi-path routing and light-weight
++	  tunnels such as MPLS.
++
+ config IP_FIB_TRIE_STATS
+ 	bool "FIB TRIE statistics"
+ 	depends on IP_ADVANCED_ROUTER
+diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
+index 7446b98..55ff5e7 100644
+--- a/net/ipv4/Makefile
++++ b/net/ipv4/Makefile
+@@ -64,6 +64,7 @@ obj-$(CONFIG_TCP_CONG_LP) += tcp_lp.o
+ obj-$(CONFIG_TCP_CONG_YEAH) += tcp_yeah.o
+ obj-$(CONFIG_TCP_CONG_ILLINOIS) += tcp_illinois.o
+ obj-$(CONFIG_NETLABEL) += cipso_ipv4.o
++obj-$(CONFIG_FIB_SAIL_XDP) += fib_sail_xdp.o
+ 
+ obj-$(CONFIG_XFRM) += xfrm4_policy.o xfrm4_state.o xfrm4_input.o \
+ 		      xfrm4_output.o xfrm4_protocol.o
+diff --git a/net/ipv4/fib_sail_xdp.c b/net/ipv4/fib_sail_xdp.c
+new file mode 100644
+index 0000000..f3f56c5
+--- /dev/null
++++ b/net/ipv4/fib_sail_xdp.c
+@@ -0,0 +1,939 @@
++// SPDX-License-Identifier: GPL-2.0
++/* Copyright (c) 2018-19 MD Iftakharul Islam (Tamim) <mislam4@kent.edu>
++ *
++ *   This program is free software; you can redistribute it and/or
++ *   modify it under the terms of the GNU General Public License
++ *   as published by the Free Software Foundation; either version
++ *   2 of the License, or (at your option) any later version.
++ *
++ *
++ * This is SAIL_L based routing table lookup which was initially proposed in:
++ *
++ * Yang, Tong, Gaogang Xie, YanBiao Li, Qiaobin Fu, Alex X. Liu, Qi Li,
++ * and Laurent Mathy. "Guarantee IP lookup performance with FIB explosion."
++ * In ACM SIGCOMM Computer Communication Review, vol. 44, no. 4, pp. 39-50.
++ * ACM, 2014.
++ *
++ * It however deviates from the SAIL_L in three ways:
++ *
++ * 1. It pushes all the solid nodes in level 1~15 to level 16 whereas SAIL_L
++ * pushes them to either level 16, level 24 or level 32.
++ *
++ * 2. It pushes all the solid nodes in level 17~23 to level 24 whereas SAIL_L
++ * pushes them to either level 24 or level 32.
++ *
++ * 3. It adds a bitmap array, CK24 in addition to C24. This reduces the memory
++ * memory requirement of original C24 from 17.08 MB to 110KB for our example
++ * routing table.
++ */
++
++#include <net/ip_fib.h>
++
++/*The length of N16, P16 and C16 is 2^16*/
++#define LEVEL16_SIZE 65536
++
++/*Length of C24.*/
++#define C24_SIZE 1048576
++
++/*chunk size is 2^8*/
++#define CHUNK_SIZE 256
++
++/*Total number of chunks preallocated for level 24 and 32*/
++#define NUM_CHUNKS 16384
++
++/*Calculates the number of bits set to 1*/
++#define POPCNT(X) (hweight64(X))
++
++/*POPCNT of left-most N bits of X*/
++#define POPCNT_OFF(X, N) (hweight64(((1ULL << (N)) - 1) & (X)))
++
++/*Calculate index to C24 from CK26 chunk and chunk offset */
++static u64 calc_c24_idx(struct chunk c, u32 cnk_off)
++{
++	u8 part_idx, part_off;
++
++	part_idx = cnk_off / 64;
++	part_off = cnk_off % 64;
++
++	return c.start_index[part_idx] +
++		POPCNT_OFF(c.bitmap[part_idx], part_off);
++}
++
++/*Converts a net_device to corresponding netdev_index*/
++static u8 get_netdev_index(struct sail *s, struct net_device *dev)
++{
++	u8 i;
++
++	/*checks if the net_device is already seen; if yes then return the
++	 *corresponding index
++	 */
++	for (i = 0; i < s->netdev_count; i++) {
++		if (s->netdevs[i] == dev)
++			return i;
++	}
++	/*If the net_device is not previously seen, then add it to the array*/
++	s->netdevs[s->netdev_count++] = dev;
++	return s->netdev_count - 1;
++}
++
++/* Insert a new chunk to N24 and P24 at index chunk_id-1*/
++static int N24_insert(struct sail *s, u16 chunk_id)
++{
++	long long m;
++
++	if (chunk_id > (s->cnk24_count + 1) || chunk_id < 1) {
++		pr_err("Invalid chunk_id for level 26");
++		return -EINVAL;
++	}
++
++	if (s->cnk24_count >= NUM_CHUNKS) {
++		pr_err("Cannot insert a chunk. The chunk array is full");
++		return -EINVAL;
++	}
++
++	/*shift each element one step right to make
++	 *space for the new one
++	 */
++	m = (long long)s->cnk24_count * CHUNK_SIZE - 1;
++	for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
++		s->N24[m + CHUNK_SIZE] = s->N24[m];
++		s->P24[m + CHUNK_SIZE] = s->P24[m];
++	}
++
++	/*Reset the newly created chunk*/
++	m = (chunk_id - 1) * CHUNK_SIZE;
++	for (; m < chunk_id * CHUNK_SIZE; m++) {
++		s->N24[m] = 0;
++		s->P24[m] = 0;
++	}
++	return 0;
++}
++
++/* Insert a new chunk to CK24 at index chunk_id-1*/
++static int CK24_insert(struct sail *s, u16 chunk_id)
++{
++	long long m;
++
++	if (chunk_id > (s->cnk24_count + 1) || chunk_id < 1) {
++		pr_err("Invalid chunk_id for level 26");
++		return -EINVAL;
++	}
++
++	if (s->cnk24_count >= NUM_CHUNKS) {
++		pr_err("Cannot insert a chunk. The chunk array is full");
++		return -EINVAL;
++	}
++
++	/*shift each chunk one step right to make
++	 *space for the new one
++	 */
++	m = (long long)s->cnk24_count - 1;
++	for (; m >= (chunk_id - 1); m--)
++		s->CK24[m + 1] = s->CK24[m];
++
++	/*Reset the newly created empty chunk*/
++	for (m = 0; m < 4; m++) {
++		s->CK24[chunk_id - 1].bitmap[m] = 0;
++		s->CK24[chunk_id - 1].start_index[m] = 0;
++	}
++	return 0;
++}
++
++/* Insert a new chunk to level 24 at chunk_id-1. Note that Chunk ID
++ * starts from 1, not 0
++ */
++static int chunk24_insert(struct sail *s, u16 chunk_id)
++{
++	int err = 0;
++
++	err = N24_insert(s, chunk_id);
++	if (!err)
++		err = CK24_insert(s, chunk_id);
++	if (!err)
++		++s->cnk24_count;
++	else
++		pr_err("Error in level 24 insertion");
++	return err;
++}
++
++/* Insert a new chunk to level 32 at chunk_id-1. Note that Chunk ID
++ * starts from 1, not 0
++ */
++static int chunk32_insert(struct sail *s, u32 chunk_id)
++{
++	long long m;
++
++	if (chunk_id > (s->cnk32_count + 1) || chunk_id < 1) {
++		pr_err("Invalid chunk_id for level 32");
++		return -EINVAL;
++	}
++
++	if (s->cnk32_count >= NUM_CHUNKS) {
++		pr_err("Cannot insert a new chunk. The chunk array is full");
++		return -EINVAL;
++	}
++
++	/*shift each element one step right to make
++	 *space for the new one
++	 */
++	m = (long long)s->cnk32_count * CHUNK_SIZE - 1;
++	for (; m >= (chunk_id - 1) * CHUNK_SIZE; m--) {
++		s->N32[m + CHUNK_SIZE] = s->N32[m];
++		s->P32[m + CHUNK_SIZE] = s->P32[m];
++	}
++
++	/*Reset the newly created empty chunk*/
++	m = (chunk_id - 1) * CHUNK_SIZE;
++	for (; m < chunk_id * CHUNK_SIZE; m++) {
++		s->N32[m] = 0;
++		s->P32[m] = 0;
++	}
++
++	++s->cnk32_count;
++	return 0;
++}
++
++static int N24_delete(struct sail *s, u16 chunk_id)
++{
++	long long m;
++	u64 end_idx;
++
++	if (chunk_id > s->cnk24_count) {
++		pr_err("Invalid chunk_id to level 26");
++		return -EINVAL;
++	}
++
++	if (chunk_id < s->cnk24_count) {
++		/*shift each chunk one step left*/
++		m = (long long)chunk_id * CHUNK_SIZE;
++		end_idx = s->cnk24_count * CHUNK_SIZE - 1;
++		for (; m <= end_idx; m++) {
++			s->N24[m - CHUNK_SIZE] = s->N24[m];
++			s->P24[m - CHUNK_SIZE] = s->P24[m];
++		}
++	}
++
++	/*Reset the the last chunk*/
++	end_idx = s->cnk24_count * CHUNK_SIZE - 1;
++	m = (s->cnk24_count - 1) * CHUNK_SIZE;
++	for (; m <= end_idx; m++) {
++		s->N24[m] = 0;
++		s->P24[m] = 0;
++	}
++
++	return 0;
++}
++
++static int CK24_delete(struct sail *s, u16 chunk_id)
++{
++	long long m;
++
++	if (chunk_id > s->cnk24_count) {
++		pr_err("Invalid chunk_id to level 24");
++		return -EINVAL;
++	}
++
++	if (chunk_id < s->cnk24_count) {
++		/*shift each chunk one step left*/
++		m = (long long)chunk_id;
++		for (; m <= s->cnk24_count - 1; m++)
++			s->CK24[m - 1] = s->CK24[m];
++	}
++
++	/*Reset the the last chunk*/
++	for (m = 0; m < 4; m++) {
++		s->CK24[s->cnk24_count - 1].start_index[m] = 0;
++		s->CK24[s->cnk24_count - 1].bitmap[m] = 0;
++	}
++
++	return 0;
++}
++
++static int chunk24_delete(struct sail *s, u16 chunk_id)
++{
++	N24_delete(s, chunk_id);
++	CK24_delete(s, chunk_id);
++	--s->cnk24_count;
++	return 0;
++}
++
++static int chunk32_delete(struct sail *s, u32 chunk_id)
++{
++	long long m;
++	u64 end_idx;
++
++	if (chunk_id > s->cnk32_count) {
++		pr_err("Invalid chunk_id to level 32");
++		return -EINVAL;
++	}
++
++	if (chunk_id < s->cnk32_count) {
++		/*shift each chunk one step left*/
++		m = (long long)chunk_id * CHUNK_SIZE;
++		end_idx = s->cnk32_count * CHUNK_SIZE - 1;
++		for (; m <= end_idx; m++) {
++			s->N32[m - CHUNK_SIZE] = s->N32[m];
++			s->P32[m - CHUNK_SIZE] = s->P32[m];
++		}
++	}
++
++	/*Reset the the last chunk*/
++	end_idx = s->cnk32_count * CHUNK_SIZE - 1;
++	m = (s->cnk32_count - 1) * CHUNK_SIZE;
++	for (; m <= end_idx; m++) {
++		s->N32[m] = 0;
++		s->P32[m] = 0;
++	}
++
++	--s->cnk32_count;
++	return 0;
++}
++
++/*Calculate the chunk ID for level 24 based on C16*/
++static u16 calc_ckid24_from_C16(u16 *c16, u32 c16_size, u16 idx16)
++{
++	long long i;
++
++	if (idx16 >= c16_size) {
++		pr_err("Index needs to be smaller than arr_size");
++		return 0;
++	}
++
++	/*Find the first chunk ID to the left and increment that by 1*/
++	for (i = (long long)idx16 - 1; i >= 0; i--) {
++		if (c16[i] > 0)
++			return c16[i] + 1;
++	}
++
++	/*If there is no chunk to the left, then this is the first chunk*/
++	return 1;
++}
++
++/*Update C16 based on the newly inserted chunk*/
++static int update_C16(u16 *c16, u32 c16_size,
++		      u16 idx16, u16 chunk_id)
++{
++	long long i;
++
++	if (idx16 >= c16_size) {
++		pr_err("Invalid index");
++		return -EINVAL;
++	}
++
++	c16[idx16] = chunk_id;
++
++	/* Increment chunk ID to the right */
++	for (i = idx16 + 1; i < c16_size; i++) {
++		if (c16[i] > 0)
++			c16[i]++;
++	}
++
++	return 0;
++}
++
++/*Remove Chunk ID for level 16*/
++static int C16_remove_chunkid(u16 *c16, u32 c16_size, u16 chunk_id)
++{
++	long long i;
++	bool found = false;
++
++	/*Check if the chunk ID already exists*/
++	for (i = 0; i < c16_size; i++) {
++		if (found && c16[i] > 0) {
++			c16[i]--;
++		} else if (c16[i] == chunk_id) {
++			c16[i] = 0;
++			found = true;
++		}
++	}
++
++	return 0;
++}
++
++static int C24_remove_chunkid(struct sail *s, u16 cnk_idx, u64 cnk_off)
++{
++	long long i;
++	bool found = false;
++	u32 chunk_id;
++	u8 part_idx, part_off;
++
++	part_idx = cnk_off / 64;
++	part_off = cnk_off % 64;
++
++	chunk_id = s->C24[calc_c24_idx(s->CK24[cnk_idx], cnk_off)];
++	s->CK24[cnk_idx].bitmap[part_idx] &= ~(1ULL << part_off);
++
++	for (i = 0; i < C24_SIZE; i++) {
++		if (s->C24[i] == chunk_id)
++			found = true;
++		else if (found && s->C24[i] > 0)
++			s->C24[i - 1] = s->C24[i];
++		else if (found && !s->C24[i])
++			break;
++	}
++
++	return 0;
++}
++
++ /* Check if a chunk in level 32 is being unused */
++static bool is_N32_chunk_unused(u8 *nh, u32 chunk_id)
++{
++	long long i;
++	long long start_index, end_index;
++
++	if (chunk_id < 1) {
++		pr_err("Invalid chunk ID");
++		return -EINVAL;
++	}
++
++	start_index = (long long)(chunk_id - 1) * CHUNK_SIZE;
++	end_index = (long long)chunk_id * CHUNK_SIZE - 1;
++	for (i = start_index; i <= end_index; i++) {
++		/*The chunk is being used*/
++		if (nh[i] > 0)
++			return false;
++	}
++
++	return true;
++}
++
++ /* Check if a chunk in level 24 is being unused*/
++static bool is_CK24_N24_chunk_unused(u8 *nh, struct chunk *ck, u16 chunk_id)
++{
++	long long i;
++	long long start_index, end_index;
++
++	if (chunk_id < 1) {
++		pr_err("Invalid chunk ID");
++		return -EINVAL;
++	}
++
++	start_index = (long long)(chunk_id - 1) * CHUNK_SIZE;
++	end_index = (long long)chunk_id * CHUNK_SIZE - 1;
++	for (i = start_index; i <= end_index; i++) {
++		/*The chunk is being used*/
++		if (nh[i] > 0)
++			return false;
++	}
++
++	if (ck->bitmap[0] || ck->bitmap[1] || ck->bitmap[2] || ck->bitmap[3])
++		return false;
++
++	return true;
++}
++
++/*Calculate the chunk ID for level 32 based on CK24 and C24*/
++static u32 calc_ckid32_from_ck24(struct chunk *ck24,
++				 u32 ck24_idx, u32 ck24_off, u32 *c24)
++{
++	long long i, j;
++	long long index = 0;
++	u8 part_idx, part_off;
++	struct chunk c;
++
++	part_idx = ck24_off / 64;
++	part_off = ck24_off % 64;
++	c = ck24[ck24_idx];
++
++	/*find the index to C24 where previous chunk ID would be found*/
++	if (c.bitmap[part_idx]) {
++		index = c.start_index[part_idx] +
++		    POPCNT_OFF(c.bitmap[part_idx], part_off) - 1;
++		if (index >= 0)
++			goto index_found;
++	}
++
++	j = part_idx - 1;
++	for (i = (long long)ck24_idx; i >= 0; i--) {
++		for (; j >= 0; j--) {
++			if (ck24[i].bitmap[j]) {
++				index = ck24[i].start_index[j] +
++					POPCNT(ck24[i].bitmap[j]) - 1;
++				goto index_found;
++			}
++		}
++		j = 3;
++	}
++
++	/*If there is no chunk to the left, then this is the first chunk*/
++	return 1;
++index_found:
++	if (index >= (C24_SIZE - 1)) {
++		pr_err("CK24 array is full. Cannot insert");
++		return 0;
++	} else if (c24[index] <= 0) {
++		pr_err("Invalid chunk ID");
++		return 0;
++	} else {
++		return c24[index] + 1;
++	}
++}
++
++/*Update CK24 and C24 based on the newly inserted chunk*/
++static int update_ck24_c24(struct chunk *ck24, u32 ck24_idx, u32 ck24_off,
++			   u32 *c24, u32 cnk24_count, u32 chunk_id)
++{
++	long long i, j;
++	u64 index = 0;
++	u8 part_idx, part_off;
++
++	part_idx = ck24_off / 64;
++	part_off = ck24_off % 64;
++
++	if (ck24[ck24_idx].bitmap[part_idx] & (1ULL << part_off)) {
++		pr_err("Error: bitmap is already set");
++		return -EINVAL;
++	}
++
++	/*find the index where Chunk ID should be copied to*/
++	if (ck24[ck24_idx].bitmap[part_idx]) {
++		index = ck24[ck24_idx].start_index[part_idx] +
++			POPCNT_OFF(ck24[ck24_idx].bitmap[part_idx], part_off);
++		goto index_found;
++	}
++
++	/*Find a chunk to the left which is not empty*/
++	j = part_idx - 1;
++	for (i = (long long)ck24_idx; i >= 0; i--) {
++		for (; j >= 0; j--) {
++			if (ck24[i].bitmap[j]) {
++				index = ck24[i].start_index[j] +
++					POPCNT(ck24[i].bitmap[j]);
++				goto index_found;
++			}
++		}
++		j = 3;
++	}
++
++index_found:
++	/* Move each element one step to the right to create a space for
++	 * the new element. Also increment each element by 1
++	 */
++	for (i = C24_SIZE - 2 ; i >= (long long)index; i--)
++		c24[i + 1] = (c24[i] > 0) ? c24[i] + 1 : c24[i];
++	/*Set the new Chunk ID*/
++	c24[index] = chunk_id;
++
++	/*This is the first element of this chunk*/
++	if (!ck24[ck24_idx].bitmap[part_idx])
++		ck24[ck24_idx].start_index[part_idx] = index;
++
++	ck24[ck24_idx].bitmap[part_idx] |= (1ULL << part_off);
++
++	/*Update offset of the chunks to the right*/
++	j = part_idx + 1;
++	for (i = (long long)ck24_idx; i < cnk24_count; i++) {
++		for (; j < 4; j++) {
++			if (ck24[i].bitmap[j])
++				ck24[i].start_index[j]++;
++		}
++		j = 0;
++	}
++
++	return 0;
++}
++
++int sail_insert(struct sail *s, u32 key, u8 prefix_len,
++		struct net_device *dev)
++{
++	int i;
++	u8 *n16, *p16, *n24, *p24, *n32, *p32;
++	u16 *c16;
++	u32 *c24;
++	struct chunk *ck24;
++	u16 chunk_id;
++	u16 n16_idx;/*Index to N16, P16 and C16*/
++	u64 n24_idx;/*Index to N24 and P24*/
++	u64 c24_idx;/*Index to C24*/
++	u32 ck24_idx;/*Index to CK24*/
++	u64 ck24_off;/*offset inside a chunk*/
++	u8 part_idx, part_off;
++	u64 n32_idx;/*Index to N32 and P32*/
++	u32 num_leafs;/*Number of leafs need to be inserted for this prefix*/
++	u8 netdev_index = get_netdev_index(s, dev);
++	int err = 0;
++
++	spin_lock(&s->lock);
++
++	/* Default route */
++	if (prefix_len == 0) {
++		s->def_nh = netdev_index;
++		goto finish;
++	}
++
++	/* Preallocate all the arrays at once*/
++	if (!s->N16) {
++		n16 = kcalloc(LEVEL16_SIZE, sizeof(*n16), GFP_ATOMIC);
++		p16 = kcalloc(LEVEL16_SIZE, sizeof(*p16), GFP_ATOMIC);
++		c16 = kcalloc(LEVEL16_SIZE, sizeof(*c16), GFP_ATOMIC);
++		n24 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n24),
++			      GFP_ATOMIC);
++		p24 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p24),
++			      GFP_ATOMIC);
++		ck24 = kcalloc(NUM_CHUNKS, sizeof(*ck24), GFP_ATOMIC);
++		c24 = kcalloc(C24_SIZE, sizeof(*c24), GFP_ATOMIC);
++		n32 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*n32),
++			      GFP_ATOMIC);
++		p32 = kcalloc(NUM_CHUNKS * CHUNK_SIZE, sizeof(*p32),
++			      GFP_ATOMIC);
++
++		if (!n16 || !c16 || !p16 || !n24 || !p24 || !ck24 ||
++		    !c24 || !n32 || !p32) {
++			kfree(n16);
++			kfree(c16);
++			kfree(p16);
++			kfree(n24);
++			kfree(p24);
++			kfree(ck24);
++			kfree(c24);
++			kfree(n32);
++			kfree(p32);
++			pr_err("Out of memory while preallocating  SAIL");
++			goto error;
++		}
++
++		RCU_INIT_POINTER(s->N16, n16);
++		RCU_INIT_POINTER(s->P16, p16);
++		RCU_INIT_POINTER(s->C16, c16);
++		RCU_INIT_POINTER(s->N24, n24);
++		RCU_INIT_POINTER(s->P24, p24);
++		RCU_INIT_POINTER(s->CK24, ck24);
++		RCU_INIT_POINTER(s->C24, c24);
++		RCU_INIT_POINTER(s->N32, n32);
++		RCU_INIT_POINTER(s->P32, p32);
++
++		synchronize_rcu();
++	}
++
++	/*Eextract 16 bits from LSB.*/
++	n16_idx = key >> 16;
++
++	if (prefix_len <= 16) {
++		/*All the leafs in level 1~16 will be stored in level 16.*/
++		num_leafs = 1U << (16 - prefix_len);
++		for (i = 0; i < num_leafs; i++) {
++			/*Longer prefix exists*/
++			if (s->P16[n16_idx + i] > prefix_len)
++				continue;
++			s->N16[n16_idx + i] = netdev_index;
++			s->P16[n16_idx + i] = prefix_len;
++		}
++		goto finish;
++	}
++
++	/* The length of the prefix is 21~32. So need to check if there is a
++	 * chunk for this prefix in level 24. C16[..] = 0 indicates that there
++	 * is no chunk, so need to insert one. The insertion works as
++	 * following:
++	 * 1. Calculate the chunk ID to level 24 from C16. The Chunk ID
++	 * indicates where the new chunk should be inserted.
++	 * 2. Insert a new chunk in level 24
++	 * 3. Update the C16[] based on the newly inserted chunk
++	 */
++	if (s->C16[n16_idx] == 0) {
++		/*Step 1*/
++		chunk_id = calc_ckid24_from_C16(s->C16, LEVEL16_SIZE, n16_idx);
++		if (!chunk_id)
++			goto error;
++		/*Step 2*/
++		err = chunk24_insert(s, chunk_id);
++		if (err)
++			goto error;
++		/*Step 3*/
++		err = update_C16(s->C16, LEVEL16_SIZE, n16_idx, chunk_id);
++		if (err)
++			goto error;
++	}
++
++	/*Extract bit 17~24 and calculate index to level 24*/
++	n24_idx = (s->C16[n16_idx] - 1) * CHUNK_SIZE + ((key & 65280) >> 8);
++	ck24_idx = s->C16[n16_idx] - 1;
++	ck24_off = (key & 65280) >> 8;
++
++	if (prefix_len <= 24) {
++		/*All the leafs in level 17~24 will be stored in level 24.*/
++		num_leafs = 1U << (24 - prefix_len);
++		for (i = 0; i < num_leafs; i++) {
++			/*Longer prefix exists*/
++			if (s->P24[n24_idx + i] > prefix_len)
++				continue;
++			s->N24[n24_idx + i] = netdev_index;
++			s->P24[n24_idx + i] = prefix_len;
++		}
++		goto finish;
++	}
++
++	/* The length of the prefix is 25~32, but there is no chunk for
++	 * this prefix in level 32. So need to insert a new one.
++	 * The insertion works as following:
++	 * 1. Calculate the chunk ID to level 32 from CK24 and C24. The
++	 * Chunk ID indicates where the new chunk should be inserted.
++	 * 2. Insert a new chunk in level 32
++	 * 3. Update the CK24 and C24 based on the newly inserted chunk
++	 */
++	part_idx = ck24_off / 64;
++	part_off = ck24_off % 64;
++	if (!(s->CK24[ck24_idx].bitmap[part_idx] & (1ULL << part_off))) {
++		/*Step 1*/
++		chunk_id = calc_ckid32_from_ck24(s->CK24, ck24_idx,
++						 ck24_off, s->C24);
++		if (!chunk_id)
++			goto error;
++		/*Step 2*/
++		err = chunk32_insert(s, chunk_id);
++		if (err)
++			goto error;
++		/*Step 3*/
++		err = update_ck24_c24(s->CK24, ck24_idx, ck24_off,
++				      s->C24, s->cnk24_count, chunk_id);
++		if (err)
++			goto error;
++	}
++
++	c24_idx = calc_c24_idx(s->CK24[ck24_idx], ck24_off);
++	/*Extract 8 bit from MSB and calculate index to level 32*/
++	n32_idx = (s->C24[c24_idx] - 1) * CHUNK_SIZE + (key & 255);
++
++	if (prefix_len <= 32) {
++		/*All the leafs in level 25~32 will be stored in level 32.*/
++		num_leafs = 1U << (32 - prefix_len);
++		for (i = 0; i < num_leafs; i++) {
++			/*Longer prefix exists*/
++			if (s->P32[n32_idx + i] > prefix_len)
++				continue;
++			s->N32[n32_idx + i] = netdev_index;
++			s->P32[n32_idx + i] = prefix_len;
++		}
++		goto finish;
++	}
++
++error:
++	pr_err("Something went wrong in route insertion");
++finish:
++	spin_unlock(&s->lock);
++	return err;
++}
++
++int sail_delete(struct sail *s, u32 key, u8 prefix_len)
++{
++	int i;
++	u32 n16_idx;/*Index to N16, P16 and C16*/
++	u64 n24_idx;/*Index to level N24 and P24*/
++	u16 ck24_idx;/*Index to CK24*/
++	u64 ck24_off;/*Offset inside chunk in level 24*/
++	u64 n32_idx;/*Index to level N32 and P32*/
++	u32 consecutive_leafs;
++	int err = 0;
++	u32 chunkid_level32;
++	u8 part_idx, part_off;
++
++	spin_lock(&s->lock);
++
++	/* Simply ignore */
++	if (prefix_len == 0 || !s->N16)
++		goto error;
++
++	/*Eextract 16 bits from LSB.*/
++	n16_idx = key >> 16;
++
++	if (prefix_len <= 16) {
++		/*Level pushing*/
++		consecutive_leafs = 1U << (16 - prefix_len);
++		for (i = 0; i < consecutive_leafs; i++) {
++			/*Prefix len doesn't match*/
++			if (s->P16[n16_idx + i] != prefix_len)
++				continue;
++			s->N16[n16_idx + i] = 0;
++			s->P16[n16_idx + i] = 0;
++		}
++		goto finish;
++	}
++
++	/* The prefix_len is 17~32 but no chunk for the prefix*/
++	if (s->C16[n16_idx] == 0)
++		goto error;
++
++	ck24_idx = s->C16[n16_idx] - 1;
++	ck24_off = (key & 65280) >> 8;/*Extract bit 17~24 from the prefix*/
++	n24_idx = ck24_idx * CHUNK_SIZE + ck24_off;
++
++	if (prefix_len <= 24) {
++		/*Level pushing*/
++		consecutive_leafs = 1U << (24 - prefix_len);
++		for (i = 0; i < consecutive_leafs; i++) {
++			/*Prefix len doesn't match*/
++			if (s->P24[n24_idx + i] != prefix_len)
++				continue;
++			s->N24[n24_idx + i] = 0;
++			s->P24[n24_idx + i] = 0;
++		}
++		if (is_CK24_N24_chunk_unused(s->N24, &s->CK24[ck24_idx],
++					     s->C16[n16_idx])) {
++			chunk24_delete(s, s->C16[n16_idx]);
++			C16_remove_chunkid(s->C16, LEVEL16_SIZE,
++					   s->C16[n16_idx]);
++		}
++		goto finish;
++	}
++
++	part_idx = ck24_off / 64;
++	part_off = ck24_off % 64;
++	/* The prefix_len is 25~32. but no chunk for the prefix */
++	if (!(s->CK24[ck24_idx].bitmap[part_idx] & (1ULL << part_off)))
++		goto error;
++
++	chunkid_level32 = s->C24[calc_c24_idx(s->CK24[ck24_idx], ck24_off)];
++
++	/*Extract 8 bit from MSB and calculate index to level 32*/
++	n32_idx = (chunkid_level32 - 1) * CHUNK_SIZE + (key & 255);
++
++	if (prefix_len <= 32) {
++		/*Level pushing*/
++		consecutive_leafs = 1U << (32 - prefix_len);
++
++		for (i = 0; i < consecutive_leafs; i++) {
++			/*Prefix len doesn't match*/
++			if (s->P32[n32_idx + i] != prefix_len)
++				continue;
++			s->N32[n32_idx + i] = 0;
++			s->P32[n32_idx + i] = 0;
++		}
++		if (is_N32_chunk_unused(s->N32, chunkid_level32)) {
++			chunk32_delete(s, chunkid_level32);
++			C24_remove_chunkid(s, ck24_idx, ck24_off);
++		}
++		goto finish;
++	}
++
++/*The prefix was not found*/
++error:
++	err = -ENOENT;
++finish:
++	spin_unlock(&s->lock);
++	return err;
++}
++
++int sail_flush(struct sail *s)
++{
++	u8 *n16_old, *p16_old, *n24_old, *p24_old, *n32_old, *p32_old;
++	u16 *c16_old;
++	u32 *c24_old;
++	struct chunk *ck24_old;
++
++	spin_lock(&s->lock);
++
++	/*Save old pointers*/
++	n16_old = s->N16;
++	p16_old = s->P16;
++	c16_old = s->C16;
++	n24_old = s->N24;
++	p24_old = s->P24;
++	c24_old = s->C24;
++	ck24_old = s->CK24;
++	n32_old = s->N32;
++	p32_old = s->P32;
++
++	/*Set the counter before the chunk are deleted*/
++	s->cnk32_count = 0;
++	s->cnk24_count = 0;
++
++	/*Set the pointers to NULL*/
++	rcu_assign_pointer(s->N16, NULL);
++	rcu_assign_pointer(s->P16, NULL);
++	rcu_assign_pointer(s->C16, NULL);
++
++	rcu_assign_pointer(s->N24, NULL);
++	rcu_assign_pointer(s->P24, NULL);
++	rcu_assign_pointer(s->C24, NULL);
++	rcu_assign_pointer(s->CK24, NULL);
++
++	rcu_assign_pointer(s->N32, NULL);
++	rcu_assign_pointer(s->P32, NULL);
++
++	/* Wait for all references to be released */
++	synchronize_rcu();
++
++	/* Deallocate old references after setting them NULL*/
++	kfree(n16_old);
++	kfree(p16_old);
++	kfree(c16_old);
++	kfree(n24_old);
++	kfree(p24_old);
++	kfree(c24_old);
++	kfree(ck24_old);
++	kfree(n32_old);
++	kfree(p32_old);
++
++	spin_unlock(&s->lock);
++	return 0;
++}
++
++int sail_lookup(const struct sail *s,
++		const __be32 dest, struct net_device **dev)
++{
++	u8 *n16, *n24, *n32;
++	u16 *c16;
++	u32 *c24;
++	struct chunk *ck24;
++	const u32 key = ntohl(dest);
++	u8 netdev_index = s->def_nh;
++	u16 n16_idx;/*Index to N16 and C16*/
++	u64 n24_idx;/*Index to N24*/
++	u32 ck24_idx;/*Index to CK24*/
++	u64 ck24_off;/*Offset inside a chunk*/
++	u64 c24_idx;/*Index to C24*/
++	u64 n32_idx;/*Index to N32*/
++	u8 part_idx, part_off;
++
++	rcu_read_lock();
++
++	/*extract 16 bits from LSB*/
++	n16_idx = key >> 16;
++	n16 = rcu_dereference(s->N16);
++	if (unlikely(!n16))
++		goto finish;
++
++	if (likely(n16[n16_idx] != 0))
++		netdev_index = n16[n16_idx];
++
++	/*Check if there is a longer prefix; if yes, extract bit 17~24
++	 *  and calculate index to N24
++	 */
++	c16 = rcu_dereference(s->C16);
++	if (likely(c16[n16_idx] != 0)) {
++		ck24_idx = c16[n16_idx] - 1;
++		ck24_off = (key & 65280) >> 8;
++		n24_idx = ck24_idx * CHUNK_SIZE + ck24_off;
++	} else {
++		goto finish;
++	}
++
++	/*Find corresponding next-hop in level 24*/
++	n24 = rcu_dereference(s->N24);
++	if (likely(n24[n24_idx] != 0))
++		netdev_index = n24[n24_idx];
++
++	/*Check if there is a longer prefix; if yes, extract 8 bits
++	 * from MSB and calculate index to N32
++	 */
++	ck24 = rcu_dereference(s->CK24);
++	part_idx = ck24_off / 64;
++	part_off = ck24_off % 64;
++	if (likely(ck24[ck24_idx].bitmap[part_idx] & (1ULL << part_off))) {
++		c24 = rcu_dereference(s->C24);
++		c24_idx = ck24[ck24_idx].start_index[part_idx] +
++			POPCNT_OFF(ck24[ck24_idx].bitmap[part_idx], part_off);
++		n32_idx = (c24[c24_idx] - 1) * CHUNK_SIZE + (key & 255);
++	} else {
++		goto finish;
++	}
++
++	n32 = rcu_dereference(s->N32);
++	if (likely(n32[n32_idx] != 0))
++		netdev_index = n32[n32_idx];
++
++finish:
++	*dev = s->netdevs[netdev_index];
++	rcu_read_unlock();
++	return 0;
++}
+diff --git a/net/ipv4/fib_trie.c b/net/ipv4/fib_trie.c
+index 5bc0c89..d60fa45 100644
+--- a/net/ipv4/fib_trie.c
++++ b/net/ipv4/fib_trie.c
+@@ -1280,6 +1280,10 @@ int fib_table_insert(struct net *net, struct fib_table *tb,
+ 	if (err)
+ 		goto out_fib_notif;
+ 
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
++	sail_insert(&tb->sail, key, plen, fi->fib_dev);
++#endif
++
+ 	if (!plen)
+ 		tb->tb_num_default++;
+ 
+@@ -1568,6 +1572,10 @@ int fib_table_delete(struct net *net, struct fib_table *tb,
+ 
+ 	pr_debug("Deleting %08x/%d tos=%d t=%p\n", key, plen, tos, t);
+ 
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
++	sail_delete(&tb->sail, key, plen);
++#endif
++
+ 	fa_to_delete = NULL;
+ 	hlist_for_each_entry_from(fa, fa_list) {
+ 		struct fib_info *fi = fa->fa_info;
+@@ -1929,6 +1937,10 @@ int fib_table_flush(struct net *net, struct fib_table *tb)
+ 		}
+ 	}
+ 
++#if IS_ENABLED(CONFIG_FIB_SAIL_XDP)
++	sail_flush(&tb->sail);
++#endif
++
+ 	pr_debug("trie_flush found=%d\n", found);
+ 	return found;
+ }
