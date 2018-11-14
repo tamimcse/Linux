@@ -1,0 +1,11 @@
+actual-routes.txt --- A snapshot of routes of a backbone router of a tier-1 ISP of China. It contains around 400K routes.
+routes.1.txt      --- Next-hops of actual-routes.txt are replaced with veth0-veth31
+addroutes.sh      --- Add routes in routes.1.txt
+delroutes.sh      --- Delete routes in routes.1.txt
+
+These files are internally used by addroutes.sh and delroutes.sh:
+ 
+create-veths.py   --- Create 32 veths on the machine
+addroutes.py      --- Add routes in routes.1.txt
+delroutes.py      --- Delete routes in routes.1.txt
+
