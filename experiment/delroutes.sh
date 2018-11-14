@@ -1,2 +1,0 @@
-sudo python delroutes.py
-
