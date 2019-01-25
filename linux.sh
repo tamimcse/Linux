@@ -13,7 +13,7 @@ sudo apt-get install -y hardinfo &&
 sudo apt-get install -y build-essential libtool autopoint autoconf bison gtk-doc-tools cmake &&
 sudo apt-get install -y g++ &&
 #BPF compiler
-sudo apt-get install -y clang libc6-dev-i386 llvm libelf-dev &&
+sudo apt-get install -y clang libc6-dev-i386 llvm libelf-dev binutils-dev &&
 #dependency
 sudo apt-get install -y libgcrypt20-dev &&
 #Linaro tool-chain
