@@ -16,6 +16,12 @@ Problem: Linux crashes while restarting. It is almost impossible to know why. Be
 
 Solution: Check that you are access some memory (dynamic memory or some NULL poiner) which you shouldn't do. Insted of crashing right then, it ctrashes while restarting.
 
+Problem: eBPF program compiles, but cannot be loaded.
+Solution: If you access array, you must check if array index limit.
+
+Problem: If eBPF program is too big, it cannot be loaded.
+Solution: Increase the memlock limit ( https://software.intel.com/en-us/blogs/2014/12/16/best-known-methods-for-setting-locked-memory-size )
+
 
 
 
