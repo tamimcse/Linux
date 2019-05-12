@@ -10,17 +10,26 @@ Solution: Please look at the README at samples/bpf/. Most probably you need to a
 
 Problem: Sometime you cannot log into Linux after modifing kernel.
 
-Solution: Shut down and restart by power button. Chances are it will show you an option to boot into a previous kernel. If it does not, press F9 to select boot option. Then select ....."EFI" and "Ubuntu" and then "GRUB" and you will be presented with an option to boot into an old kernel. This process however take many times. Better solution is to presess F6+F7 continuously during boot. It will show you an option to boot into a previous kernel. 
+Solution: Shut down and restart by power button. Presess F5+F6+F7 continuously during boot. It will show you an option to boot into a previous kernel. 
+
 
 Problem: Linux crashes while restarting. It is almost impossible to know why. Becouse it shuts down properly and runs into OOPS while restarting.
 
 Solution: Check that you are access some memory (dynamic memory or some NULL poiner) which you shouldn't do. Insted of crashing right then, it ctrashes while restarting.
 
+
 Problem: eBPF program compiles, but cannot be loaded.
+
 Solution: If you access array, you must check if array index limit.
 
+
 Problem: If eBPF program is too big, it cannot be loaded.
+
 Solution: Increase the memlock limit ( https://software.intel.com/en-us/blogs/2014/12/16/best-known-methods-for-setting-locked-memory-size )
+
+
+
+
 
 
 
