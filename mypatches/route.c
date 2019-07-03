@@ -1898,7 +1898,7 @@ redo_rt6_select:
 # error unknown platform
 #endif
 //This is for fib-19016
-static u64 arr [] = {0X2001033000000000, 0X2001056808000000, 0X200102b800100000, 0X2620008BC0008000, 0X2804266C50030000 };
+static u64 arr [] = {0X2001033000000000, 0X2001056808000000, 0X200102b800100000, 0X20014DE030030300, 0X20014DE041010002 };
 #endif
 
 struct rt6_info *ip6_pol_route(struct net *net, struct fib6_table *table,
